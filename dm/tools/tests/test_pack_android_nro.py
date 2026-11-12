@@ -76,5 +76,27 @@ class Manifest(unittest.TestCase):
             self.assertEqual(pack_android.nso_text_size(f), 0x4321000)
 
 
+class Split(unittest.TestCase):
+    """The shader split reads a CRA archive's file table from the game's NROs (shader_split.py, DM_NRO_DIR): the collected ones, when the work folder has them"""
+    def split_env(self, with_nros):
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / 'work'; (work / 'android-nro').mkdir(parents=True)
+            if with_nros: (work / 'android-nro' / 'nro.tsv').write_text('# name\n')
+            seen = {}
+            def run(argv, env=None, **kw): seen.update(env); return mock.Mock(returncode=1)
+            a = mock.Mock(shader_python=None); g = mock.Mock(id='0400D4201C6EA000', dir=Path(d) / 'profile')
+            with mock.patch.object(pack_android, 'shader_python', return_value='py'), mock.patch.object(pack_android.subprocess, 'run', run), \
+                 mock.patch.dict(pack_android.os.environ, {}, clear=False), self.assertRaises(pack_android.Error):
+                pack_android.os.environ.pop('DM_NRO_DIR', None)
+                pack_android.split_shaders(a, g, Path(d) / 'v', work / 'android-shaders' / 'pkg', nros=pack_android.collected_nros(work))
+            return seen
+
+    def test_collected_nros_reach_the_split(self):
+        self.assertEqual(Path(self.split_env(True)['DM_NRO_DIR']).name, 'android-nro')
+
+    def test_no_nros_no_switch(self):
+        self.assertNotIn('DM_NRO_DIR', self.split_env(False))
+
+
 if __name__ == '__main__':
     unittest.main()
