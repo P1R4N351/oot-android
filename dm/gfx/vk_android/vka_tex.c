@@ -3037,7 +3037,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     // only after a pool came or went (vka_img.vep). The counts are read before the scan, so a picture written during it moves them for the next submission
     static uint64_t seen, vseen, vw_seen, ve_seen; uint64_t now = nvn_dirty_now(), vnow = nvn_sparse_gen(), vw = dm_codec_video_writes(), ve = dm_codec_video_epoch();
     int vid_new = vw != vw_seen || ve != ve_seen;
-    static int g_wbf_wait; uint64_t done = vka_done();   // g_wbf_wait: a GPU-written linear texture waited for its copy-back in the last scan
+    static int g_wbf_wait; static uint64_t g_wbf_up, g_wbf_waits; int g_wbf_on = VKA_ENV("DM_VK_WB_FOLLOW", 1) != 0; uint64_t done = vka_done();   // g_wbf_wait: a GPU-written linear texture waited for its copy-back in the last scan
     if (now != seen || vnow != vseen || vid_new || g_wbf_wait) {
         seen = now; vseen = vnow; vw_seen = vw; ve_seen = ve; g_wbf_wait = 0;
         for (int i = 0; i < g_nlive; i++) {
@@ -3081,10 +3081,11 @@ void vka_tex_prepare(VkCommandBuffer cb) {
             // A GPU-written image's content is the GPU's, except a linear one's once its copy-back has run: then the CPU's later writes to the storage are uploaded (vka_wbfollow.h:
             // Mario Tennis Fever clears its 8192x2048 R8 glyph cache on the GPU and rasterizes glyphs into it on the CPU; skipped, every text box was blank). While the copy-back
             // is queued or on the GPU the image waits, and the scan runs again at the next prepare even if the CPU writes nothing more (g_wbf_wait)
-            if (!wbf_follows(im->gpu_owned, img_wb_kind(im), im->wb_pending, im->wb_fence, done)) {
-                if (im->gpu_owned && img_wb_kind(im) && (im->wb_pending || done < im->wb_fence)) g_wbf_wait = 1;
+            if (!wbf_follows(im->gpu_owned, img_wb_kind(im) && g_wbf_on, im->wb_pending, im->wb_fence, done)) {
+                if (g_wbf_on && im->gpu_owned && img_wb_kind(im) && (im->wb_pending || done < im->wb_fence)) { g_wbf_wait = 1; g_wbf_waits++; }
                 continue;
             }
+            int wbf = im->gpu_owned;   // (counted below once its pages were found written: DM_VK_WB_FOLLOW's line)
             uint64_t size = im->L.size;
             if (!im->span) im->span = nvn_dirty_span(im->mem, size);
             if (!nvn_dirty_since_span(im->span, im->mem, size, im->stamp)) continue;
@@ -3092,6 +3093,8 @@ void vka_tex_prepare(VkCommandBuffer cb) {
             size_t lo, hi;
             if (!nvn_dirty_bounds_since(im->span, im->mem, size, im->stamp, &lo, &hi)) continue;
             tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
+            if (wbf) { uint64_t k = ++g_wbf_up; if (k <= 4 || !(k & (k - 1))) VLOG("texture serial %llu %ux%u format %#x: the CPU wrote it after its copy-back, its written part uploaded (%llu so far; %llu scans waited for a copy-back; DM_VK_WB_FOLLOW=0 turns this off)",
+                                                                         (unsigned long long)im->serial, im->w, im->h, im->d.format, (unsigned long long)k, (unsigned long long)g_wbf_waits); }
             int rows = VKA_ENV("DM_VK_ROWS", 1);
             if (rows && upload_rows_tracked(im, &t, cb, lo, hi)) continue;
             if (upload_bands_tracked(im, &t, cb, lo, hi, im->stamp)) { if (g_reup++ < 8) VLOG("texture serial %llu %ux%u format %#x: the bands of its storage that changed re-uploaded", (unsigned long long)im->serial, im->w, im->h, im->d.format); continue; }
