@@ -1,0 +1,80 @@
+"""scripts/pack_android.py's NROs (the modules a game loads at run time with nn::ro): collected from the dump by dm/tools/nro_collect.py into the work folder (reused while
+its inputs are unchanged), rewritten with the modules, and listed in the pack's nro.tsv, which the host reads beside the modules (loader.c preload_nros). The phone's pack step
+(--keep-code) checks that every NRO's rewrite finished, as it does for the modules."""
+import hashlib
+import struct
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+REPO = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO / 'scripts'))
+import pack_android   # noqa: E402
+
+
+def nro(text=0x2000, tag=b'x'):
+    d = bytearray(0x100); d[0x10:0x14] = b'NRO0'; struct.pack_into('<I', d, 0x18, len(d)); struct.pack_into('<II', d, 0x20, 0, text); d[0x80:0x81] = tag
+    return bytes(d)
+
+
+def nrr(hashes):
+    d = bytearray(0x348); d[:4] = b'NRR0'; struct.pack_into('<II', d, 0x340, len(d), len(hashes))
+    return bytes(d) + b''.join(hashes)
+
+
+class Collect(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        t = Path(self.tmp.name)
+        self.exe, self.rom, self.work = t / 'game/exefs', t / 'game/romfs', t / 'work'
+        self.exe.mkdir(parents=True); self.rom.mkdir(); (self.exe / 'main').write_bytes(b'NSO0' + bytes(0x100))
+        self.body = nro()
+        (self.rom / 'mod.nro').write_bytes(self.body); (self.rom / 'game.nrr').write_bytes(nrr([hashlib.sha256(self.body).digest()]))
+
+    def collect(self): return pack_android.collect_nros(self.exe, self.rom, self.work, in_process=True)
+
+    def test_collected_once_then_reused(self):
+        got = self.collect()
+        self.assertEqual(list(got), ['nro0']); self.assertEqual(got['nro0'].read_bytes(), self.body)
+        with mock.patch.object(pack_android, 'run_in_process', side_effect=AssertionError('collected again')): self.assertEqual(list(self.collect()), ['nro0'])
+
+    def test_new_nrr_collects_again(self):
+        self.collect()
+        other = nro(tag=b'y'); (self.rom / 'two.nro').write_bytes(other)
+        (self.rom / 'game.nrr').write_bytes(nrr([hashlib.sha256(self.body).digest(), hashlib.sha256(other).digest()]))
+        self.assertEqual(sorted(self.collect()), ['nro0', 'nro1'])
+
+    def test_no_nrr_no_nros(self):
+        (self.rom / 'game.nrr').unlink()
+        self.assertEqual(self.collect(), {})
+        self.assertFalse((self.work / 'android-nro').exists())
+
+    def test_missing_nro_is_an_error(self):
+        (self.rom / 'mod.nro').unlink()
+        with self.assertRaises(pack_android.Error): self.collect()
+
+
+class Manifest(unittest.TestCase):
+    def test_placed_and_checked(self):
+        with tempfile.TemporaryDirectory() as d:
+            coll, out = Path(d) / 'coll', Path(d) / 'pack'; coll.mkdir(); out.mkdir()
+            (coll / 'nro.tsv').write_text('# name\tsha256\tsize\tnrr\twhere\nnro0\t' + 'ab' * 32 + '\t256\tgame.nrr\tloose mod.nro\nrefused\t' + 'cd' * 32 + '\t9\tgame.nrr\tloose eos.nro (EOS)\n')
+            pack_android.place_nros(coll, out)
+            self.assertEqual((out / 'nro.tsv').read_text(), (coll / 'nro.tsv').read_text())
+            self.assertEqual(pack_android.pack_nros(out), ['nro0'], 'a refused row has no files')
+            self.assertEqual(pack_android.unfinished_nros(out), ['nro0 (nro0.patched.bin and nro0.android.key missing)'])
+            (out / 'nro0.patched.bin').write_bytes(b'x'); (out / 'nro0.android.key').write_text('k\n')
+            self.assertEqual(pack_android.unfinished_nros(out), [])
+            pack_android.place_nros(None, out)
+            self.assertFalse((out / 'nro.tsv').exists(), 'a game without NROs leaves no manifest behind')
+
+    def test_nro_text_size(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 'nro0.nro'; f.write_bytes(nro(text=0x4321000))
+            self.assertEqual(pack_android.nso_text_size(f), 0x4321000)
+
+
+if __name__ == '__main__':
+    unittest.main()
