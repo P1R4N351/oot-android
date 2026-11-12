@@ -101,6 +101,11 @@ int main(void) {
     uint8_t nrr[0x380] = {0}; memcpy(nrr, "NRR0", 4); *(uint32_t *)(nrr + 0x340) = 0x350; *(uint32_t *)(nrr + 0x344) = 1;
     memcpy(nrr + 0x350, g_mod[1].sha256, 32);
     assert(h_ro_RegisterModuleInfo(NULL, nrr) != 0);
+    // Version 1 (the byte at +5; the Switch 2's: Mario Tennis Fever): a header 0x180 bytes longer, so the hash table's offset and count are at +0x4c0 and +0x4c4.
+    // Its +0x340 holds no table (zero here): read there, the NRR would register nothing, and one of only refused hashes would be taken
+    uint8_t nrr1[0x500] = {0}; memcpy(nrr1, "NRR0", 4); nrr1[5] = 1; *(uint32_t *)(nrr1 + 0x4c0) = 0x4d0; *(uint32_t *)(nrr1 + 0x4c4) = 1;
+    memcpy(nrr1 + 0x4d0, g_mod[1].sha256, 32);
+    assert(h_ro_RegisterModuleInfo(NULL, nrr1) != 0);
     assert(h_ro_LoadModule(&handles[0], raw[0], NULL, 32, 1) != 0 && !g_mod[1].loaded);
     for (int i = 0; i < g_nmod; i++) { free(g_mod[i].symh); free(g_mod[i].pristine); }
     free(g_mod); free(g_loaded);
