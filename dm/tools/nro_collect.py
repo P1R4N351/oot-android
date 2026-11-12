@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Collect the NRO modules a game registers (nn::ro): every SHA-256 its NRR files list (RomFS .nrr/*.nrr), found as loose files or inside the RomFS's archives.
-Usage: nro_collect.py <RomFS> <out dir> [<nrr name>]
+Usage: nro_collect.py <RomFS> <out dir> [<nrr name>] [--exefs <ExeFS>]
 Writes <out dir>/<name>.nro for each registered NRO found and <out dir>/nro.tsv (name, SHA-256, size, NRR, where it was found); exits 1 when a registered hash is not found.
 An online SDK (ONLINE_SDKS: Epic Online Services, by its export EOS_Platform_Create) is listed with the name 'refused' and not written: the host refuses to load it.
 <nrr name> picks one NRR (default: every NRR; Super Smash Bros. Ultimate 13.0.5 ships 14, one per release, cross2_130004.nrr the newest, with the 98 current hashes).
@@ -8,8 +8,10 @@ The game passes nn::ro::LoadModule the NRO's bytes; the host finds the rewritten
 Where: a loose file whose bytes at +0x10 are NRO0 (Hades and Hades II ship their EOS SDK so); the .nro files among the current files of an archive with an index (Super Smash Bros. Ultimate's data.arc,
 read by dm/gfx/tools/smash_arc.py: 98 NROs, while the NRRs of every older release also register 666 superseded copies the archive still holds, which are left out); else a scan of the
 other RomFS files for stored NROs and zstd frames that inflate to one (on data.arc: all 764 registered hashes in 7 minutes). Also the NROs a boot stub in the ExeFS beside the
-RomFS packs into its own data segment (dm/tools/boot_nro.py: Mario Tennis Fever's main), kept like any other only when an NRR registers its SHA-256."""
-import hashlib, struct, sys
+RomFS packs into its own data segment (dm/tools/boot_nro.py: Mario Tennis Fever's main), kept like any other only when an NRR registers its SHA-256. --exefs names that
+ExeFS when it is not the one beside the RomFS (an update without its own RomFS: pack_android.py). DM_NRO_COLLECT_J=1 scans in this process, without a pool (the phone's
+packer must not fork)."""
+import contextlib, hashlib, struct, sys
 from multiprocessing import Pool
 from romfs import os, open, mmap
 
@@ -90,8 +92,8 @@ def exefs_beside(romfs):   # the ExeFS folder next to a RomFS folder (a dump's e
     return next((os.path.join(up, n) for n in sorted(names) if n.lower() == 'exefs' and os.path.isdir(os.path.join(up, n))), None)
 
 
-def boot_stub_nros(romfs):   # [(where, NRO bytes)] the ExeFS's modules pack (boot_nro.py), for the builds it knows
-    exe = exefs_beside(romfs)
+def boot_stub_nros(romfs, exe=None):   # [(where, NRO bytes)] the ExeFS's modules pack (boot_nro.py), for the builds it knows
+    exe = exe or exefs_beside(romfs)
     if not exe: return []
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import boot_nro
@@ -114,8 +116,11 @@ def online_sdk(body):   # the online SDK an NRO is (by its exports), or None
 
 
 def main():
-    romfs, out = sys.argv[1], sys.argv[2]
-    want = nrr_hashes(romfs, sys.argv[3] if len(sys.argv) > 3 else None)
+    args, exe = list(sys.argv[1:]), None
+    if '--exefs' in args:
+        i = args.index('--exefs'); exe = args[i + 1]; del args[i:i + 2]
+    romfs, out = args[0], args[1]
+    want = nrr_hashes(romfs, args[2] if len(args) > 2 else None)
     if not want: sys.exit(f'no NRR file with hashes in {romfs}')
     os.makedirs(out, exist_ok=True)
     found, big, indexed = {}, [], 0
@@ -140,7 +145,7 @@ def main():
                         if h in want: found[h] = (f'{os.path.relpath(p, romfs)}#{e[0]:010x}', 'index', body)
                         else: print(f'[RED] {os.path.relpath(p, romfs)}#{e[0]:010x}: an NRO that no NRR registers')
             else: big.append((p, sz))
-    for label, body in boot_stub_nros(romfs):
+    for label, body in boot_stub_nros(romfs, exe):
         h = hashlib.sha256(body).digest()
         if h in want: found.setdefault(h, (label, 'boot-stub', body))
         else: print(f'[RED] {label}: decoded an NRO that no NRR registers (SHA-256 {h.hex()}): the decoder or its constants are wrong for this build')
@@ -154,8 +159,9 @@ def main():
             step = max(64 << 20, (sz + 47) // 48)
             jobs += [(p, a, min(sz, a + step + 0x40), left) for a in range(0, sz, step)]
         print(f'{len(want)} registered NROs, {len(found)} loose; scanning {len(big)} files ({sum(s for _, s in big) / 2**30:.1f} GB) for the other {len(left)}', flush=True)
-        with Pool(min(10, os.cpu_count() or 4)) as pool:
-            for r in pool.imap_unordered(scan, jobs):
+        serial = os.environ.get('DM_NRO_COLLECT_J') == '1'
+        with (contextlib.nullcontext() if serial else Pool(min(10, os.cpu_count() or 4))) as pool:
+            for r in (map(scan, jobs) if serial else pool.imap_unordered(scan, jobs)):
                 for h, path, off, how, body in r:
                     found.setdefault(h, (f'{os.path.relpath(path, romfs)}+{off:#x}', how, body))
     rows, i, refused = [], 0, 0
