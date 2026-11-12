@@ -2071,6 +2071,9 @@ void vka_img_written_at(vka_img *im, const char *file, int line) {
              im->w, im->h, im->layers, im->d.format, im->m.size / 1048576.0, (unsigned long long)vka_frame(), file, line, im->nsamp, im->novl); }
     im->gpu_owned = 1;
     im->last_fence = vka_fence_last();
+    if (img_wb_kind(im)) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 32)   // which GPU writes a copied-back linear texture takes (the copy-back covers the whole image)
+        VLOG("linear texture serial %llu %ux%u format %#x: GPU write at frame %llu (%s:%d)%s", (unsigned long long)im->serial, im->w, im->h, im->d.format,
+             (unsigned long long)vka_frame(), file, line, im->wb_pending ? ", a copy-back already queued" : ""); }
     if (img_wb_kind(im) && !im->wb_pending) {
         if (g_nwb == g_wbcap) { g_wbcap = g_wbcap ? 2 * g_wbcap : 32; g_wb = realloc(g_wb, (size_t)g_wbcap * sizeof *g_wb); }
         im->wb_pending = 1; im->refs++; g_wb[g_nwb++] = im;
