@@ -58,6 +58,8 @@ int main(void) {
     rewind(manifest); allocate_modules(3, manifest);
     assert(g_mod_capacity == 1435 && ftell(manifest) == 0); fclose(manifest);
     g_nmod = 3; for (int i = 0; i < 3; i++) fixture(i);
+    // An NRO's imports count, loaded or not (Mario Tennis Fever: main is a boot stub, and the game's code is one NRO): test2 imports "late", no module is named main
+    assert(dm_game_imports("lat") && !dm_game_imports("nothing"));
     relocate(&g_mod[0]);
     assert(images[0].slots[0] == (uint64_t)&missing + 8);
     assert(images[0].slots[1] == 0 && images[0].slots[2] == 0);
