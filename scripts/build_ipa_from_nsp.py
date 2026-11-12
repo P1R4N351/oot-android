@@ -922,7 +922,9 @@ def collect_nros(py, repo, romfs, dst, env, logs):
     if not nrrs:
         rmtree(dst); rmtree(kf)   # an update can remove its NRRs: do not carry the previous manifest into the rewrite
         return {}
-    key = fingerprint(('files', nrrs + [repo / f for f in ('dm/tools/nro_collect.py', 'dm/tools/nso_syms.py', 'dm/gfx/tools/smash_arc.py', 'dm/tools/romfs.py')]), ('tree', romfs))
+    exefs = [p for p in sorted(romfs.parent.iterdir()) if p.name.lower() == 'exefs' and p.is_dir()]   # a boot stub there may pack an NRO (boot_nro.py)
+    key = fingerprint(('files', nrrs + [repo / f for f in ('dm/tools/nro_collect.py', 'dm/tools/nso_syms.py', 'dm/gfx/tools/smash_arc.py', 'dm/tools/romfs.py', 'dm/tools/boot_nro.py', 'dm/gfx/tools/cra.py')]
+                              + [p for d in exefs for p in sorted(d.iterdir()) if p.is_file()]), ('tree', romfs))
     if not ((dst / 'nro.tsv').is_file() and reused(kf, key) is not None):
         tmp = dst.with_name(dst.name + '.partial'); rmtree(tmp)
         PROG.set(step=f'finding the NROs {len(nrrs)} NRR files register')

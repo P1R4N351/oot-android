@@ -13,7 +13,7 @@ A Switch 2 game: update v327680 (1.1.1) over the base game, SDK 20.5.17 built fo
 
 ## Files
 
-- `main` is a boot stub: it unscrambles and unpacks the game's code, a 24.7 MB NRO, out of its data segment and loads it with `nn::ro`. The shader split needs that NRO in `DM_NRO_DIR`; today it comes from a run of nxnative's Mac host (`DM_NRO_CAPTURE`).
+- `main` is a boot stub: it unscrambles and unpacks the game's code, a 24.7 MB NRO, out of its data segment and loads it with `nn::ro`. `dm/tools/nro_collect.py` decodes it offline from 1.1.1's `main` (`boot_nro.py`; current, 2026-11-12): the SHA-256 the NRR registers, in 3.5 s. The shader split takes its output folder as `DM_NRO_DIR`.
 - The RomFS is `42` (7.6 GB, magic `CRA.`) and the NRR. `42` holds 8,671 files, listed only in the NRO ([One scrambled archive indexed by the NRO](../../../docs/reference/shaders.md#one-scrambled-archive-indexed-by-the-nro)).
 
 ## Shaders
@@ -23,9 +23,10 @@ A Switch 2 game: update v327680 (1.1.1) over the base game, SDK 20.5.17 built fo
 ## Open
 
 - The Android host: the host changes of nxnative `b6dbb851` are ported (NRR version 1, the NROs' imports in `dm_game_imports`, the service-connection time for started threads, the font engine's memory, null vertex buffer binds past 16 streams); the video decoder's ready event per packet was already here. Not run on a phone. `DM_NRO_CAPTURE` is not ported.
-- The Android pack: `pack_android.py` and the phone's Prepare need the NRO, and nothing makes it without running the game (open). `main` decodes it with its own code in a chain of threads (no SDK decompressor), so the packer could decode it from `main` directly; not yet written.
+- The Android pack: neither `pack_android.py` nor the phone's Prepare collects, rewrites or ships NROs yet, for any game (open). `nro_collect.py` now makes this game's NRO without a run, so that is the remaining step.
 - The Vulkan library (`vk_android_build.py`) of the 35,045 shaders.
 
 ## Found on this game
 
 - [One scrambled archive indexed by the NRO](../../../docs/reference/shaders.md#one-scrambled-archive-indexed-by-the-nro)
+- [The game's code packed into `main` by a boot stub](../../../docs/reference/services.md#the-games-code-packed-into-main-by-a-boot-stub)
