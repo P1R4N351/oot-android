@@ -22,8 +22,8 @@ A Switch 2 game: update v327680 (1.1.1) over the base game, SDK 20.5.17 built fo
 
 ## Open
 
-- The Android host: the host changes of nxnative `b6dbb851` are ported (NRR version 1, the NROs' imports in `dm_game_imports`, the service-connection time for started threads, the font engine's memory, null vertex buffer binds past 16 streams); the video decoder's ready event per packet was already here. Not run on a phone. `DM_NRO_CAPTURE` is not ported.
-- The Android pack: neither `pack_android.py` nor the phone's Prepare collects, rewrites or ships NROs yet, for any game (open). `nro_collect.py` now makes this game's NRO without a run, so that is the remaining step.
+- The Android host: the host changes of nxnative `b6dbb851` are ported (NRR version 1, the NROs' imports in `dm_game_imports`, the service-connection time for started threads, the font engine's memory, null vertex buffer binds past 16 streams); the video decoder's ready event per packet was already here. Not run on a phone. nxnative's run-time capture of the NRO is not ported (the packer decodes it instead).
+- The Android pack: `pack_android.py` collects the NRO (`nro_collect.py`), rewrites it with the modules (`nro0`: 12,842 plain sites, no cuts) and lists it in the pack's `nro.tsv`; its shader split gets it as `DM_NRO_DIR`, and the targeted split of 1.1.1 makes the profile's tables byte for byte (current, 2026-11-12, macOS). The phone's Prepare does not collect it yet (open), so packs come from the desktop packer.
 - The Vulkan library (`vk_android_build.py`) of the 35,045 shaders.
 
 ## Found on this game
