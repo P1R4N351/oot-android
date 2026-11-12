@@ -22,8 +22,8 @@ A Switch 2 game: update v327680 (1.1.1) over the base game, SDK 20.5.17 built fo
 
 ## Open
 
-- The Android host: running a game whose code is an NRO decoded at run time, and the other host changes of nxnative `b6dbb851` (NRR version 1, the service-connection time for started threads, the font engine's memory, a video decoder's ready event per packet). None is ported.
-- The Android pack: `pack_android.py` and the phone's Prepare need the NRO; nothing captures it on a phone.
+- The Android host: the host changes of nxnative `b6dbb851` are ported (NRR version 1, the NROs' imports in `dm_game_imports`, the service-connection time for started threads, the font engine's memory, null vertex buffer binds past 16 streams); the video decoder's ready event per packet was already here. Not run on a phone. `DM_NRO_CAPTURE` is not ported.
+- The Android pack: `pack_android.py` and the phone's Prepare need the NRO, and nothing makes it without running the game (open). `main` decodes it with its own code in a chain of threads (no SDK decompressor), so the packer could decode it from `main` directly; not yet written.
 - The Vulkan library (`vk_android_build.py`) of the 35,045 shaders.
 
 ## Found on this game
