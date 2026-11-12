@@ -12,7 +12,7 @@
 #define RO_NOT_NRO ((Result)0x816)           // the SDK's result for an image without NRO0 (sdk+0x3471e8)
 static pthread_mutex_t g_ro_mu = PTHREAD_MUTEX_INITIALIZER;   // the SDK holds g_RoLock over a load as well
 
-HLE_FORCE("_ZN2nn2ro10InitializeEv", "connect to the ldr:ro service; the host has none, symbol lookups search the loaded modules directly", Result, h_ro_Initialize, void) { LOG("init takeover: ro::Initialize (no-op)"); return 0; }
+HLE_FORCE("_ZN2nn2ro10InitializeEv", "connect to the ldr:ro service; the host has none, symbol lookups search the loaded modules directly", Result, h_ro_Initialize, void) { LOG("init takeover: ro::Initialize (no-op)"); dm_thread_service_connect(); return 0; }
 
 HLE_FORCE("_ZN2nn2ro12LookupSymbolEPmPKc", "look up a definition by name in the loaded modules", Result, h_ro_LookupSymbol, uintptr_t *out, const char *name) {
     void *p = name ? guest_sym(name) : NULL;
