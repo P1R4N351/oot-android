@@ -52,18 +52,52 @@ VARIANT_MASK = 0x11111111, 0x22222223, 0x33333333, 0x44444445, 0x55555555, 0x666
 M64 = (1 << 64) - 1
 
 
+CRA_LIB_ENV = 'DM_CRA_LIB'   # the path (or a bare name the dynamic linker finds) of libcra, dm/gfx/tools/cra_unscramble.c
+_libs = {}   # path → the library's unscramble, each loaded once
+
+
+def native():
+    """libcra's unscramble loop (cra_unscramble.c) through ctypes, or None: $DM_CRA_LIB, else libcra.so on Android (the APK's lib/ has it), else none
+    (the Python loop below; a PC or Mac runs the split in several processes). A $DM_CRA_LIB that does not load is an Error, not a fallback, so a test or the
+    phone never runs the slow loop unnoticed"""
+    path = os.environ.get(CRA_LIB_ENV) or ('libcra.so' if sys.platform == 'android' else '')
+    if not path: return None
+    if path not in _libs: _libs[path] = _load(path)
+    return _libs[path]
+
+
+def _load(path):
+    import ctypes
+    try: lib = ctypes.CDLL(path)
+    except OSError as e: raise Error(f'{CRA_LIB_ENV}: {path} does not load ({e})') from None
+    f = lib.cra_unscramble
+    f.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint64, ctypes.c_int, ctypes.c_int]
+    f.restype = ctypes.c_uint64
+    tabs = {id(t): (ctypes.c_uint32 * 2048)(*(x for row in t for x in row)) for t in (CRC32, CRC32C)}
+
+    def run(raw, n, w, tab, mul, src, first):
+        out = bytearray(16 * n)
+        dst = (ctypes.c_char * len(out)).from_buffer(out) if n else None
+        total = f(bytes(raw), n, dst, w, tabs[id(tab)], mul, src, first)   # ctypes lets go of the GIL for the call
+        del dst   # the buffer export ends before out is copied
+        return bytes(out), total
+    return run
+
+
 def unscramble(path, raw):
     """The blocks of a file, unscrambled, and the sum that gives its checksum. A variant takes a block's low (bit 1 clear) or high word, by CRC-32 (bit 2 clear) or CRC-32C, and writes its two results low
-    word first (bit 0 clear) or high word first"""
+    word first (bit 0 clear) or high word first. libcra does the loop when there is one (native)"""
     w = key(path); v = w & 7
     tab = CRC32C if v & 4 else CRC32
-    t0, t1, t2, t3, t4, t5, t6, t7 = tab
     mul = (w & 0xfffffffe ^ VARIANT_MASK[v]) << 32 | 1
     n = len(raw) // 16
-    q = struct.unpack(f'<{2 * n}Q', raw[:n * 16])
-    out = [0] * (2 * n); total = 0
     src, oth, a, b = (1, 0, 0, 1) if v & 2 else (0, 1, 0, 1)
     if v & 1: a, b = 1, 0
+    lib = native()
+    if lib: return lib(raw, n, w, tab, mul, src, a)
+    t0, t1, t2, t3, t4, t5, t6, t7 = tab
+    q = struct.unpack(f'<{2 * n}Q', raw[:n * 16])
+    out = [0] * (2 * n); total = 0
     for i in range(0, 2 * n, 2):
         s = q[i + src]
         x = s ^ w
