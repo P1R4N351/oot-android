@@ -177,6 +177,9 @@ uint64_t nvn_tex_level_offset(const nvn_texdesc *d, unsigned level) {
     return level_offset(d, level, dpl, w, h, z, L.tileH, L.tileD, t);
 }
 
+int nvn_tex_level_of(const nvn_texdesc *p, const nvn_texdesc *c, uint64_t off, unsigned *k) { (void)p; (void)c; (void)off; (void)k; return 0; }
+uint64_t nvn_tex_parent_off(const nvn_texdesc *c, unsigned k) { (void)c; (void)k; return 0; }
+
 uint32_t nvn_tex_level_gobs(const nvn_texdesc *d, unsigned level) {
     fmt_t t = fmt_of(d->format);
     unsigned dpl; int layered; uint32_t w, h, z, g = 0;

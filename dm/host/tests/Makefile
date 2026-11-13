@@ -87,6 +87,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_texown
 	$(B)/t_android_mapbudget
 	$(B)/t_android_psogate
+	$(B)/t_nvn_levelof
 	$(B)/t_android_pckeep
 	$(B)/t_android_pwlist
 	$(B)/t_android_fmtlist
@@ -440,6 +441,10 @@ $(B)/t_android_texown: t_android_texown.c $(VKA)/vka_texown.h ../../gfx/nvn/nvn_
 # The memory maps budget: the dirty tracker's block size by share of vm.max_map_count, compaction's picks, the lines of /proc/self/maps (vka_mapbudget.h; vka_mem.c maps_tick)
 $(B)/t_android_mapbudget: t_android_mapbudget.c $(VKA)/vka_mapbudget.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_mapbudget.c
+# A texture over the mip levels of another is those levels (nvn_tex.c nvn_tex_level_of; vka_tex.c level children)
+$(B)/t_nvn_levelof: t_nvn_levelof.c ../../gfx/nvn/nvn_tex.c ../../gfx/nvn/nvn_tex.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -I.. -o $@ t_nvn_levelof.c ../../gfx/nvn/nvn_tex.c
+run: $(B)/t_nvn_levelof
 # The background pipeline compiles' gate: slots by MemAvailable and the maps' headroom, the frame's compiles before prewarm's and the optimizer's (vka_psogate.h; vka_pso.c gate_enter)
 $(B)/t_android_psogate: t_android_psogate.c $(VKA)/vka_psogate.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_psogate.c
