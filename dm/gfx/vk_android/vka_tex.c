@@ -2768,6 +2768,7 @@ VkImageView vka_tex_id_view_bits(int id, VkCommandBuffer cb, VkImageLayout *layo
     return id_view(id, cb, 1, 1, NULL, VK_FORMAT_R32_UINT);   // (dim 1: 2D)
 }
 static VkImageView id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage, vka_img **imo, VkFormat force) {
+    int writes = wbf_view_writes(storage); storage &= VKA_VIEW_STORAGE;   // (VKA_VIEW_RO: a shader image the shader only reads)
     pthread_mutex_lock(&g_tmu);
     if (id <= 0 || id >= g_ntreg || !g_treg[id].t.serial) { pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
     treg_ent e = g_treg[id], e0 = e;   // (e0: the registration as it is, for the slot's own view)
@@ -2799,9 +2800,10 @@ static VkImageView id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage,
     if (storage && im->m.z) { pthread_mutex_lock(&g_tmu); img_own(im, cb); pthread_mutex_unlock(&g_tmu); }   // (a shader image: memory of its own before the draw writes it; vka_tex_id_storage_pending ended the pass)
     if (!storage && im->m.size >= big_min()) { pthread_mutex_lock(&g_tmu); im->nsamp++; pthread_mutex_unlock(&g_tmu); }   // (DM_VK_BIGIMG_MB: bound for sampling)
     if (storage && (!(im->usage & VK_IMAGE_USAGE_STORAGE_BIT) || need)) { pthread_mutex_lock(&g_tmu); int ok = img_storage_upgrade(im, cb, need); pthread_mutex_unlock(&g_tmu); if (!ok && !(im->usage & VK_IMAGE_USAGE_STORAGE_BIT)) { pthread_mutex_lock(&g_tmu); im_unhold_locked(im); pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; } }
-    // Bound as a shader image: the GPU writes it (nvn_mtl.m mtl_tex_gpu_owned: ShaderWrite usage), so its storage is no longer its content. Without this a CPU write near a
-    // tracked image's pages re-uploaded stale storage over what a compute pass wrote (DKB's 1x1 R16F texture, re-uploaded in the level)
-    if (storage && !im->is_video) vka_img_written(im);
+    // Bound as a shader image the shader writes (the binding's DMSH_VK_BF_RW, or a host pass's output): the GPU writes it (nvn_mtl.m mtl_tex_gpu_owned: ShaderWrite usage), so
+    // its storage is no longer its content. Without this a CPU write near a tracked image's pages re-uploaded stale storage over what a compute pass wrote (DKB's 1x1 R16F
+    // texture, re-uploaded in the level). A shader image only read is not a write (vka_wbfollow.h wbf_view_writes: Mario Tennis Fever's glyph cache)
+    if (writes && !im->is_video) vka_img_written(im);
     if (!storage && !(im->usage & VK_IMAGE_USAGE_SAMPLED_BIT)) { pthread_mutex_lock(&g_tmu); im_unhold_locked(im); pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
     if (imo) *imo = im;
     // Strict (unbound rather than the image's own format) for a class reinterpretation, and for a shader image in another format than the image's: the shader declares

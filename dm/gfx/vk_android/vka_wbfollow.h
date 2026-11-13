@@ -17,8 +17,10 @@ static inline int wbf_follows(int gpu_owned, int linear_wb, int wb_pending, uint
 // only reads it. The host's own passes ask for VKA_VIEW_STORAGE alone: they write their output
 #define VKA_VIEW_STORAGE 1
 #define VKA_VIEW_RO 2
-// A draw's image binding as that argument: storage_desc a storage-image descriptor, flags the binding's DMSH_VK_BF_*, rw DMSH_VK_BF_RW
-static inline int wbf_view_of_binding(int storage_desc, unsigned flags, unsigned rw) { (void)flags; (void)rw; return storage_desc ? VKA_VIEW_STORAGE : 0; }
-// Whether the view marks its image GPU-written (vka_img_written)
-static inline int wbf_view_writes(int view) { return (view & VKA_VIEW_STORAGE) != 0; }
+// A draw's image binding as that argument: storage_desc a storage-image descriptor, flags the binding's DMSH_VK_BF_*, rw DMSH_VK_BF_RW (vk_android_build.py m_writes: an
+// OpImageWrite or an atomic on the variable). A shader image the shader only reads is read-only: Mario Tennis Fever's text compute reads its linear glyph cache as image 0
+static inline int wbf_view_of_binding(int storage_desc, unsigned flags, unsigned rw) { return !storage_desc ? 0 : (flags & rw) ? VKA_VIEW_STORAGE : VKA_VIEW_STORAGE | VKA_VIEW_RO; }
+// Whether the view marks its image GPU-written (vka_img_written): a storage view the shader writes. A read leaves the storage the image's content; marked written, a linear
+// texture was copied back whole after the draw (vka_tex_writeback), over what the CPU wrote into its storage meanwhile (the glyph cache: letters of new text lost)
+static inline int wbf_view_writes(int view) { return (view & VKA_VIEW_STORAGE) && !(view & VKA_VIEW_RO); }
 #endif

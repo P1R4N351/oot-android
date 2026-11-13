@@ -379,6 +379,7 @@ void vka_ctl_shot_done(VkFence fence);
 int vka_swap_rb(void);
 
 VkImageView vka_tex_id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage, VkImageLayout *layout);   // texture ID id as a view of shape dim (DMSH_VK_DIM_*); VK_NULL_HANDLE = none fits
+// (storage: 0 sampled, else VKA_VIEW_* of vka_wbfollow.h: VKA_VIEW_STORAGE a storage view the GPU writes, with VKA_VIEW_RO one the shader only reads)
 void vka_tex_id_desc(int id, char *b, size_t n);   // texture ID id described for a [RED] line
 void vka_tex_id_peek(int id, char *b, size_t n);   // the same with its storage address and its image's (DM_VK_TEX_PEEK)
 void vka_tex_feedback(vka_img *const *ims, const uint32_t *levels, int n);   // the open pass's attachments and their levels (n 0: none), for vka_tex_id_view
