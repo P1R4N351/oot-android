@@ -911,11 +911,11 @@ def runtime_nros(romfs, mainnso):
     import nro_collect
     want = nro_collect.nrr_hashes(romfs)
     if not want: return []
-    out, seen = [], set()
-    for label, body in nro_collect.boot_stub_nros(romfs, os.path.dirname(mainnso)):
+    got = {}
+    for _, body in nro_collect.boot_stub_nros(romfs, os.path.dirname(mainnso)):
         h = hashlib.sha256(body).digest()
-        if h in want and h not in seen: seen.add(h); out.append((label, body))
-    return out
+        if h in want: got.setdefault(h, body)
+    return [(f'nro{i}.nro', got[h]) for i, h in enumerate(sorted(got))]   # named as nro_collect.py names them (nro<i>, hash order): the map's source column is the desktop split's
 
 CRA = b'CRA.'
 def cra_jobs(files, parts=64, nros=()):
