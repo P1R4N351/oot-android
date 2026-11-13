@@ -901,20 +901,36 @@ def cpk_shaders(path, rel, ents, out):
             print(f'[RED] /{rel}/{e[0]}: {x}; not scanned', flush=True); continue
         scan_blob(d, f'/{rel}/{e[0]}', out)
 
+def runtime_nros(romfs, mainnso):
+    """[(name, bytes)] the NROs the game runs that no RomFS file holds, read like main: DM_NRO_DIR's *.nro when it is set (the desktop packer's collection, the NSP script's
+    capture), else the NROs a boot stub packs into main (dm/tools/boot_nro.py) that the RomFS's NRRs register (Mario Tennis Fever's whole game code). The phone's Prepare
+    runs the split without DM_NRO_DIR, so the split takes them from the version's own ExeFS itself; loose NROs in the RomFS are scanned as RomFS files anyway"""
+    d = os.environ.get('DM_NRO_DIR')
+    if d: return [(os.path.basename(n), open(n, 'rb').read()) for n in sorted(glob.glob(os.path.join(d, '*.nro')))]
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'tools'))
+    import nro_collect
+    want = nro_collect.nrr_hashes(romfs)
+    if not want: return []
+    out, seen = [], set()
+    for label, body in nro_collect.boot_stub_nros(romfs, os.path.dirname(mainnso)):
+        h = hashlib.sha256(body).digest()
+        if h in want and h not in seen: seen.add(h); out.append((label, body))
+    return out
+
 CRA = b'CRA.'
-def cra_jobs(files, parts=64):
+def cra_jobs(files, parts=64, nros=()):
     """Every file of Camelot's archive in ranges of about equal length (Mario Tennis Fever: the whole game in rom:/42, 8,671 files, 7.6 GB; cra.py). Its index is in the NRO the game decodes at run time,
-    which DM_NRO_DIR holds (the NSP script's capture). → ([(path, rel, entries), …], the archive paths)"""
+    one of nros (runtime_nros). → ([(path, rel, entries), …], the archive paths)"""
     jobs, arcs = [], set()
     for p, r in files:
         with open(p, 'rb') as f: h = f.read(4)
         if h != CRA: continue
         import cra
         idx = None
-        for n in sorted(glob.glob(os.path.join(os.environ.get('DM_NRO_DIR', ''), '*.nro'))):
-            try: idx = cra.Index(open(n, 'rb').read()); break
+        for _, body in nros:
+            try: idx = cra.Index(body); break
             except cra.Error: continue
-        if idx is None: red(f'/{r}: a CRA archive, and no NRO in DM_NRO_DIR ({os.environ.get("DM_NRO_DIR")}) holds its file table')
+        if idx is None: red(f'/{r}: a CRA archive, and none of the game\'s {len(nros)} NROs (DM_NRO_DIR {os.environ.get("DM_NRO_DIR")}, else those a boot stub packs into main) holds its file table')
         es = idx.files()
         step = sum(e[2] for e in es) / parts
         cur, size = [], 0
@@ -3229,7 +3245,7 @@ def main():
     romfs_v, main_v = [nup.default_romfs(r) for r in romfs_l.split(',')], main_l.split(',')
     dlc_v = [nup.default_romfs(r) for r in dlc_v]
     if len(romfs_v) != len(main_v): red(f'{len(romfs_v)} RomFS and {len(main_v)} main: they must pair one to one')
-    files, results, common, dumps = [], [], None, []
+    files, results, common, dumps, nros = [], [], None, [], []
     for i, (romfs, mainnso) in enumerate(zip(romfs_v, main_v)):
         tag = os.path.basename(os.path.dirname(os.path.abspath(romfs))) if i else ''
         stage('listing the game\'s files')
@@ -3248,8 +3264,8 @@ def main():
         found += raw_shaders(img, 'main' + ('@' + tag if tag else ''), {c for _, _, c, _ in found})
         # NROs the game decodes at run time (Mario Tennis Fever: main is a boot stub, and the real code's data holds 11 shaders the game draws its UI and sky with): scanned like main, as no RomFS file holds them
         if not i:
-            for n in sorted(glob.glob(os.path.join(os.environ.get('DM_NRO_DIR', ''), '*.nro'))) if os.environ.get('DM_NRO_DIR') else []:
-                scan_blob(open(n, 'rb').read(), f'main/{os.path.basename(n)}', found)
+            nros = runtime_nros(romfs, mainnso)
+            for n, body in nros: scan_blob(body, f'main/{n}', found)
         # GLSLC outputs the game compiles at run time, captured on the Mac (hle_glslc.c): <version dir>/glslc_capture, or DM_GLSLC_CAPTURE. A game needs them when main holds GLSL sources and
         # calls glslcCompile in a module it loads (Fire Emblem: Three Houses; profile_guess.py shader_sources). Captain Toad: Treasure Tracker imports it with agl's GLSL sources, but no module defines it
         cap = os.environ.get('DM_GLSLC_CAPTURE') or os.path.join(os.path.dirname(os.path.abspath(romfs)), 'glslc_capture')
@@ -3284,7 +3300,7 @@ def main():
             for f in os.listdir(rd):
                 if f not in ('targeted', 'full', 'targeted.failed'): _remove(os.path.join(rd, f))   # an older split's results, kept in the folder itself
         if want is not None:
-            big, todo = scan_jobs(files, want)
+            big, todo = scan_jobs(files, want, nros)
             dg = scan_digest(inputs, big + todo + mains)
             failed = os.path.join(rd, 'targeted.failed') if rd else None
             if failed and os.path.isfile(failed) and open(failed).read().strip() == dg: why = 'an earlier run on these inputs found the targeted scan\'s tables differ from the profile\'s'
@@ -3305,7 +3321,7 @@ def main():
     if out is None:
         print(f'split: looking for archives among {len(files):,} RomFS files', flush=True)   # each file is opened (zip_jobs): a minute or more on a large RomFS, before the first progress line
         stage(f'looking for archives among {len(files):,} files')
-        big, todo = scan_jobs(files)
+        big, todo = scan_jobs(files, nros=nros)
         stage(f'reading every file of the game ({len(files):,})')
         cd = (os.path.join(rd, 'full') if targeted else rd) if rd else None
         out = split_tables(list(results), big, todo, dumps, J, common, zdicts, ScanCache(cd, scan_digest(inputs, big + todo + mains)) if cd else None)
@@ -3392,9 +3408,9 @@ def absent_tables(name, text, absent):
         elif not absent.intersection(c): out.append(ln)
     return ''.join(out)
 
-def scan_jobs(files, want=None):
+def scan_jobs(files, want=None, nros=()):
     """The scan's jobs: (archive ranges, the other files). Each archive kind's index sees every file (a PAK's newest copy of a path, an index beside its data); with
-    want, only the jobs of those files are kept, in the full scan's order"""
+    want, only the jobs of those files are kept, in the full scan's order. nros: the game's runtime NROs (runtime_nros), where Camelot's archive keeps its file table"""
     big = [j for p, r in files for j in (linkdata_jobs(p, r) or [])]   # Three Houses' 6.9 GB DATA1.bin: one job per range of entries, not one read of the whole file
     pak_jobs, paks = kpka_jobs(files)   # Monster Hunter Rise's PAKs: the newest copy of each path, in ranges of entries
     tr_jobs, trp = trpfs_jobs(files)   # Pokémon Legends: Z-A's Trinity packs (data.trpfs and its index data.trpfd), decoded by the game's own Oodle in the Mac host
@@ -3406,7 +3422,7 @@ def scan_jobs(files, want=None):
     # A zip and a CRA archive are found by their first bytes, so their probes open each file they are given: only the wanted ones, since neither needs another RomFS file
     # (Mario Kart World's 206,326 RomFS files took 29 s here on a Mac and minutes on a Windows PC before the targeted scan had printed anything)
     wanted = files if want is None else [f for f in files if f[1] in want]
-    cr_jobs, cras = cra_jobs(wanted)   # Mario Tennis Fever's CRA archive, its index in the NRO the game decodes at run time
+    cr_jobs, cras = cra_jobs(wanted, nros=nros)   # Mario Tennis Fever's CRA archive, its index in the NRO the game decodes at run time
     zp_jobs, zips = zip_jobs(wanted)   # Portal's game.zip (Deflate members)
     ah_jobs, arhs = arh_jobs(files)   # Monolith's ARH1/ARD archives and embedded XBC1/HCPS programs
     fb_jobs, fbs = frostbite_jobs(files)   # EA SPORTS FC 27's Frostbite bundles, Oodle Leviathan decoded by the game's own decoder in the Mac host
