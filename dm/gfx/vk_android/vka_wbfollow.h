@@ -12,4 +12,13 @@ static inline int wbf_follows(int gpu_owned, int linear_wb, int wb_pending, uint
     // so the CPU's later writes to it are the texture's. Before that (queued, or its submission unfinished) the storage is older than the image; with no copy-back it never held it
     return linear_wb && !wb_pending && wb_fence && done >= wb_fence;
 }
+
+// The view a texture ID is asked for (vka_tex.c vka_tex_id_view's storage argument): VKA_VIEW_STORAGE a storage view, else sampled; VKA_VIEW_RO a storage view whose shader
+// only reads it. The host's own passes ask for VKA_VIEW_STORAGE alone: they write their output
+#define VKA_VIEW_STORAGE 1
+#define VKA_VIEW_RO 2
+// A draw's image binding as that argument: storage_desc a storage-image descriptor, flags the binding's DMSH_VK_BF_*, rw DMSH_VK_BF_RW
+static inline int wbf_view_of_binding(int storage_desc, unsigned flags, unsigned rw) { (void)flags; (void)rw; return storage_desc ? VKA_VIEW_STORAGE : 0; }
+// Whether the view marks its image GPU-written (vka_img_written)
+static inline int wbf_view_writes(int view) { return (view & VKA_VIEW_STORAGE) != 0; }
 #endif
