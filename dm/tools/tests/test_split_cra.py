@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Camelot's archive reader (dm/gfx/tools/cra.py, ported from nxnative b6dbb851) on synthetic data: the file table and the code that locates it, the scramble and its checksum, NARC members and the packing kinds.
 The real archive's 8,671 files passing the game's own checksums is the check of the key and the variants; this keeps the layouts from drifting without the game's files."""
-import io, lz4.block, os, struct, sys, unittest, zlib
+import atexit, io, lz4.block, os, shutil, struct, subprocess, sys, tempfile, unittest, zlib
+from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'gfx', 'tools'))
 import cra
 
@@ -93,6 +94,55 @@ class Scramble(unittest.TestCase):
         self.assertEqual(cra.head(f, good), cra.unscramble(path, raw[:16])[0])
         with self.assertRaises(cra.Error): cra.read(f, (0, path, 25, 16, good[4] ^ 1))
 
+
+_libcra = []
+
+
+def libcra():
+    """A build of libcra (dm/gfx/tools/cra_unscramble.c, as android/ondevice/build.sh builds it, with this machine's cc) in a temporary folder, made once;
+    None without a compiler"""
+    if not _libcra:
+        lib = None
+        if shutil.which('cc'):
+            tmp = tempfile.mkdtemp(); atexit.register(shutil.rmtree, tmp, True)
+            lib = os.path.join(tmp, 'libcra.dylib' if sys.platform == 'darwin' else 'libcra.so')
+            src = os.path.join(os.path.dirname(os.path.abspath(cra.__file__)), 'cra_unscramble.c')
+            r = subprocess.run(['cc', '-dynamiclib' if sys.platform == 'darwin' else '-shared', '-fPIC', '-O2', '-Wall', '-Werror', '-o', lib, src], capture_output=True, text=True)
+            if r.returncode: raise AssertionError(f'libcra does not build:\n{r.stdout}{r.stderr}')
+        _libcra.append(lib)
+    return _libcra[0]
+
+
+class Native(unittest.TestCase):
+    """libcra (DM_CRA_LIB; libcra.so in the APK): the phone's split runs in one process, and the Python unscramble was 77 % of its time. It must give
+    the Python's bytes and sum for every variant, whole blocks only (a tail shorter than a block is left out, as in Python)"""
+    def setUp(self):
+        self.lib = libcra()
+        if not self.lib: self.skipTest('no C compiler for libcra')
+
+    def both(self, path, raw):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(cra.CRA_LIB_ENV, None)
+            py = cra.unscramble(path, raw)
+        with mock.patch.dict(os.environ, {cra.CRA_LIB_ENV: self.lib}):
+            c = cra.unscramble(path, raw)
+        return py, c
+
+    def test_same_as_python(self):
+        paths = {}
+        for p in (f'a/f{i}.narc' for i in range(400)):
+            paths.setdefault(cra.key(p) & 7, p)
+        self.assertEqual(sorted(paths), list(range(8)))
+        raw = bytes((i * 131 + 7 * (i >> 8)) & 0xff for i in range(16 * 300 + 5))   # a 5-byte tail
+        for v, p in sorted(paths.items()):
+            for n in (0, 16, 16 * 300 + 5):
+                py, c = self.both(p, raw[:n])
+                self.assertEqual(c, py, f'variant {v}, {n} bytes')
+                self.assertIsInstance(c[0], bytes)
+
+    def test_native_is_used(self):   # a DM_CRA_LIB that does not load is an Error, never a quiet fallback to Python
+        with mock.patch.dict(os.environ, {cra.CRA_LIB_ENV: os.path.join(tempfile.gettempdir(), 'no-such-libcra.so')}):
+            with self.assertRaises(cra.Error): cra.unscramble('a/b', bytes(16))
 
 def narc(members):
     fat = b'BTAF' + struct.pack('<II', 12 + 8 * len(members), len(members)); data = b''
