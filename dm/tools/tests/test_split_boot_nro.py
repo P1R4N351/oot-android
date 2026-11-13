@@ -48,6 +48,15 @@ class RuntimeNros(unittest.TestCase):
             got = self.run_with(self.patched([code, stray]), lambda: shader_split.runtime_nros(rom, main))
         self.assertEqual([b for _, b in got], [code])   # registered only: the stray decode is not the game's
 
+    def test_names_follow_the_collector(self):   # nro_collect.py names them nro<i> in hash order: the map's source column must be the desktop split's
+        a, b = b'NRO first' + bytes(8), b'NRO second' + bytes(8)
+        with tempfile.TemporaryDirectory() as t, mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('DM_NRO_DIR', None)
+            rom, main = self.dump(t, [a, b], [a, b])
+            got = self.run_with(self.patched([a, b]), lambda: shader_split.runtime_nros(rom, main))
+        order = sorted([a, b], key=lambda x: hashlib.sha256(x).digest())
+        self.assertEqual(got, [('nro0.nro', order[0]), ('nro1.nro', order[1])])
+
     def test_no_nrr_no_nro(self):
         with tempfile.TemporaryDirectory() as t, mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop('DM_NRO_DIR', None)
