@@ -25,6 +25,7 @@
 #include "vka_spvpatch.h"
 #include "game_profile.h"
 #include "vka_texown.h"
+#include "../nvn/nvn_tex.h"
 
 __attribute__((weak)) int dm_codec_is_video_mem(const void *mem, uint64_t size, uint32_t *stride) { (void)mem; (void)size; (void)stride; return 0; }
 __attribute__((weak)) uint64_t dm_codec_video_gen(const void *mem) { (void)mem; return 0; }
@@ -224,6 +225,9 @@ static int cpuw_take(uint64_t s, int add) {   // add: insert; else: remove and s
 
 static void img_destroy(void *arg) {
     vka_img *im = arg;
+    if (im->par) {   // a level child: its views only (the image and its memory are its parent's)
+        for (view_ent *v = im->views, *n; v; v = n) { n = v->next; vk.vkDestroyImageView(V.dev, v->v, NULL); free(v); }
+        free(im->snap); free(im); return; }
     if (im->zold) { img_destroy(im->zold); im->zold = NULL; }   // (the zero-shared image it left: no holder is left either)
     for (view_ent *v = im->views, *n; v; v = n) { n = v->next; vk.vkDestroyImageView(V.dev, v->v, NULL); free(v); }
     if (im->rs) { vks_free(im->rs); vks_va_give(im->va); }   // (its binds dropped or run first)
@@ -248,6 +252,11 @@ static void unref_locked(vka_img *im) {
     atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
     if (--im->refs) return;
     map_del_im(im);
+    if (im->par) {   // a level child: destroyed after its last use, then its reference on the parent let go (the parent's image outlives the child's views' use)
+        vka_img *p = im->par; uint64_t f = im->last_fence ? im->last_fence : (vka_fence_last() + 1);
+        p->nkids--; if (f > p->last_fence) p->last_fence = f;
+        vka_after(f, img_destroy, im);
+        unref_locked(p); return; }
     live_del(im);
     for (int i = 0; i < g_nbig; i++) if (g_big[i] == im) { g_big[i] = g_big[--g_nbig]; break; }
     g_img_bytes -= im->bytes;
@@ -1706,6 +1715,7 @@ static void vka_tex_prune_locked(void) {
     for (int i = 0; i < g_nlive; i++) {
         vka_img *im = g_live[i];
         if (pool_keep && im->pool_frame == cur_frame) continue;
+        if (im->nkids) continue;   // (a level child's parent: its children see its image)
         if (vktl_evictable(cur_frame, im->last_frame, im->holds, im->gpu_owned, im->is_video && video, im->last_fence && done_fence < im->last_fence))
             c[nc++] = (prune_ent){im, im->last_frame, im->gpu_owned != 0};
     }
@@ -1732,6 +1742,38 @@ static void vka_tex_prune_locked(void) {
                  total_bytes / 1048576.0, limit_bytes / 1048576.0, VKTL_KEEP_FRAMES, npool);
         }
     }
+}
+
+// ---------- Level children ----------
+// On the Switch textures over the same pool memory are one storage. A texture whose storage is levels k.. of a live image's (nvn_tex_level_of: the same format and the same
+// layout level by level) is a child of that image: par's VkImage seen from level k, not an image of its own. Mario Tennis Fever draws its far shadows through a 3584x3584 depth
+// texture over level 1 of its 7168x7168 shadow map and samples the map: made an image of its own, the far shadows never reached the map (a tree's shadow half drawn).
+// The parent is looked for where its level k would put it (nvn_tex_parent_off, k 1-4), among the live images of that storage address. Only a parent made first, of one layer and
+// one sample, not sparse, soft, zero-shared, video or a child itself; it is not evicted while it has children and neither is remade (img_storage_upgrade). Caller holds g_tmu
+static vka_img *level_child(const tex_t *t, const vka_fmt *f) {
+    if (!t->mem || t->d.target != NVN_TEXTURE_TARGET_2D || !VKA_ENV("DM_VK_LEVEL_SHARE", 1)) return NULL;
+    uint32_t cn = t->d.levels ? t->d.levels : 1;
+    for (unsigned k = 1; k <= 4; k++) {
+        uint64_t off = nvn_tex_parent_off(&t->d, k);
+        if (!off || off > (uintptr_t)t->mem) continue;
+        const uint8_t *pm = t->mem - off; int lk; unsigned kk = 0;
+        for (vka_img *p = live_first(pm, &lk); p; p = live_next(p, pm, &lk)) {
+            if (p->par || p->base || p->rs || p->soft || p->m.z || p->is_video || p->pdead || img_pool_dead(p) || p->f.vk != f->vk || p->layers != 1 || p->samples != 1 ||
+                k + cn > p->levels || !nvn_tex_level_of(&p->d, &t->d, off, &kk) || kk != k) continue;
+            vka_img *c = calloc(1, sizeof *c);
+            if (!c) return NULL;
+            c->serial = t->serial; c->mem = t->mem; c->d = t->d; c->L = t->L;
+            c->img = p->img; c->f = p->f; c->usage = p->usage; c->aspect = p->aspect; c->cflags = p->cflags; c->nvf = p->nvf; memcpy(c->vf, p->vf, sizeof c->vf); c->fl = p->fl;
+            c->w = p->w; c->h = p->h; c->depth = p->depth; c->layers = p->layers; c->levels = p->levels; c->samples = p->samples;
+            c->refs = 1; c->inited = 1; c->gpu_owned = p->gpu_owned; c->mode = p->mode; c->pool = p->pool; c->pgen = p->pgen; c->pfin = p->pfin;
+            c->par = p; c->lvk = k; p->refs++; p->nkids++;
+            static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16)
+                VLOG("texture serial %llu %ux%u format %#x (%u levels) over level %u of serial %llu's storage (%ux%u, %u levels): that level of its image, not an image of its own (DM_VK_LEVEL_SHARE=0: its own)",
+                     (unsigned long long)t->serial, t->d.width, t->d.height, t->d.format, cn, k, (unsigned long long)p->serial, p->w, p->h, p->levels);
+            return c;
+        }
+    }
+    return NULL;
 }
 
 vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
@@ -1783,7 +1825,8 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
                 im->serial = t->serial;
             }
             if (t->pool && (im->pool != t->pool || revived)) { uint64_t fin = nvn_pool_fin(), g = nvn_pool_live(t->pool, NULL, NULL); if (g) { im->pool = t->pool; im->pfin = fin; im->pgen = g; } } }
-        if (im) big_share(im, t);   // (another texture object of the same storage and shape: DM_VK_BIGIMG_MB diagnostic)
+        if (!im) im = level_child(t, &f);   // (a texture over mip levels of a live image: that image)
+        if (im && !im->par) big_share(im, t);   // (another texture object of the same storage and shape: DM_VK_BIGIMG_MB diagnostic)
         uint32_t vmin = 0, base = sparse_sampled(t, &f) ? sparse_base(t->pool, t->mem, &t->d, &t->L, &vmin) : 0;
         int mode = 0;
         int soft = 0;
@@ -2058,6 +2101,7 @@ void mtl_tex_release(tex_t *t) {
 static vka_img **g_wb; static int g_nwb, g_wbcap;
 void vka_img_written_at(vka_img *im, const char *file, int line) {
     if (!im) return;
+    if (im->par) vka_img_written_at(im->par, file, line);   // a level child's write is its parent's
     if (im->is_video) return;
     pthread_mutex_lock(&g_tmu);
     // A zero-shared image must have memory of its own before any write (vka_tex_own at the write's site): this one did not, so every image sharing its memory sees the write
@@ -2093,7 +2137,7 @@ void vka_tex_writeback(VkCommandBuffer cb) {
     pthread_mutex_unlock(&g_tmu);
 }
 int mtl_tex_gpu_owned(uint64_t serial) {   // hle_nvn.c nvn_ft_poll: the GPU has written the image (render target, copy or clear destination)
-    pthread_mutex_lock(&g_tmu); smap_ent *e = map_get(serial); int r = e && e->im && e->im->gpu_owned; pthread_mutex_unlock(&g_tmu); return r;
+    pthread_mutex_lock(&g_tmu); smap_ent *e = map_get(serial); int r = e && e->im && (e->im->gpu_owned || (e->im->par && e->im->par->gpu_owned)); pthread_mutex_unlock(&g_tmu); return r;
 }
 unsigned mtl_cpu_tex_count(void) {   // live images whose content follows their storage
     pthread_mutex_lock(&g_tmu); unsigned n = 0; for (int i = 0; i < g_nlive; i++) n += g_live[i]->track && !g_live[i]->gpu_owned; pthread_mutex_unlock(&g_tmu); return n;
@@ -2102,6 +2146,7 @@ void mtl_pkg_stats(uint64_t *uploads, uint64_t *reuploads) { if (uploads) *uploa
 // The CPU wrote the texture's storage: uploaded at its first use, or again at the next submission unless the GPU has written it since (then the GPU's content wins)
 static uint64_t *g_redo; static int g_nredo, g_redocap;
 static void redo_add_locked(vka_img *im) {   // (g_tmu held) its guest storage holds a write the next prepare must read again
+    if (im && im->par) im = im->par;   // (a level child's storage is its parent's: the parent is uploaded)
     if (!im || im->gpu_owned || im->cpu_dirty) return;
     im->cpu_dirty = 1;
     if (g_nredo == g_redocap) { g_redocap = g_redocap ? g_redocap * 2 : 64; g_redo = realloc(g_redo, (size_t)g_redocap * sizeof *g_redo); }
@@ -2455,9 +2500,10 @@ void vka_tex_feedback(vka_img *const *ims, const uint32_t *levels, int n) { g_nf
 static VkImageView view_of(const treg_ent *e, vka_img *im, int vt_want, int storage, VkFormat ovr) {
     vka_fmt f; const view_t *v = e->has_v ? &e->v : NULL;
     if (!vka_fmt_of(v && v->set_format ? v->format : e->t.d.format, &f)) f = im->f;
-    uint32_t tl = im->base + im->levels, l0 = v && v->set_levels ? v->base_level : 0, nl = v && v->set_levels && v->nlevels ? v->nlevels : tl > l0 ? tl - l0 : 1;
+    uint32_t tl = im->base + im->levels - im->lvk, l0 = v && v->set_levels ? v->base_level : 0, nl = v && v->set_levels && v->nlevels ? v->nlevels : tl > l0 ? tl - l0 : 1;
     if (im->vtrack && !storage && l0 < im->vmin) { uint32_t cut = im->vmin - l0; nl = nl > cut ? nl - cut : 1; l0 = im->vmin; }   // a sparse texture: from its wholly mapped levels
     vksoft_view(im->base, &l0, &nl);   // texture levels → the image's (a sparse texture's left-out levels, a soft texture's level 0)
+    l0 += im->lvk;   // (a level child: from its parent's level lvk)
     uint32_t a0 = v && v->set_layers ? v->min_layer : 0, na = v && v->set_layers && v->nlayers ? v->nlayers : im->layers - a0;
     if (im->d.target == NVN_TEXTURE_TARGET_3D) { a0 = 0; na = 1; }   // a 3D texture's view range names slices (a render target view's), which a 3D view does not take
     if (l0 >= im->levels || a0 >= im->layers) return VK_NULL_HANDLE;
@@ -2501,6 +2547,7 @@ static int storage_able(const vka_img *im, VkFormat need) {
 static int img_storage_upgrade(vka_img *im, VkCommandBuffer cb, VkFormat need) {
     int listed = !need || img_lists(im, need);
     if ((im->usage & VK_IMAGE_USAGE_STORAGE_BIT) && listed) return 1;
+    if (im->par || im->nkids) { VRED_ONCE("texture serial %llu: a level child or its parent bound as a shader image needs remaking with storage use, which they do not take (vka_tex.c level_child): the binding reads as unbound", (unsigned long long)im->serial); return 0; }
     if (!cb || !storage_able(im, need) || im->holds > 1) return 0;
     tex_t t = {0}; t.serial = im->serial; t.mem = im->mem; t.d = im->d; t.d.flags |= NVN_TEXTURE_FLAGS_IMAGE; t.L = im->L;
     vka_img *n = img_create(&t, &im->f, im->base);
