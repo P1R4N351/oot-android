@@ -225,6 +225,13 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Fix:** reduction samplers filter mips linearly (`samp_by_id`): at the integer LODs reductions are used with, that is the same level.
 - **Found on:** [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md): its depth pyramid is built with a min-reduction sampler (`SamplerBuilderSetReductionFilter 1`; `151607c7a92386cc` samples the level above at an explicit LOD).
 
+### Sampler reduction on the Vulkan replay (Android)
+
+- **Symptom:** (Android) `[RED] vk: sampler reduction mode 2 not applied` (or mode 1) once a run; what the game builds with that sampler (a depth pyramid, an occlusion or a max-depth target) averages its texels instead.
+- **Cause:** `vka_tex.c` `sampler_of` made every sampler with the weighted average and only logged NVN's reduction.
+- **Fix:** a min / max reduction chains `VkSamplerReductionModeCreateInfo` (NVN's 1 and 2 are Vulkan's own numbers) when the device has `samplerFilterMinmax` (Vulkan 1.2, enabled with the device's other 1.2 features; `V.minmax`), which Vulkan guarantees for the depth formats and `R32_SFLOAT` among others. Without the feature the `[RED]` line says so.
+- **Found on:** [Super Mario Bros. Wonder - Nintendo Switch 2 Edition](../../dm/games/040015100B514001/README.md) (mode 2, max; on the Adreno 740 with Turnip). On the phone the `[RED]` line is gone (9.5 minutes of play); what the game draws with it is not yet identified, and no picture was compared before and after.
+
 ### Sampler LOD bias
 
 - **Symptom:** textures a mip level sharper or blurrier than on the Switch where the game biases its sampler; in the Vulkan layer, a red line `sampler LOD bias … not implemented`.

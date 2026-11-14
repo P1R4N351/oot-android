@@ -20,6 +20,7 @@ Program 1 of application `010015100B514000`, display version 1.2.1 (update v3276
 ## Found on this game
 
 - [Built-in fonts of SDK 21](../../../docs/reference/services.md#built-in-fonts-and-the-audio-device-notification-of-sdk-21): main calls `GetBuiltInFontData` and imports `ScalableFontEngineHelper::Decode`, so the host gave it the font with its BFTTF header; it now gives the TTF past the header, as the service's offsets do (taken from nxnative PR #1639; what the header did to this game's text was not recorded).
+- [Sampler reduction on the Vulkan replay](../../../docs/reference/rendering.md#sampler-reduction-on-the-vulkan-replay-android): a max-reduction sampler (mode 2) was averaged. Fixed: the `[RED]` line is gone on the phone; no picture was compared before and after.
 
 ## Open
 
