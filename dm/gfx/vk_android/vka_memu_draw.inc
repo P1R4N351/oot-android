@@ -37,7 +37,7 @@ static void memu_dispatch(const vka_dstate *d, int st, vka_shader *cs, const vka
     int n = vka_walk(&d->b, st, cs->e, cs->b, cs->lib->h->ssbo_align, V.sb_align, rd_cb, NULL, r, 512, &pool, why, sizeof why);
     if (n < 0) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 8) VRED("%s shader through compute %016llx: %s; skipped", st == 6 ? "task" : "mesh", (unsigned long long)cs->key, why); return; }
     for (int i = 0; i < n; i++) if ((r[i].what == VKA_R_TEX || r[i].what == VKA_R_IMG) && r[i].tid && (vka_tex_id_pending_rec(r[i].tid, r[i].dim) || (r[i].what == VKA_R_IMG && vka_tex_id_storage_pending(r[i].tid))))
-        vka_tex_id_view(r[i].tid, g_cb, r[i].dim, r[i].what == VKA_R_IMG, NULL);   // (images first used: made now, outside the pass)
+        vka_tex_id_view(r[i].tid, g_cb, r[i].dim, wbf_view_of_binding(r[i].what == VKA_R_IMG, r[i].flags, DMSH_VK_BF_RW), NULL);   // (images first used: made now, outside the pass)
     g_w.n = 0;
     if (!stage_writes(d, st, cs, r, n, pool, NULL)) return;
     memu_write(VKA_MEMU_ARENA_BINDING, MB.arena, 0, VK_WHOLE_SIZE);

@@ -14,6 +14,7 @@
 #include "game_profile.h"
 #include "vka_memu_abi.h"
 #include "vka_prepass.h"
+#include "vka_wbfollow.h"
 #include <math.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -1377,7 +1378,7 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
             VkImageView v = VK_NULL_HANDLE; VkSampler s = VK_NULL_HANDLE; VkImageLayout lay = VK_IMAGE_LAYOUT_GENERAL;
             if (r[i].desc != VK_DESCRIPTOR_TYPE_SAMPLER) {
                 int tid = r[i].what == VKA_R_TEX || r[i].what == VKA_R_IMG ? r[i].tid : 0;
-                if (tid) v = vka_tex_id_view_rec(tid, g_cb, r[i].dim, storage, &lay);
+                if (tid) v = vka_tex_id_view_rec(tid, g_cb, r[i].dim, wbf_view_of_binding(storage, r[i].flags, DMSH_VK_BF_RW), &lay);   // (a shader image only read: not a GPU write)
                 if (tid && v) class_note(sh, st, &r[i], tid, storage);
                 if (tid) tex_peek(sh->key, st, &r[i], v, storage);
                 // A 2D texture in a 3D or cube slot: what the game leaves bound where a shader's branch does not sample (DKB's materials keep a 1x1 2D texture in their volume slot 12).
@@ -1558,7 +1559,7 @@ static int make_images(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], in
         for (int i = 0; i < g_wk.n[st]; i++) if ((r[i].what == VKA_R_TEX || r[i].what == VKA_R_IMG) && r[i].tid
                                                  && (vka_tex_id_pending_rec(r[i].tid, r[i].dim) || (r[i].what == VKA_R_IMG && vka_tex_id_storage_pending(r[i].tid)))) {   // (an image remade with storage use copies its content: outside the pass)
             any = 1; if (dry) return 1;
-            vka_tex_id_view(r[i].tid, g_cb, r[i].dim, r[i].what == VKA_R_IMG, NULL);
+            vka_tex_id_view(r[i].tid, g_cb, r[i].dim, wbf_view_of_binding(r[i].what == VKA_R_IMG, r[i].flags, DMSH_VK_BF_RW), NULL);
         }
     }
     return any;

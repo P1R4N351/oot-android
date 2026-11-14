@@ -89,6 +89,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_psogate
 	$(B)/t_nvn_dpool
 	$(B)/t_android_t2tpath
+	$(B)/t_android_wbfollow
 	$(B)/t_android_pckeep
 	$(B)/t_android_pwlist
 	$(B)/t_android_fmtlist
@@ -408,7 +409,7 @@ coverage:
 	LLVM_PROFILE_FILE="$(call cov_profile,$(B)/cov)" $(MAKE) -i B=$(B)/cov SAN="$(COV_FLAGS)" run
 	@$(call cov_export,$(B)/cov)
 # The Android host's pure parts (dm/host/android): resampler, channel map, SPS size, MediaCodec picture layouts; gamepad / touch / sensor mapping
-run: $(B)/t_android_av $(B)/t_android_input $(B)/t_android_shlib $(B)/t_android_spvpatch $(B)/t_android_imgmem $(B)/t_android_zshare $(B)/t_android_texlimit $(B)/t_android_lowram $(B)/t_android_livemap $(B)/t_android_smap $(B)/t_android_mapbudget $(B)/t_android_psogate $(B)/t_android_pckeep $(B)/t_android_pwlist $(B)/t_android_fmtlist $(B)/t_android_place $(B)/t_android_ovl $(B)/t_android_pace $(B)/t_android_skipwarn $(B)/t_android_gmem $(B)/t_android_fpenv $(B)/t_android_soft $(B)/t_android_qsched $(B)/t_android_poolslot $(B)/t_android_prepass $(B)/t_android_tlsig $(B)/t_android_texown $(B)/t_android_gbar $(B)/t_android_memu
+run: $(B)/t_android_av $(B)/t_android_input $(B)/t_android_shlib $(B)/t_android_spvpatch $(B)/t_android_imgmem $(B)/t_android_zshare $(B)/t_android_texlimit $(B)/t_android_lowram $(B)/t_android_livemap $(B)/t_android_smap $(B)/t_android_mapbudget $(B)/t_android_psogate $(B)/t_android_wbfollow $(B)/t_android_pckeep $(B)/t_android_pwlist $(B)/t_android_fmtlist $(B)/t_android_place $(B)/t_android_ovl $(B)/t_android_pace $(B)/t_android_skipwarn $(B)/t_android_gmem $(B)/t_android_fpenv $(B)/t_android_soft $(B)/t_android_qsched $(B)/t_android_poolslot $(B)/t_android_prepass $(B)/t_android_tlsig $(B)/t_android_texown $(B)/t_android_gbar $(B)/t_android_memu
 $(B)/t_android_av: t_android_av.c ../android/av_android.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. $(WEAK_HOST) -o $@ t_android_av.c
 $(B)/t_android_input: t_android_input.c ../android/input_map.c ../android/input_map.h ../../gfx/vk_android/vka_present_fit.h ../motion_fusion.h ../dm_input.h | $(B)
@@ -451,6 +452,10 @@ $(B)/t_android_t2tpath: t_android_t2tpath.c $(VKA)/vka_t2tpath.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_t2tpath.c
 run: $(B)/t_android_t2tpath
 # The background pipeline compiles' gate: slots by MemAvailable and the maps' headroom, the frame's compiles before prewarm's and the optimizer's (vka_psogate.h; vka_pso.c gate_enter)
+# A tracked texture the GPU wrote follows the CPU's writes again once its copy-back into the storage has run (vka_wbfollow.h; vka_tex.c, the prepare's scan)
+$(B)/t_android_wbfollow: t_android_wbfollow.c $(VKA)/vka_wbfollow.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_wbfollow.c
+run: $(B)/t_android_wbfollow
 $(B)/t_android_psogate: t_android_psogate.c $(VKA)/vka_psogate.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_psogate.c
 # The pipeline cache stamp: which file a run reads after a shader library update (vka_pckeep.h; vka_pso.c pc_open_once)

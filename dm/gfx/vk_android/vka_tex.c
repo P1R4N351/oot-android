@@ -25,6 +25,7 @@
 #include "vka_spvpatch.h"
 #include "game_profile.h"
 #include "vka_texown.h"
+#include "vka_wbfollow.h"
 
 __attribute__((weak)) int dm_codec_is_video_mem(const void *mem, uint64_t size, uint32_t *stride) { (void)mem; (void)size; (void)stride; return 0; }
 __attribute__((weak)) uint64_t dm_codec_video_gen(const void *mem) { (void)mem; return 0; }
@@ -2056,6 +2057,8 @@ void mtl_tex_release(tex_t *t) {
 // Linear textures the GPU wrote in this submission. Metal makes a linear texture on the pool buffer, so what the GPU renders there is in guest memory for the CPU to read
 // (agl reads small linear render targets back on the CPU, such as a 1x1 R16F one in Donkey Kong Bananza's level); here the image is copied back into the storage
 static vka_img **g_wb; static int g_nwb, g_wbcap;
+// A linear texture whose GPU writes are copied back into its storage (vka_tex_writeback): one level-free, single-sample colour texture of plain texels
+static int img_wb_kind(const vka_img *im) { return (im->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) && im->mem && im->samples == 1 && im->f.kind < 3 && im->f.bw == 1; }
 void vka_img_written_at(vka_img *im, const char *file, int line) {
     if (!im) return;
     if (im->is_video) return;
@@ -2068,7 +2071,10 @@ void vka_img_written_at(vka_img *im, const char *file, int line) {
              im->w, im->h, im->layers, im->d.format, im->m.size / 1048576.0, (unsigned long long)vka_frame(), file, line, im->nsamp, im->novl); }
     im->gpu_owned = 1;
     im->last_fence = vka_fence_last();
-    if ((im->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) && im->mem && !im->wb_pending && im->samples == 1 && im->f.kind < 3 && im->f.bw == 1) {
+    if (img_wb_kind(im)) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 32)   // which GPU writes a copied-back linear texture takes (the copy-back covers the whole image)
+        VLOG("linear texture serial %llu %ux%u format %#x: GPU write at frame %llu (%s:%d)%s", (unsigned long long)im->serial, im->w, im->h, im->d.format,
+             (unsigned long long)vka_frame(), file, line, im->wb_pending ? ", a copy-back already queued" : ""); }
+    if (img_wb_kind(im) && !im->wb_pending) {
         if (g_nwb == g_wbcap) { g_wbcap = g_wbcap ? 2 * g_wbcap : 32; g_wb = realloc(g_wb, (size_t)g_wbcap * sizeof *g_wb); }
         im->wb_pending = 1; im->refs++; g_wb[g_nwb++] = im;
     }
@@ -2086,6 +2092,7 @@ void vka_tex_writeback(VkCommandBuffer cb) {
         if (!any) { vka_barrier(cb); any = 1; }
         VkBufferImageCopy c = {o, (uint32_t)(row / bpb), h, {im->aspect, 0, 0, 1}, {0, 0, 0}, {im->w, h, 1}};
         vk.vkCmdCopyImageToBuffer(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, b, 1, &c);
+        im->wb_fence = vka_fence_last();   // (the submission this copy is recorded in, as vka_img_written's last_fence: vka_wbfollow.h)
         static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VLOG("linear texture serial %llu %ux%u format %#x: the GPU's content copied back into its storage", (unsigned long long)im->serial, im->w, h, im->d.format);
         unref_locked(im);
     }
@@ -2761,6 +2768,7 @@ VkImageView vka_tex_id_view_bits(int id, VkCommandBuffer cb, VkImageLayout *layo
     return id_view(id, cb, 1, 1, NULL, VK_FORMAT_R32_UINT);   // (dim 1: 2D)
 }
 static VkImageView id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage, vka_img **imo, VkFormat force) {
+    int writes = wbf_view_writes(storage); storage &= VKA_VIEW_STORAGE;   // (VKA_VIEW_RO: a shader image the shader only reads)
     pthread_mutex_lock(&g_tmu);
     if (id <= 0 || id >= g_ntreg || !g_treg[id].t.serial) { pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
     treg_ent e = g_treg[id], e0 = e;   // (e0: the registration as it is, for the slot's own view)
@@ -2792,9 +2800,10 @@ static VkImageView id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage,
     if (storage && im->m.z) { pthread_mutex_lock(&g_tmu); img_own(im, cb); pthread_mutex_unlock(&g_tmu); }   // (a shader image: memory of its own before the draw writes it; vka_tex_id_storage_pending ended the pass)
     if (!storage && im->m.size >= big_min()) { pthread_mutex_lock(&g_tmu); im->nsamp++; pthread_mutex_unlock(&g_tmu); }   // (DM_VK_BIGIMG_MB: bound for sampling)
     if (storage && (!(im->usage & VK_IMAGE_USAGE_STORAGE_BIT) || need)) { pthread_mutex_lock(&g_tmu); int ok = img_storage_upgrade(im, cb, need); pthread_mutex_unlock(&g_tmu); if (!ok && !(im->usage & VK_IMAGE_USAGE_STORAGE_BIT)) { pthread_mutex_lock(&g_tmu); im_unhold_locked(im); pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; } }
-    // Bound as a shader image: the GPU writes it (nvn_mtl.m mtl_tex_gpu_owned: ShaderWrite usage), so its storage is no longer its content. Without this a CPU write near a
-    // tracked image's pages re-uploaded stale storage over what a compute pass wrote (DKB's 1x1 R16F texture, re-uploaded in the level)
-    if (storage && !im->is_video) vka_img_written(im);
+    // Bound as a shader image the shader writes (the binding's DMSH_VK_BF_RW, or a host pass's output): the GPU writes it (nvn_mtl.m mtl_tex_gpu_owned: ShaderWrite usage), so
+    // its storage is no longer its content. Without this a CPU write near a tracked image's pages re-uploaded stale storage over what a compute pass wrote (DKB's 1x1 R16F
+    // texture, re-uploaded in the level). A shader image only read is not a write (vka_wbfollow.h wbf_view_writes: Mario Tennis Fever's glyph cache)
+    if (writes && !im->is_video) vka_img_written(im);
     if (!storage && !(im->usage & VK_IMAGE_USAGE_SAMPLED_BIT)) { pthread_mutex_lock(&g_tmu); im_unhold_locked(im); pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
     if (imo) *imo = im;
     // Strict (unbound rather than the image's own format) for a class reinterpretation, and for a shader image in another format than the image's: the shader declares
@@ -3033,8 +3042,9 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     // only after a pool came or went (vka_img.vep). The counts are read before the scan, so a picture written during it moves them for the next submission
     static uint64_t seen, vseen, vw_seen, ve_seen; uint64_t now = nvn_dirty_now(), vnow = nvn_sparse_gen(), vw = dm_codec_video_writes(), ve = dm_codec_video_epoch();
     int vid_new = vw != vw_seen || ve != ve_seen;
-    if (now != seen || vnow != vseen || vid_new) {
-        seen = now; vseen = vnow; vw_seen = vw; ve_seen = ve;
+    static int g_wbf_wait; static uint64_t g_wbf_up, g_wbf_waits; int g_wbf_on = VKA_ENV("DM_VK_WB_FOLLOW", 1) != 0; uint64_t done = vka_done();   // g_wbf_wait: a GPU-written linear texture waited for its copy-back in the last scan
+    if (now != seen || vnow != vseen || vid_new || g_wbf_wait) {
+        seen = now; vseen = vnow; vw_seen = vw; ve_seen = ve; g_wbf_wait = 0;
         for (int i = 0; i < g_nlive; i++) {
             vka_img *im = g_live[i];
             if (img_pool_dead(im)) continue;
@@ -3072,7 +3082,15 @@ void vka_tex_prepare(VkCommandBuffer cb) {
                 if (g_reup++ < 8) VLOG("sparse texture serial %llu %ux%u format %#x: its mappings or pages changed, re-uploaded", (unsigned long long)im->serial, im->w, im->h, im->d.format);
                 continue;
             }
-            if (!im->track || im->gpu_owned || !im->mem) continue;
+            if (!im->track || !im->mem) continue;
+            // A GPU-written image's content is the GPU's, except a linear one's once its copy-back has run: then the CPU's later writes to the storage are uploaded (vka_wbfollow.h:
+            // Mario Tennis Fever clears its 8192x2048 R8 glyph cache on the GPU and rasterizes glyphs into it on the CPU; skipped, every text box was blank). While the copy-back
+            // is queued or on the GPU the image waits, and the scan runs again at the next prepare even if the CPU writes nothing more (g_wbf_wait)
+            if (!wbf_follows(im->gpu_owned, img_wb_kind(im) && g_wbf_on, im->wb_pending, im->wb_fence, done)) {
+                if (g_wbf_on && im->gpu_owned && img_wb_kind(im) && (im->wb_pending || done < im->wb_fence)) { g_wbf_wait = 1; g_wbf_waits++; }
+                continue;
+            }
+            int wbf = im->gpu_owned;   // (counted below once its pages were found written: DM_VK_WB_FOLLOW's line)
             uint64_t size = im->L.size;
             if (!im->span) im->span = nvn_dirty_span(im->mem, size);
             if (!nvn_dirty_since_span(im->span, im->mem, size, im->stamp)) continue;
@@ -3080,6 +3098,8 @@ void vka_tex_prepare(VkCommandBuffer cb) {
             size_t lo, hi;
             if (!nvn_dirty_bounds_since(im->span, im->mem, size, im->stamp, &lo, &hi)) continue;
             tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
+            if (wbf) { uint64_t k = ++g_wbf_up; if (k <= 4 || !(k & (k - 1))) VLOG("texture serial %llu %ux%u format %#x: the CPU wrote it after its copy-back, its written part uploaded (%llu so far; %llu scans waited for a copy-back; DM_VK_WB_FOLLOW=0 turns this off)",
+                                                                         (unsigned long long)im->serial, im->w, im->h, im->d.format, (unsigned long long)k, (unsigned long long)g_wbf_waits); }
             int rows = VKA_ENV("DM_VK_ROWS", 1);
             if (rows && upload_rows_tracked(im, &t, cb, lo, hi)) continue;
             if (upload_bands_tracked(im, &t, cb, lo, hi, im->stamp)) { if (g_reup++ < 8) VLOG("texture serial %llu %ux%u format %#x: the bands of its storage that changed re-uploaded", (unsigned long long)im->serial, im->w, im->h, im->d.format); continue; }
