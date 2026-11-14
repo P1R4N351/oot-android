@@ -3,6 +3,7 @@ package dev.nxnative.android;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -18,6 +19,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.system.ErrnoException;
 import android.system.Os;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -1151,6 +1153,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
     /** Whether the window asks for landscape (GameOrientation): Settings › Screen rotation Landscape, on a phone; Automatic asks for nothing */
     private boolean orientationFixed() {
+        // DeX or another external display (PR #73): the activity's own display is not the default one, so the desktop sizes the window and the monitor's orientation decides.
+        // The activity's display is what counts: screen recording, casting and virtual displays appear in DisplayManager.getDisplays() and must not unlock the phone.
+        android.view.Display d = getDisplay();
+        if (d != null && d.getDisplayId() != android.view.Display.DEFAULT_DISPLAY) return false;
         android.graphics.Rect b = getWindowManager().getMaximumWindowMetrics().getBounds();
         return GameOrientation.fixedLandscape(b.width(), b.height(), getResources().getDisplayMetrics().density, Prefs.rotationAuto(this));
     }
