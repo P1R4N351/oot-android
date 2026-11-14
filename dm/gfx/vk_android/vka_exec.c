@@ -130,7 +130,8 @@ void mtl_set_frame(uint64_t f) {
           vka_gbar_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb);
           oq_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb);
           { void vka_drv_memo_stats(char *b, size_t n); vka_drv_memo_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
-          vka_memu_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
+          vka_memu_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb);
+          { void vka_memu_stop_stats(char *b, size_t n, double frames); vka_memu_stop_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb); } }
         { static uint64_t fc; if (f - fc >= 1800) { vka_disp_census(f); fc = f; } }   // (every 1,800 frames)
         vka_dobj_census(f);   // DM_VK_DISP_OBJ (its own interval)
         f0 = f; d0 = g_stat_draws; rp0 = vka_n_rp; b0 = vka_n_bar; ub0 = g_n_ub; s0 = g_n_sub; r0 = g_rec_ns; o0 = g_stat_ops; pc0 = g_n_pclear; ch0 = g_n_chunks;
@@ -1380,10 +1381,40 @@ int vka_mdx_args(uint64_t ind, VkBuffer *b, VkDeviceSize *o) {
 // compute work there, before the pass: three walks of those records with the state as it will be at each draw (vka_state_op on a copy of the replay's). A mesh draw met
 // in an open pass that no look-ahead reached ends the pass first (a split, counted). g_memu_cover: a look-ahead reached past the record being replayed (cleared by any
 // record it stops at, and by a new submission)
+// Game barriers (DM_VK_MESH_EMU_BAR=1, live; default 1, with DM_VK_BAR_KEEP): the look-ahead goes on past one, as most are taken inside the pass (vka_rp_game_barrier),
+// so a mesh draw after a barrier between the draws of one pass no longer ends that pass (OoT: about 80 such barriers and 27 split passes a frame on an Adreno 740, Forgejo
+// #249). A draw past a barrier is taken when its task and mesh shaders write no memory and sample no texture (vka_memu_draw.inc memu_hoistable); otherwise the look-ahead
+// stops there. A barrier the replay does not take inside the pass (a draw before it wrote memory, or no pass open) drops the entries past it (vka_memu_bar_met)
+// Why a look-ahead stopped (the replay statistics' "look-ahead stops" part): the record kind, by op; MEMU_STOP_LIMIT the batch's 128 draws, _HOIST a draw past a barrier
 enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_END };
-void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8_t *p, int idx);
-int vka_memu_on(void); int vka_memu_has(const uint8_t *p); void vka_memu_cur(const uint8_t *p);
+int vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8_t *p, int idx, int bars);
+int vka_memu_on(void); int vka_memu_has(const uint8_t *p); void vka_memu_cur(const uint8_t *p); void vka_memu_bar_met(int kept);
 static int g_memu_cover; static uint64_t g_memu_sub = ~0ull; static vka_dstate g_memu_st;
+enum { MEMU_STOP_BARRIER, MEMU_STOP_UB, MEMU_STOP_RT, MEMU_STOP_DISPATCH, MEMU_STOP_COPY, MEMU_STOP_WAIT, MEMU_STOP_COND, MEMU_STOP_OTHER, MEMU_STOP_LIMIT, MEMU_STOP_HOIST, MEMU_STOP_N };
+static uint64_t g_memu_stop[MEMU_STOP_N];
+static int memu_cross(void) { return VKA_ENV("DM_VK_MESH_EMU_BAR", 1) && VKA_ENV("DM_VK_BAR_KEEP", 1); }
+static int memu_stop_kind(uint32_t op) {
+    switch (op) {
+    case OP_BARRIER: return MEMU_STOP_BARRIER;
+    case OP_UPDATE_UB: return MEMU_STOP_UB;
+    case OP_SET_RT: return MEMU_STOP_RT;
+    case OP_DISPATCH: return MEMU_STOP_DISPATCH;
+    case OP_CLEAR_BUF: case OP_CLEAR_TEX: case OP_COPY_B2B: case OP_COPY_B2T: case OP_COPY_T2B: case OP_COPY_T2T: return MEMU_STOP_COPY;
+    case OP_WAIT_EVENT: case OP_WAIT_SYNC: case OP_SIGNAL_EVENT: return MEMU_STOP_WAIT;
+    case OP_RENDER_COND: return MEMU_STOP_COND;
+    default: return MEMU_STOP_OTHER;
+    }
+}
+// The replay statistics' part: per frame, the look-ahead's stops that ended a walk with mesh draws, by what stopped it
+void vka_memu_stop_stats(char *b, size_t n, double frames) {
+    static uint64_t s0[MEMU_STOP_N]; uint64_t t = 0; for (int i = 0; i < MEMU_STOP_N; i++) t += g_memu_stop[i] - s0[i];
+    if (frames <= 0 || !t) { if (n) b[0] = 0; memcpy(s0, g_memu_stop, sizeof s0); return; }
+    static const char *const nm[MEMU_STOP_N] = {"barrier", "inline update", "render targets", "dispatch", "copy / clear", "wait / event", "render condition", "other", "128 draws", "a draw past a barrier"};
+    size_t o = (size_t)snprintf(b, n, "mesh look-ahead stops per frame:");
+    for (int i = 0; i < MEMU_STOP_N && o < n; i++) if (g_memu_stop[i] != s0[i]) o += (size_t)snprintf(b + o, n - o, " %s %.1f,", nm[i], (g_memu_stop[i] - s0[i]) / frames);
+    if (o < n && o && b[o - 1] == ',') b[o - 1] = 0;
+    memcpy(s0, g_memu_stop, sizeof s0);
+}
 static int memu_allowed(uint32_t op) {
     switch (op) {
     case OP_END: case OP_JUMP: case OP_BEGIN: case OP_CALL: case OP_DRAW: case OP_DRAW_IDX: case OP_SCISSOR: case OP_COPY_STRIDE: case OP_CLEAR_COLOR: case OP_CLEAR_DS:
@@ -1394,33 +1425,40 @@ static int memu_allowed(uint32_t op) {
     default: return 0;
     }
 }
-// One walk from record p; phase MEMU_ADD counts the mesh draws it hands over (the later walks meet the same ones in the same order); phase -1 only says whether there is one, without the state
+// One walk from record p; phase MEMU_ADD counts the mesh draws it hands over (the later walks meet the same ones in the same order, and pass over those MEMU_ADD did not
+// take); phase -1 only says whether there is one, without the state. Game barriers are crossed when memu_cross (counted: each draw's entry keeps how many it crossed)
 static int memu_walk(const uint8_t *p, int phase) {
-    const uint8_t *ret[17]; int nret = g_nxret, n = 0; memcpy(ret, g_xret, sizeof(ret[0]) * (size_t)nret);
+    const uint8_t *ret[17]; int nret = g_nxret, n = 0, bars = 0, cross = memu_cross(), stop = -1; memcpy(ret, g_xret, sizeof(ret[0]) * (size_t)nret);
     if (phase >= 0) memcpy(&g_memu_st, &S.d, sizeof g_memu_st);
     for (int guard = 0; guard < 200000; guard++) {
         op_hdr h; memcpy(&h, p, sizeof h); const void *a = p + 8;
         if (h.op == OP_END) { if (!nret) break; p = ret[--nret]; continue; }
         if (h.op == OP_JUMP) { memcpy(&p, a, 8); continue; }
         if (h.op == OP_CALL) { if (nret == 17) break; ret[nret++] = p + h.size; memcpy(&p, a, 8); continue; }
-        if (!memu_allowed(h.op) || h.size < 8) break;
+        if (h.op == OP_BARRIER && cross && h.size >= 8) { bars++; p += h.size; continue; }
+        if (!memu_allowed(h.op) || h.size < 8) { stop = memu_stop_kind(h.op); break; }
         if (h.op == OP_DRAW) { p_draw t; const p_draw *d = draw_rec(a, h.size, &t);
-            if (d->prim == NVN_PRIM_MESH && !d->mdi_cnt) { if (n == 128) break; if (phase < 0) return 1; vka_memu_batch(phase, &g_memu_st, d, p, n); n++; } }
+            if (d->prim == NVN_PRIM_MESH && !d->mdi_cnt) {
+                if (n == 128) { stop = MEMU_STOP_LIMIT; break; }
+                if (phase < 0) return 1;
+                if (!vka_memu_batch(phase, &g_memu_st, d, p, n, bars)) { stop = MEMU_STOP_HOIST; break; }
+                n++; } }
         else if (h.op != OP_DRAW_IDX && phase >= 0) vka_state_op(&g_memu_st, h.op, a);
         p += h.size;
     }
+    if (phase == MEMU_ADD && n && stop >= 0) g_memu_stop[stop]++;
     return n;
 }
 static void memu_scan(const uint8_t *p) {
     g_memu_cover = 1;
+    vka_memu_batch(MEMU_BEGIN, NULL, NULL, NULL, 0, 0);   // (also with no mesh draw ahead: an entry of the last batch the replay passed over is not taken later)
     if (S.rc_skip || !memu_walk(p, -1)) return;   // (most passes have no mesh draw: no state copied for them)
-    vka_memu_batch(MEMU_BEGIN, NULL, NULL, NULL, 0);
     if (!memu_walk(p, MEMU_ADD)) return;
-    vka_memu_batch(MEMU_SETUP, NULL, NULL, NULL, 0);
+    vka_memu_batch(MEMU_SETUP, NULL, NULL, NULL, 0, 0);
     memu_walk(p, MEMU_TASK);
-    vka_memu_batch(MEMU_DIST, NULL, NULL, NULL, 0);
+    vka_memu_batch(MEMU_DIST, NULL, NULL, NULL, 0, 0);
     memu_walk(p, MEMU_MESH);
-    vka_memu_batch(MEMU_END, NULL, NULL, NULL, 0);
+    vka_memu_batch(MEMU_END, NULL, NULL, NULL, 0, 0);
 }
 static void memu_before_draw(const uint8_t *p, const p_draw *d) {
     if (!vka_memu_on()) return;
@@ -1448,7 +1486,7 @@ static int exec(const uint8_t *p, int depth) {   // 1: parked at a wait (g_pk ho
         op_hdr h; memcpy(&h, p, sizeof h);
         const void *a = p + 8;
         if ((h.op == OP_DRAW || h.op == OP_DRAW_IDX) && h.size >= 8 && mdi_rest(h.op, a, h.size)) { p += h.size; continue; }
-        if (g_memu_cover && !memu_allowed(h.op)) g_memu_cover = 0;   // (mesh draws through compute: the look-ahead stopped here)
+        if (g_memu_cover && !memu_allowed(h.op) && !(h.op == OP_BARRIER && memu_cross())) g_memu_cover = 0;   // (mesh draws through compute: the look-ahead stopped here)
         int bar_kept = 0;   // a game barrier taken inside the open pass (vka_rp_game_barrier): no pass end, no full barrier
         switch (h.op) {   // GPU work other than a dispatch: after the barrier the dispatches before it left pending (vka_draw.c "Dispatch order"), and before a part ends at a draw
         case OP_DRAW: case OP_DRAW_IDX: case OP_DRAW_TEX: case OP_CLEAR_COLOR: case OP_CLEAR_DS: case OP_CLEAR_TEX: case OP_CLEAR_BUF: case OP_COPY_B2B: case OP_COPY_B2T:
@@ -1460,7 +1498,9 @@ static int exec(const uint8_t *p, int depth) {   // 1: parked at a wait (g_pk ho
         case OP_END: case OP_BEGIN: case OP_JUMP: case OP_CALL: case OP_SIGNAL_EVENT: case OP_REPORT_COUNTER: case OP_FENCE_SYNC: case OP_RENDER_COND: case OP_RESET_COUNTER: case OP_WAIT_EVENT: case OP_WAIT_SYNC:
         case OP_SCISSOR: case OP_COPY_STRIDE: case OP_UPDATE_UB: case OP_DRAW: case OP_DRAW_IDX: break;
         case OP_SET_RT: if (g_cb && !vka_pass_keep()) vka_rp_end(); else if (g_cb) vka_rp_set_rt((const p_set_rt *)a); break;
-        case OP_BARRIER: if (g_cb) { int32_t bits; memcpy(&bits, a, 4); bar_kept = vka_rp_game_barrier((uint32_t)bits); if (!bar_kept) vka_rp_end(); } break;
+        case OP_BARRIER: if (g_cb) { int32_t bits; memcpy(&bits, a, 4); bar_kept = vka_rp_game_barrier((uint32_t)bits); if (!bar_kept) vka_rp_end(); }
+                         if (vka_memu_on()) { vka_memu_bar_met(bar_kept); if (!bar_kept) g_memu_cover = 0; }   // (the batch's entries past a barrier not taken in the pass go: vka_memu_draw.inc)
+                         break;
         case OP_CLEAR_COLOR: case OP_CLEAR_DS: break;   // the pass is ended by the next draw over other targets, or the clear (vka_rp_clear)
         default: if (g_cb && !vka_state_op(&S.d, h.op, a)) vka_rp_end(); else if (!g_cb) vka_state_op(&S.d, h.op, a); break;
         }

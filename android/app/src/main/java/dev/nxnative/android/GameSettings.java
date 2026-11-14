@@ -266,6 +266,7 @@ final class GameSettings {
         // ---- Controls ----
         controls.add(new Ui.Setting(a, "📳", "Rumble", null).toggle(a, Prefs.rumble(a, id), (b, on) -> Prefs.rumble(a, id, on)).says("The controller, or the phone without one", "No rumble"));
         controls.add(new Ui.Setting(a, "🕹️", "Button mapping", v -> PadMapUi.forGame(a, g, again)).value(PadMapUi.label(a, id)).chevron(a));
+        controls.add(new Ui.Setting(a, "🎯", "Motion sensitivity", v -> motionSens(a, g, again)).value(Prefs.MOTION_NAMES[Prefs.motionSens(a, id)]).note("How far the phone's gyro turns the aim; from the next start").chevron(a));
         controls.add(new Ui.Setting(a, "🅰️", "Xbox button labels", v -> xbox(a, g, again)).value(Prefs.xboxLabel(Prefs.xboxButtons(a, id))).chevron(a));
 
         // ---- Advanced: for testers ----
@@ -825,6 +826,10 @@ final class GameSettings {
                           DlssTune.sharpName(DlssTune.SHARP_DEFAULT), GameUpscaler.ownDlssSharp(a, g.titleId), v -> GameUpscaler.dlssSharp(a, g.titleId, v), done);
     }
 
+    private static void motionSens(MainActivity a, Game g, Runnable done) {   // the phone's gyro scale (Prefs.MOTION_PCT, DM_MOTION_SENS); read when the game starts
+        StepSlider.dialog(a, "Motion sensitivity", " · " + g.name, Prefs.MOTION_NAMES, Prefs.motionSens(a, g.titleId), "Slower", "Faster",
+                          Prefs.MOTION_NAMES[Prefs.MOTION_DEFAULT], Prefs.ownMotionSens(a, g.titleId), v -> Prefs.motionSens(a, g.titleId, v), done);
+    }
     private static void drs(MainActivity a, Game g, Runnable done) {   // the render size's range (Prefs.DRS), from the next start; the in-game panel changes it live
         DrsSlider.dialog(a, " · " + g.name, Prefs.drs(a, g.titleId), firstLabel(recLabel(Prefs.DRS_NAMES, Recommend.DRS_VALUES, Prefs.rec(a, g.titleId, Recommend.DRS)), Prefs.DRS_NAMES[Prefs.drs(a)]), Prefs.ownDrs(a, g.titleId), v -> Prefs.drs(a, g.titleId, v), done);
     }

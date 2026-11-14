@@ -88,11 +88,11 @@ class Scramble(unittest.TestCase):
     def test_read_checks(self):
         path = 'x/file'; raw = bytes((i * 7) & 0xff for i in range(32))
         plain, total = cra.unscramble(path, raw)
-        good = (0, path, 25, 16, ((total >> 32) ^ total) & 0xffffffff)
+        good = (0, path, 25, 16, ((total >> 32) ^ total) & 0xffffffff, cra.LAYOUT)
         f = io.BytesIO(bytes(16) + raw)
         self.assertEqual(cra.read(f, good), plain[:25])
         self.assertEqual(cra.head(f, good), cra.unscramble(path, raw[:16])[0])
-        with self.assertRaises(cra.Error): cra.read(f, (0, path, 25, 16, good[4] ^ 1))
+        with self.assertRaises(cra.Error): cra.read(f, (0, path, 25, 16, good[4] ^ 1, cra.LAYOUT))
 
 
 _libcra = []

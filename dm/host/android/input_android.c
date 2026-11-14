@@ -209,6 +209,7 @@ int android_user_select(const char *const *names, const int *offered, int n, int
 static pthread_mutex_t g_mo_mu = PTHREAD_MUTEX_INITIALIZER;   // start / stop
 static pthread_t g_mo_th; static _Atomic int g_mo_run; static ALooper *_Atomic g_mo_looper; static int g_mo_on;
 static _Atomic int g_rotation = 1;   // a phone held in landscape, its top to the left, until the launcher says
+void nxhost_motion_sens(float f) { dm_motion_sens(f); }
 void nxhost_motion_rotation(int r) { atomic_store(&g_rotation, r & 3); }
 static int env_off(const char *n) { const char *e = getenv(n); return e && !strcmp(e, "0"); }
 static void *motion_thread(void *arg) {

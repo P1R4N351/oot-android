@@ -53,6 +53,7 @@ int g_nmod;
 uint64_t g_t0_ns;
 uint64_t now_ns(void) { return 0; }
 int dm_sdk_major(void) { return 20; }
+int dm_sdk_ounce(void) { return 0; }
 int dm_game_imports(const char *prefix) { (void)prefix; return 1; }
 module_t *module_of(const void *p) { (void)p; return NULL; }
 void dm_backtrace(uint64_t fp) { (void)fp; }
@@ -109,7 +110,7 @@ int main(void) {
     // SDK 21's built-in font record (Splatoon Raiders): filled from the standard font, past its header, and reported loaded
     pl_builtin_font_t bf; memset(&bf, 0xee, sizeof bf);
     unsigned got = h_pl_BuiltInOunce(&bf, 0, 0); font_t f0 = font_get(0);
-    CHECK(got == 1 && f0.p && bf.address == f0.p + font_skip() && bf.size == f0.n - font_skip() && bf.type == 0, "built-in font record filled");
+    CHECK(got == 1 && f0.p && bf.address == f0.p + 8 && bf.size == f0.n - 8 && bf.type == 0, "built-in font record filled");
     // Real selection from here on: forget the planted fonts
     memset(type_f, 0, sizeof type_f); memset(type_done, 0, sizeof type_done);
     char dir[] = "/tmp/t_shared_font_XXXXXX"; CHECK(mkdtemp(dir) != NULL, "temp folder");

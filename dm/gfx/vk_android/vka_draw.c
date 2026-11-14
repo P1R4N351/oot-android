@@ -152,7 +152,7 @@ void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot) {
     g_cur_dp[g_slot] = 0;
     vka_pso_save(0);
     static int ph; VkImageView placeholder(uint8_t dim, int storage);
-    if (!V.null_desc && !ph && statics()) {   // no null descriptors: the placeholders are made here, outside any pass (their first use records a clear)
+    if (!ph && statics()) {   // the placeholders are made here, outside any pass (their first use records a clear): for a device without null descriptors, and for sets (set_no_nulls)
         ph = 1; static const uint8_t dims[] = {1, 2, 3, 1 | DMSH_VK_DIM_ARRAY, 3 | DMSH_VK_DIM_ARRAY};
         for (size_t i = 0; i < sizeof dims; i++) for (int c = 0; c < 3; c++) placeholder(dims[i] | (c == 1 ? DMSH_VK_DIM_SINT : c == 2 ? DMSH_VK_DIM_UINT : 0), 0);
     }
@@ -1312,7 +1312,7 @@ VkImageView placeholder(uint8_t dim, int storage) {
 static uint64_t g_pt_last, g_pt[9], g_ps[6], g_pt_n, g_pt_tot; static int g_pt_ph;
 static inline uint64_t cntvct(void) { uint64_t v; __asm__ volatile("mrs %0, cntvct_el0" : "=r"(v)); return v; }
 // ---------- Set 0 from the walk ----------
-typedef struct { VkWriteDescriptorSet w[512]; VkDescriptorBufferInfo bi[512]; VkDescriptorImageInfo ii[512]; VkBufferView bv[512]; uint64_t ad[512]; uint32_t n; } writes_t;   // ad: a guest buffer's address (0 = other)
+typedef struct { VkWriteDescriptorSet w[512]; VkDescriptorBufferInfo bi[512]; VkDescriptorImageInfo ii[512]; VkBufferView bv[512]; uint64_t ad[512]; uint8_t dim[512]; uint32_t n; } writes_t;   // ad: a guest buffer's address (0 = other); dim: the shape the shader declares (set_no_nulls)
 static writes_t g_w;
 // A texture or image read by a shader that declares it in another numeric class (float / uint / sint) than the view the game binds: logged once per shader, stage and binding
 // (the first 64), with the texture. Such a binding is read through a view of the shader's class of the same texel size (vka_tex.c class_twin) unless its module is retyped
@@ -1337,7 +1337,7 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
         if (g_w.n == 512) { VRED_ONCE("more than 512 descriptors in one draw"); return 0; }
         uint32_t k = g_w.n;
         VkWriteDescriptorSet *w = &g_w.w[k]; VkDescriptorBufferInfo *bi = &g_w.bi[k]; VkDescriptorImageInfo *ii = &g_w.ii[k];
-        g_w.ad[k] = r[i].what == VKA_R_BUF ? r[i].addr : 0;
+        g_w.ad[k] = r[i].what == VKA_R_BUF ? r[i].addr : 0; g_w.dim[k] = r[i].dim;
         *w = (VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = r[i].binding, .dstArrayElement = r[i].elem, .descriptorCount = 1, .descriptorType = (VkDescriptorType)r[i].desc};
         int ok = 1;
         switch (r[i].desc) {
@@ -1502,6 +1502,27 @@ static int push_same(VkPipelineBindPoint bp, VkPipelineLayout layout) {
     return 0;
 }
 static int g_sets_dry, g_dry_pool;   // DM_VK_INSTANCE: bind_sets only builds the writes (g_w) when g_sets_dry is set, and sets_push binds them later
+// A set written with vkUpdateDescriptorSets (a layout with more descriptors than maxPushDescriptors) gets no null descriptor: an unbound image takes a placeholder (the
+// 1x1 zero images of a device without null descriptors, placeholder()), an unbound buffer the zero or sink span. Null descriptors are valid there with robustness2's
+// nullDescriptor, but Qualcomm's driver (Adreno 740, 1.3.128 build 69e13475cb) dereferences a null image view or buffer in vkUpdateDescriptorSets (SIGSEGV at 0x48,
+// vkUpdateDescriptorSets+376: issue #249, Ocarina of Time in water and at area transitions) and takes the compositor down with it; its push descriptors take the same
+// nulls. A workaround for that driver, made for every driver since it is valid everywhere and reads the same zeros: pushed sets keep their null descriptors.
+// Texel buffers (bound only as null here) and 1D or multisampled images (no placeholder) stay null. DM_VK_SET_NULLS=1 writes null descriptors into sets as before
+static void set_no_nulls(void) {
+    static int on = -1; if (on < 0) on = !VKA_ENV("DM_VK_SET_NULLS", 0);
+    if (!on || !V.null_desc) return;   // (without null descriptors stage_writes already wrote placeholders)
+    VkImageView placeholder(uint8_t dim, int storage);
+    for (uint32_t k = 0; k < g_w.n; k++) {
+        VkWriteDescriptorSet *w = &g_w.w[k];
+        if (w->pImageInfo && w->descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER && !w->pImageInfo->imageView) {
+            VkImageView v = placeholder(g_w.dim[k], w->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            if (v) { g_w.ii[k].imageView = v; g_w.ii[k].imageLayout = VK_IMAGE_LAYOUT_GENERAL; w->pImageInfo = &g_w.ii[k]; }
+        } else if (w->pBufferInfo && !w->pBufferInfo->buffer) {
+            int st = w->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            g_w.bi[k] = (VkDescriptorBufferInfo){st ? g_sink.buf : g_zero.buf, st ? g_sink.off : g_zero.off, 65536}; w->pBufferInfo = &g_w.bi[k];
+        }
+    }
+}
 // The writes of g_w bound: pushed (only what changed since the last push) or as a set, and the texture pool set
 static int sets_push(const vka_layout *lay, VkPipelineBindPoint bp, int any_pool) {
     uint64_t t2_ = g_prof ? cntvct() : 0;
@@ -1512,6 +1533,7 @@ static int sets_push(const vka_layout *lay, VkPipelineBindPoint bp, int any_pool
         g_pd[bp == VK_PIPELINE_BIND_POINT_COMPUTE].n = 0;   // set 0 bound as a set: the last push is no longer what the draws see
         VkDescriptorSet set = set_alloc(lay->set0); if (!set) return 0;
         for (uint32_t i = 0; i < g_w.n; i++) g_w.w[i].dstSet = set;
+        set_no_nulls();
         if (g_w.n) vk.vkUpdateDescriptorSets(V.dev, g_w.n, g_w.w, 0, NULL);
         vk.vkCmdBindDescriptorSets(g_cb, bp, lay->layout, 0, 1, &set, 0, NULL);
     }

@@ -485,6 +485,16 @@ run: fileback
 endif
 $(B)/t_android_fileback: t_android_fileback.c $(VKA)/vka_fileback.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_fileback.c -lpthread
+# Fixed maps in the guest block merge with their neighbours again (plat_guestmap.h; hle_svc.c guest_release, vka_mem.c sw_mmap_fixed). Linux only (the kernel's merge rules,
+# counted in /proc/self/maps): make guestmap, in `run` on a Linux host
+.PHONY: guestmap
+guestmap: $(B)/t_android_guestmap
+	$(B)/t_android_guestmap
+ifeq ($(shell uname -s),Linux)
+run: guestmap
+endif
+$(B)/t_android_guestmap: t_android_guestmap.c ../plat/plat_guestmap.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_guestmap.c
 # The game's barriers between compute dispatches: the barrier chosen for each, checked against NVN's ordering over every short sequence (vka_gbar.h; vka_gbar.c)
 $(B)/t_android_gbar: t_android_gbar.c $(VKA)/vka_gbar.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_gbar.c

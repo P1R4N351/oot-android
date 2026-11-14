@@ -39,6 +39,7 @@
 #include "vka_mapbudget.h"
 #include "vka_fd_alias.h"
 #include "vka_fileback.h"
+#include "../../host/plat/plat_guestmap.h"
 
 static void fb_placed(uintptr_t lo, uintptr_t hi);           // File-backed pools (below): a placement took [lo, hi) from the file
 static void fb_gone(uintptr_t lo, uintptr_t hi, int back);   // a pool's range finalized (back 1: its pieces go back to anonymous memory) or released (0: dropped)
@@ -149,7 +150,9 @@ static void prot_mark(uintptr_t a, size_t n) {   // async-signal-safe (the dirty
 // marks its range at its end
 static int g_sw_fail;
 static long sw_mprotect(uintptr_t a, size_t n, int prot) { long r = syscall(__NR_mprotect, a, n, prot); if (r) g_sw_fail = 1; return r; }
-static void *sw_mmap_fixed(uintptr_t a, size_t n) { long r = syscall(__NR_mmap, a, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0); if (r == -1 || r != (long)a) { g_sw_fail = 1; return MAP_FAILED; } plat_mem_name_guest((void *)r, n); return (void *)r; }   // (named as the guest block: it merges with its neighbours)
+// Anonymous pages over [a, a + n) of the guest block with the block's flags and name (plat_guestmap.h): they merge with their neighbours. Without MAP_NORESERVE the map had
+// VM_ACCOUNT and no VM_NORESERVE, so every give-back left a mapping of its own for the process's life
+static void *sw_mmap_fixed(uintptr_t a, size_t n) { long r = syscall(__NR_mmap, a, n, PROT_READ | PROT_WRITE, PLAT_GUEST_MAP | MAP_FIXED, -1, 0); if (r == -1 || r != (long)a) { g_sw_fail = 1; return MAP_FAILED; } plat_mem_name_guest((void *)r, n); return (void *)r; }
 static int prot_runs_text(uintptr_t lo, uintptr_t hi, prun *out, int max);
 #ifndef MAP_FIXED_NOREPLACE
 #define MAP_FIXED_NOREPLACE 0x100000
@@ -374,6 +377,12 @@ static VkBuffer seg_buffer(VkDeviceSize n) {
     return r ? VK_NULL_HANDLE : b;
 }
 static void unmap_placed(VkDeviceMemory m) { VkMemoryUnmapInfoKHR ui = {VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO_KHR, .flags = V.unmap_reserve ? VK_MEMORY_UNMAP_RESERVE_BIT_EXT : 0, .memory = m}; vk.vkUnmapMemory2KHR(V.dev, &ui); }
+// Diagnostic for the maps outside the guest block (issue #265: on Qualcomm's driver its /dev/kgsl maps there grew to 16,700, about what placed memory holds in bytes,
+// several times its segments in count): whether the driver keeps the CPU map of a memory (the one a placement or a join copies through, made where the driver likes)
+// after vkUnmapMemory. Its first page still mapped (msync answers 0, ENOMEM when nothing is mapped there) counts as kept. Counted, never changed: a map the driver keeps
+// is the driver's to reuse. Reported in the maps thread's line ("CPU maps kept after vkUnmapMemory K of N")
+static _Atomic uint64_t g_um_n, g_um_kept;
+static void unmap_note(const void *p) { if (!p) return; atomic_fetch_add(&g_um_n, 1); if (!msync((void *)((uintptr_t)p & ~(uintptr_t)4095), 4096, MS_ASYNC)) atomic_fetch_add(&g_um_kept, 1); }
 static void copy_readable(uint8_t *to, uintptr_t lo, const prun *r, int n) {   // the readable runs of [lo, ...) into to; the rest zero
     for (int i = 0; i < n; i++) { uint8_t *d = to + (r[i].lo - lo); size_t k = r[i].hi - r[i].lo; if (r[i].prot >= 0 && (r[i].prot & PROT_READ)) memcpy(d, (const void *)r[i].lo, k); else memset(d, 0, k); }
 }
@@ -445,7 +454,7 @@ static int place(uintptr_t lo, uintptr_t hi, VkDeviceSize *grow) {
             ok = q == (void *)lo; r = ok ? VK_SUCCESS : VK_ERROR_MEMORY_MAP_FAILED;
             if (!ok) { sw_hole_check(lo, n, 0, "exported pool memory"); if (sw_mmap_fixed(lo, n) != MAP_FAILED) memcpy((void *)lo, p, n); }
         } else {
-            vk.vkUnmapMemory(V.dev, s.mem);
+            vk.vkUnmapMemory(V.dev, s.mem); unmap_note(p);
             VkMemoryMapPlacedInfoEXT pi = {VK_STRUCTURE_TYPE_MEMORY_MAP_PLACED_INFO_EXT, .pPlacedAddress = (void *)lo};
             VkMemoryMapInfoKHR mi = {VK_STRUCTURE_TYPE_MEMORY_MAP_INFO_KHR, .pNext = &pi, .flags = VK_MEMORY_MAP_PLACED_BIT_EXT, .memory = s.mem, .offset = 0, .size = V.placed_range ? n : VK_WHOLE_SIZE};
             void *q = NULL;
@@ -1020,7 +1029,7 @@ static int join(int k0, int k1, seglist *l) {
     prot_readonly(pr, npr);   // writers wait in the fault hook from here
     for (int i = 0; i < npr; i++) if (!(pr[i].prot & PROT_READ)) sw_mprotect(pr[i].lo, pr[i].hi - pr[i].lo, PROT_READ);   // (a page with no access: its bytes are the GPU's too)
     memcpy(p, (const void *)lo, n);
-    vk.vkUnmapMemory(V.dev, s.mem);
+    vk.vkUnmapMemory(V.dev, s.mem); unmap_note(p);
     // The old memory freed before the new is mapped over its range: the Adreno driver's vkFreeMemory takes the placed range down even after an unmap with
     // VK_MEMORY_UNMAP_RESERVE_BIT_EXT (unplace), so freed later it would take the new map down. The queue is idle: nothing on the GPU uses it
     for (int i = 0; i < cnt; i++) { unmap_placed(old[i].mem); vk.vkDestroyBuffer(V.dev, old[i].buf, NULL); vk.vkFreeMemory(V.dev, old[i].mem, NULL); }
@@ -1312,9 +1321,10 @@ static void maps_tick(int *line_due) {
     }
     uint64_t now = mono_ns();
     if (*line_due || act || step != last_step || now - last_line_ns >= 60000000000ull) {
-        VLOG("memory maps: %ld of %d (vm.max_map_count, %d %%): placed memory %ld in %d segments (%d split, %ld pieces more than one each), guest block anonymous %ld, outside the guest block %ld (%ld of them kgsl); dirty tracking by %s%zu KiB; read in %.1f ms (DM_VK_MAPS)",
+        VLOG("memory maps: %ld of %d (vm.max_map_count, %d %%): placed memory %ld in %d segments (%d split, %ld pieces more than one each), guest block anonymous %ld, outside the guest block %ld (%ld of them kgsl); dirty tracking by %s%zu KiB; read in %.1f ms (DM_VK_MAPS); the driver's CPU maps kept after vkUnmapMemory %llu of %llu",
              m.total, mx, pct, m.placed, nseg, npieced, inseg, m.guest - m.placed, m.total - m.guest, m.out_kgsl,
-             nvn_dirty_block_bytes() ? "blocks of " : "pages of ", nvn_dirty_block_bytes() ? nvn_dirty_block_bytes() >> 10 : (size_t)getpagesize() >> 10, scan_ms);
+             nvn_dirty_block_bytes() ? "blocks of " : "pages of ", nvn_dirty_block_bytes() ? nvn_dirty_block_bytes() >> 10 : (size_t)getpagesize() >> 10, scan_ms,
+             (unsigned long long)atomic_load(&g_um_kept), (unsigned long long)atomic_load(&g_um_n));
         last_line_ns = now; last_step = step; *line_due = 0;
     }
     maps_hist_log(&m, pct, step, hist_pct, now);

@@ -562,19 +562,21 @@ static int shaking(uint64_t t) { return t >= atomic_load(&g_shake_t0) && t < ato
 // Switch frame, DmGamepad.m): while a player's samples keep arriving (within
 // MOTION_STALE_NS on the host clock) their six-axis sensor reports them (motion_fusion.h) instead of lying flat; a shake (DM_BTN_SHAKE) still adds its side-to-side acceleration.
 // Every history entry is the newest sample, numbered by time. DM_MOTION=0 ignores live motion; DM_MOTION_AXES / DM_MOTION_ACC_SIGN map Apple's axes (motion_fusion.h);
-// DM_MOTION_GAIN sets the tilt correction (default 0.5); DM_MOTION_LOG=1 logs player 1's mapped sample once a second, for checking the axes
+// DM_MOTION_GAIN sets the tilt correction (default 0.5); DM_MOTION_SENS scales the phone's rotation rates (a controller's are real turns) and DM_MOTION_DEADZONE (degrees / s) zeroes the small ones (motion_shape); DM_MOTION_LOG=1 logs player 1's mapped sample once a second, for checking the axes
 enum { MOTION_STALE_NS = 300000000 };
 typedef struct { pthread_mutex_t mu; motion_state st; uint64_t last_ns, received_ns, logged; } live_motion;
 static live_motion g_motion[DM_PLAYERS] = {[0 ... DM_PLAYERS - 1] = {.mu = PTHREAD_MUTEX_INITIALIZER}};
 static live_motion g_hid_motion[DM_PLAYERS] = {[0 ... DM_PLAYERS - 1] = {.mu = PTHREAD_MUTEX_INITIALIZER}};
 static live_motion g_phone_motion = {.mu = PTHREAD_MUTEX_INITIALIZER};
 static pthread_once_t g_motion_once = PTHREAD_ONCE_INIT;
-static motion_map g_motion_map; static float g_motion_gain = 0.5f; static int g_motion_off, g_motion_log, g_phone_mode;
+static motion_map g_motion_map; static float g_motion_gain = 0.5f, g_motion_dz = -1; static _Atomic float g_motion_sens = 1; static int g_motion_off, g_motion_log, g_phone_mode;
 static void motion_env(void) {
     const char *e = getenv("DM_MOTION"); g_motion_off = e && !atoi(e);
     if (!motion_map_parse(&g_motion_map, getenv("DM_MOTION_AXES"))) LOG("[hid] DM_MOTION_AXES='%s' is not like \"x,-z,y\": using x,y,z", getenv("DM_MOTION_AXES"));
     if ((e = getenv("DM_MOTION_ACC_SIGN")) && atof(e) < 0) g_motion_map.acc_sign = -1;
     if ((e = getenv("DM_MOTION_GAIN"))) g_motion_gain = (float)atof(e);
+    if ((e = getenv("DM_MOTION_SENS")) && atof(e) > 0) atomic_store(&g_motion_sens, (float)atof(e));
+    if ((e = getenv("DM_MOTION_DEADZONE")) && atof(e) >= 0) g_motion_dz = (float)(atof(e) * M_PI / 180);   // degrees / s
     g_motion_log = (e = getenv("DM_MOTION_LOG")) && atoi(e);
     e = getenv("DM_PHONE_MOTION"); g_phone_mode = !e || !strcmp(e, "auto") ? -1 : !!atoi(e);
 }
@@ -590,7 +592,9 @@ static void motion_set(int p, const float acc[3], const float rot[3], int source
     if (!m->last_ns || now - m->received_ns > MOTION_STALE_NS) { motion_reset(&m->st); m->last_ns = 0; }
     if (m->last_ns && t <= m->last_ns) { pthread_mutex_unlock(&m->mu); return; }
     float dt = m->last_ns && t > m->last_ns ? (float)((double)(t - m->last_ns) / 1e9) : 0;
-    motion_update(&m->st, source ? &identity : &g_motion_map, acc, rot, dt, g_motion_gain);
+    float rs[3] = {rot[0], rot[1], rot[2]};
+    motion_shape(rs, source == 1 ? atomic_load(&g_motion_sens) : 1, g_motion_dz >= 0 ? g_motion_dz : source == 1 ? 0.5f * (float)M_PI / 180 : 0);
+    motion_update(&m->st, source ? &identity : &g_motion_map, acc, rs, dt, g_motion_gain);
     if (g_motion_log && !p && t - m->logged > 1000000000ull) {
         m->logged = t;
         LOG("[hid] motion player 1 (%s): acc %+.2f %+.2f %+.2f G, gyro %+.3f %+.3f %+.3f rev/s (flat and still should read acc 0 0 -1)",
@@ -599,6 +603,7 @@ static void motion_set(int p, const float acc[3], const float rot[3], int source
     m->last_ns = t; m->received_ns = now;
     pthread_mutex_unlock(&m->mu);
 }
+void dm_motion_sens(float f) { pthread_once(&g_motion_once, motion_env); if (f > 0) atomic_store(&g_motion_sens, f); }   // live, from the in-game panel (after the env's value)
 void dm_motion_set(int p, const float acc[3], const float rot[3]) { motion_set(p, acc, rot, 0, 0); }
 void dm_motion_set_switch(int p, const float acc[3], const float rot[3]) { motion_set(p, acc, rot, 1, 0); }
 void dm_motion_set_hid(int p, const float acc[3], const float rot[3], uint64_t t) { if (t) motion_set(p, acc, rot, 2, t); }

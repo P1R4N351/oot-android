@@ -41,6 +41,7 @@ NXHOST_API int nxhost_touch_controls_set(const nxhost_touch_control *c, int n);
 // DM_MOTION=0 or DM_PHONE_MOTION=0 leave the gyro off; DM_SHAKE_G sets the shake threshold (1.5 G)
 NXHOST_API bool nxhost_motion_start(void);
 NXHOST_API void nxhost_motion_stop(void);
+NXHOST_API void nxhost_motion_sens(float factor);   // the in-game panel's Motion sensitivity, live (1 = the real turn)
 NXHOST_API void nxhost_motion_rotation(int rotation);   // Display.getRotation() (Surface.ROTATION_0..3), on every configuration change
 
 // ---- Rumble ----

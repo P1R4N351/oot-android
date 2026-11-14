@@ -70,6 +70,9 @@ final class Native {
 
     static native void motionStop();
 
+    /** The in-game panel's Motion sensitivity, live (a factor: 1 = the real turn). */
+    static native void motionSens(float factor);
+
     /** Display.getRotation(). */
     static native void motionRotation(int rotation);
 

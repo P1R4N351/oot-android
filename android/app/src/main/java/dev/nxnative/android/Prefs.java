@@ -412,6 +412,23 @@ final class Prefs {
     static boolean ownFpsCap(Context c, String titleId) { return of(c).contains(gameKey("fps_cap", titleId)); }
 
     /** Pause on return (per game, on by default): the game's screen coming back from the background shows it paused, suspended until a tap (GameActivity.onStart) */
+    /** Game settings › Controls › Motion sensitivity: how far the phone's gyro turns the game's aim, a step of MOTION_PCT (100 % = the real turn, as on a console); DM_MOTION_SENS, always
+     *  passed (default 50 %: a held phone is heavier and less steady than a Switch); stored as the percentage, so the steps can change */
+    static final int[] MOTION_PCT = {10, 20, 30, 40, 50, 60, 75, 100, 125, 150};
+    static final String[] MOTION_NAMES = {"10%", "20%", "30%", "40%", "50%", "60%", "75%", "100%", "125%", "150%"};
+    static final int MOTION_DEFAULT = 4;
+    static boolean ownMotionSens(Context c, String titleId) { return of(c).contains(gameKey("motion_pct", titleId)); }
+    static int motionSens(Context c, String titleId) {
+        int pct = of(c).getInt(gameKey("motion_pct", titleId), MOTION_PCT[MOTION_DEFAULT]);
+        int best = MOTION_DEFAULT;
+        for (int i = 0; i < MOTION_PCT.length; i++) if (Math.abs(MOTION_PCT[i] - pct) < Math.abs(MOTION_PCT[best] - pct)) best = i;
+        return best;
+    }
+    static float motionFactor(Context c, String titleId) { return MOTION_PCT[motionSens(c, titleId)] / 100f; }
+    /** null removes the game's own choice */
+    static void motionSens(Context c, String titleId, Integer v) {
+        if (v == null) of(c).edit().remove(gameKey("motion_pct", titleId)).commit(); else of(c).edit().putInt(gameKey("motion_pct", titleId), MOTION_PCT[v]).commit();
+    }
     static boolean pauseOnReturn(Context c, String titleId) { return of(c).getBoolean(gameKey("pause_return", titleId), true); }
     static void pauseOnReturn(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("pause_return", titleId), on).commit(); }
     /** Game settings › Speedhack: Turn off hidden layers (experimental), for a game whose profile names such layers (game.tsv skip_layers): draws of those pixel shaders are

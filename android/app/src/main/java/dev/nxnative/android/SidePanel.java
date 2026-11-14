@@ -474,7 +474,7 @@ final class SidePanel extends FrameLayout {
         Overlay.rows(act, box, null);
     }
 
-    /** Controls: Player 1, the on-screen controls, rumble and the Button mapping shortcut */
+    /** Controls: Player 1, the on-screen controls, rumble, the phone's Motion sensitivity and the Button mapping shortcut */
     private void controls() {
         playerOneRow();
 
@@ -486,6 +486,10 @@ final class SidePanel extends FrameLayout {
         rum.setChecked(Prefs.rumble(act, game()));
         rum.setOnCheckedChangeListener((b, on) -> { if (act instanceof GameActivity) ((GameActivity) act).rumble(on); else Prefs.rumble(act, game(), on); });
         box.addView(rum);
+
+        TextView motionHead = head("Motion sensitivity");   // the phone's gyro scale (Prefs.MOTION_PCT), applied at each step and kept for the game (the same setting as Game settings › Controls)
+        box.addView(StepSlider.view(act, "Motion sensitivity", Prefs.MOTION_NAMES, Prefs.motionSens(act, game()), "Slower", "Faster", motionHead::setText,
+                i -> { Prefs.motionSens(act, game(), i); Native.motionSens(Prefs.MOTION_PCT[i] / 100f); }));
 
         nextStartRows();
     }

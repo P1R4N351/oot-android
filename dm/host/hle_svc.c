@@ -2,6 +2,7 @@
 // Register convention: inputs w1.. / outputs w0=Result, x1=value (GetInfo / SetHeapSize), consistent with the public Horizon ABI.
 #include "dm.h"
 #include <sys/mman.h>
+#include "plat/plat_guestmap.h"
 #include <errno.h>
 #include <unistd.h>
 #include <unistd.h>
@@ -287,7 +288,8 @@ static void maps_red(const char *what, uintptr_t a, size_t n, int err) {
 }
 static int guest_release(uintptr_t lo, uintptr_t hi) {
     if (dm_gfx_guest_release(lo, hi)) return 1;
-    if (mmap((void *)lo, hi - lo, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0) != MAP_FAILED) { plat_mem_name_guest((void *)lo, hi - lo); return 1; }   // (named: it merges with its neighbours again)
+    // The block's flags and name (plat_guestmap.h): it merges with its neighbours again (without MAP_NORESERVE it stayed a mapping of its own for the process's life)
+    if (mmap((void *)lo, hi - lo, PROT_NONE, PLAT_GUEST_MAP | MAP_FIXED, -1, 0) != MAP_FAILED) { plat_mem_name_guest((void *)lo, hi - lo); return 1; }
     int err = errno;
     static _Atomic int nred; if (atomic_fetch_add(&nred, 1) < 8) LOG("[RED] guest memory %#lx+%#lx not given back (errno %d): it stays resident", (unsigned long)lo, (unsigned long)(hi - lo), err);
     maps_red("guest_release mmap", lo, hi - lo, err);

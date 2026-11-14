@@ -317,6 +317,13 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Found on:** [Splatoon Raiders](../../dm/games/0400380020056000/README.md) on Android, with the phone's own gyroscope. Check with `DM_MOTION_LOG=1` (the log shows the sample once a second).
 - **Open:** a controller's own gyro (a DualSense or Switch Pro on the phone) still has no source on Android; only the phone's sensors reach the game.
 
+### The phone's gyro aims badly: big movements, no steady hold
+
+- **Symptom:** gyro aiming (Splatoon Raiders, issue 174) needs a large turn of the phone for a small move of the aim, and a held phone cannot keep the aim on a point: the cursor creeps up and down.
+- **Cause:** the phone's rates reached the game unchanged (1:1, as a console's, but a phone is heavy and held out in both hands), with no setting for the scale and no dead zone for the tremor and sensor noise that a held phone always has. The tilt correction also trusted the accelerometer whenever |acc| was within 0.2 G of 1 G, so the hand's own acceleration while aiming read as tilt and pulled the pitch. Open: the 1:1 scale itself is unmeasured on a phone (`DM_MOTION_LOG=1`, a 90 degree turn in a second should read 0.25 rev/s).
+- **Fix:** `motion_shape` (`motion_fusion.h`) applies a dead zone (default 0.5 degrees / s for the phone's gyro, `DM_MOTION_DEADZONE`) and a sensitivity factor for the phone's gyro (`DM_MOTION_SENS`; Game settings › Controls › **Motion sensitivity** and the in-game panel's slider, which applies at once through `Native.motionSens` / `dm_motion_sens`: 10 to 150 %, default 50 %, the phone's gyro only: a controller's gyro keeps its real turn) to every source's rate before the orientation is integrated. The tilt correction's weight falls linearly from 1 at 1 G to 0 at 0.9 and 1.1 G.
+- **Found on:** [Splatoon Raiders](../../dm/games/0400380020056000/README.md). Phone check open.
+
 ### Android: a phone's own input device took player 1
 
 - **Symptom:** on Xiaomi and POCO phones a connected controller (a GameSir X3 Pro) does nothing in a game that reads only player 1; the log has `input: device 3 (uinput-xiaomi) is player 1` and the controller as player 2, and `hid controller applet: 1 to 1 players wanted, 2 connected`. The on-screen controls hide even with no controller connected.

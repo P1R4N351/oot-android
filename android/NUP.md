@@ -1,7 +1,8 @@
 # NUP support (branch android-nup)
 
 Play and prepare a game straight from one `.nup` file (github.com/a55uka/nup, SPEC.md at commit 92089de3, format 1.0-draft),
-with no unpacking. The `.nup` is only ever read: it is the user's dump and is never modified. The rewritten code goes into the
+with no unpacking. The `.nup` is only ever read by the app and the pack tools: it is the user's dump. The one tool that writes to it is
+[`scripts/nup_meta.py`](#setting-an-icon), and only when the user runs it. The rewritten code goes into the
 pack as it does for a folder.
 
 ## The format in one paragraph
@@ -118,6 +119,16 @@ works (`/proc/self/fd/<n>` reopened by path is not reliable on every provider). 
 - Readiness: a "Game files" row per game (a `.nup` must open and pass its TOC hash).
 - Tests: `NupJvmTest` (javac + java, no Gradle runner yet; see its header): 293 checks on a synthetic `.nup`, 30 on the
   real DKB one.
+
+## Setting an icon
+
+A `.nup` shows an icon, title and publisher on the game cards only if its package carries a meta block (the app reads it: `Nup.gameMeta`). Packs that
+lack one can be given it in place, with no unpacking: `python3 scripts/nup_meta.py <file.nup> --icon image.png [--title T] [--version V] [--publisher P]`
+(`--show` lists what a file holds). The icon is a JPEG or PNG, 256x256. The new block goes to the end of the file; only the package record, the TOC SHA-256 and
+the superblock's file size are rewritten (a few KiB), and the records the block already had are kept. The old block stays as dead bytes, and setting what is
+already there changes nothing. An error part way restores the file; a killed run's leftover bytes are cut off by the next run. For a copy on a phone, patch the Mac's copy, then write only its head (superblock and TOC) and the
+appended tail into the phone's file (adb push, then `dd conv=notrunc`, the tail first).
+Tests: `dm/tools/tests/test_nup_meta.py`.
 
 ## Test data
 

@@ -45,6 +45,8 @@ void nxhost_env_changed(void);
 #pragma weak nxhost_motion_start
 #pragma weak nxhost_motion_stop
 #pragma weak nxhost_motion_rotation
+#pragma weak nxhost_motion_sens
+void nxhost_motion_sens(float factor);
 #pragma weak nxhost_lifecycle
 #pragma weak nxhost_paused
 #pragma weak nxhost_audio_interrupt
@@ -367,6 +369,7 @@ JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_touchControlsState(JNIEn
 }
 JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_motionStart(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_motion_start ? nxhost_motion_start() : JNI_FALSE; }
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_motionStop(JNIEnv *env, jclass cls) { (void)env; (void)cls; if (nxhost_motion_stop) nxhost_motion_stop(); }
+JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_motionSens(JNIEnv *env, jclass cls, jfloat f) { (void)env; (void)cls; if (nxhost_motion_sens) nxhost_motion_sens(f); }
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_motionRotation(JNIEnv *env, jclass cls, jint r) { (void)env; (void)cls; if (nxhost_motion_rotation) nxhost_motion_rotation(r); }
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_lifecycle(JNIEnv *env, jclass cls, jint ev) { (void)env; (void)cls; if (nxhost_lifecycle) nxhost_lifecycle(ev); }
 JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_paused(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_paused ? nxhost_paused() : -1; }
