@@ -281,6 +281,22 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Found on:** [DRAGON QUEST VII Reimagined](../../dm/games/0100A9D01C446000/README.md) (GitHub issue #589). The rewriter finds the pool in every Unreal main on the drive: OCTOPATH TRAVELER and Yoshi's Crafted World (UE 4.1x, UTF-32), Pikmin 4 (4.26), OCTOPATH TRAVELER II and DRAGON QUEST VII Reimagined (4.27), Octopath Traveler 0 (UE 5) and FINAL FANTASY RESONANCE (5.6).
 - **Check:** `t_uecvar` (the variable named in main's table, or not; the value raised, kept and left); the search itself, `test_ue_cvar.py`. On a Mac run, `DM_CTL` `cvari <main offset> <MB>` sets the pool while the game runs, for an A/B at one spot.
 
+### A GPU-written linear texture the CPU writes afterwards (Android)
+
+- **Symptom:** (Android) text boxes are empty while the rest of the scene draws. The log names one large linear texture the GPU wrote (Mario Tennis Fever: serial 185, 8192x2048 R8, its glyph cache), and no re-upload of it follows the CPU's later writes.
+- **Cause:** a texture the GPU has written (render target, copy or clear destination, shader image) is `gpu_owned`: its content is the image's, and the prepare's scan skipped it whatever the CPU wrote to its storage. For a block-linear texture that is right. A linear one is plain memory on the Switch, though: the GPU's writes land there and the CPU's later writes are the texture's. The host copies such a texture back into its storage after the GPU writes it (`vka_tex_writeback`), but went on ignoring the storage afterwards. Mario Tennis Fever clears its glyph cache on the GPU and rasterizes glyphs into it on the CPU, so no glyph reached the image.
+- **Fix:** general: a GPU-written linear texture follows its storage again once its copy-back has run on the GPU (`vka_wbfollow.h` `wbf_follows`; test `t_android_wbfollow.c`). While a copy-back is queued or its submission is unfinished the image waits, and the scan runs again at the next prepare. A block-linear texture the GPU wrote never follows its storage. `DM_VK_WB_FOLLOW=0` turns it off; a log line counts the follow uploads.
+- **Open:** the copy-back copies the **whole** image, so glyphs the CPU writes while one is queued are overwritten. That bit Mario Tennis Fever only because a binding that just reads its glyph cache marked it written ([A shader image the shader only reads marked GPU-written](#a-shader-image-the-shader-only-reads-marked-gpu-written-android)); a texture a shader really writes while the CPU writes it too would still lose the CPU's writes. The first 32 GPU writes of such textures are logged with their site (`GPU write at frame … (file:line)`).
+- **Found on:** Mario Tennis Fever (`0400D4201C6EA000`, profile in pull request #268), Odin 3 (Adreno 830), Qualcomm's driver and Mainline Turnip v32, 2026-11-12.
+
+### A shader image the shader only reads marked GPU-written (Android)
+
+- **Symptom:** (Android) letters missing from text the CPU draws into a linear glyph cache while a compute pass reads it (Mario Tennis Fever: "GAME POINT" drawn as "G M PO"); a log line counts copy-backs of that texture every frame.
+- **Cause:** every storage-image binding of a draw or dispatch marked its texture GPU-written, whether the shader writes the image or not. A linear texture marked so is copied back whole into its storage after the pass ([A GPU-written linear texture the CPU writes afterwards](#a-gpu-written-linear-texture-the-cpu-writes-afterwards-android)), over what the CPU wrote there meanwhile.
+- **Fix:** general: a binding marks its image written only when the library says the shader writes it (`DMSH_VK_BF_RW`: an `OpImageWrite` or an atomic on the variable, `vk_android_build.py` `m_writes`), through `VKA_VIEW_RO` (`vka_wbfollow.h` `wbf_view_of_binding`; test `t_android_wbfollow.c`). Every library the host loads carries the flag. The host's own passes (NDSR, FSR outputs) stay writes; the image keeps its storage view and memory as before.
+- **Open:** an image registered in the bindless table's image slots still marks its texture written, since no binding says which draw writes through the table.
+- **Found on:** Mario Tennis Fever (`0400D4201C6EA000`, profile in pull request #268), Odin 3 (Adreno 830), Qualcomm's driver and Mainline Turnip v32, 2026-11-13.
+
 ## Render targets, passes and clears
 
 ### Transient render targets shared by storage
