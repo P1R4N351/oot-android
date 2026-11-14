@@ -2488,7 +2488,13 @@ static VkSampler sampler_of(const samp_par *p) {
         .compareOp = p->cmp_func >= 1 && p->cmp_func <= 8 ? (VkCompareOp)(p->cmp_func - 1) : VK_COMPARE_OP_NEVER,
         .minLod = p->lod_min, .maxLod = mip ? p->lod_max : (p->lod_min < 0.25f ? 0.25f : p->lod_min),
         .borderColor = white ? VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE : opaque ? VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK : VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK};
-    if (p->reduction) VRED_ONCE("sampler reduction mode %d not applied", p->reduction);
+    // Reduction: a filtered sample takes the min or max of the texels it covers instead of their weighted average (NVN 1 min, 2 max: Vulkan's own numbers).
+    // samplerFilterMinmax guarantees it for the depth formats and R32_SFLOAT among others (Vulkan 1.2, "Required Format Support"), the formats depth pyramids use
+    VkSamplerReductionModeCreateInfo red = {VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO, .reductionMode = (VkSamplerReductionMode)p->reduction};
+    if (p->reduction == 1 || p->reduction == 2) {
+        if (V.minmax) ci.pNext = &red;
+        else VRED_ONCE("sampler reduction mode %d not applied: the device has no samplerFilterMinmax", p->reduction);
+    } else if (p->reduction) VRED_ONCE("sampler reduction mode %d not applied: not an NVN reduction mode", p->reduction);
     VkSampler s = VK_NULL_HANDLE;
     if (vk.vkCreateSampler(V.dev, &ci, NULL, &s)) return VK_NULL_HANDLE;
     g_samp = realloc(g_samp, (size_t)(g_nsamp + 1) * sizeof *g_samp); g_samp[g_nsamp++] = (samp_ent){*p, s};
