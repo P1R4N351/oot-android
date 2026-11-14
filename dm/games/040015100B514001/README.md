@@ -20,6 +20,7 @@ Program 1 of application `010015100B514000`, display version 1.2.1 (update v3276
 ## Found on this game
 
 - [Built-in fonts of SDK 21](../../../docs/reference/services.md#built-in-fonts-and-the-audio-device-notification-of-sdk-21): main calls `GetBuiltInFontData` and imports `ScalableFontEngineHelper::Decode`, so the host gave it the font with its BFTTF header; it now gives the TTF past the header, as the service's offsets do (taken from nxnative PR #1639; what the header did to this game's text was not recorded).
+- [A packet refused while the decoder runs ahead of the player](../../../docs/reference/movies.md#a-packet-refused-while-the-decoder-runs-ahead-of-the-player): the movie library takes the busy result as busy (`subsdk0+0xfe00`); the `[RED]` line now reports only a refused packet the player did not send again. On the phone: one refusal at the movie's start and no lost packet, so the player sends it again. The "playing while online" movie after New Game stuttered with its sound starved: the packet queue counted the decoded pictures too, so the demuxer waited with the audio unread; the packets now queue apart, not yet checked on the phone.
 
 ## Open
 
