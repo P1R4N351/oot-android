@@ -8,6 +8,8 @@
 #include "../nvn/nvn_mtl.h"
 #include "../nvn/nvn_timestamp.h"
 #include "vka_present_rot.h"
+#include "vka_depthcopy_spv.h"
+#include "vka_t2tpath.h"
 #include "vka_qsched.h"
 #include "vka_skipwarn.h"
 #include <math.h>
@@ -1039,6 +1041,84 @@ static void copy_bt(const p_copy_b2t *c, int to_tex) {
     g_stat_ops++;
     vka_barrier(g_cb);
 }
+// A scaled or mirrored depth copy into a format the driver has no blit destination for (vka_t2tpath.h T2T_DEPTH_DRAW): per layer, a full-viewport triangle over the destination
+// rectangle (the present's rot.vert, its texture coordinates an affine map onto the source rectangle, so a mirror is a negative scale) whose fragment shader samples the source
+// level (nearest, as the blit) and writes gl_FragDepth, the depth test ALWAYS. One pipeline per depth format. Mario Tennis Fever fills its 7168x7168 static shadow map's level 1
+// with a scaled copy of level 0 (into a 3584x3584 texture over level 1); blitted on a driver without BLIT_DST for D32, that level stayed unwritten and shadows beyond about 50 units were lost
+static struct { VkFormat f; VkPipeline p; } g_dcp[8]; static int g_ndcp;
+static VkPipelineLayout g_dcp_lay; static VkDescriptorSetLayout g_dcp_dsl; static VkShaderModule g_dcp_vs, g_dcp_fs; static VkSampler g_dcp_smp;
+static VkPipeline dcp_pipeline(VkFormat f) {
+    for (int i = 0; i < g_ndcp; i++) if (g_dcp[i].f == f) return g_dcp[i].p;
+    if (g_ndcp == 8 || !V.push_desc) return VK_NULL_HANDLE;
+    VkResult r = 0;
+    if (!g_dcp_lay) {
+        VkDescriptorSetLayoutBinding b = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL};
+        VkDescriptorSetLayoutCreateInfo dl = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR, .bindingCount = 1, .pBindings = &b};
+        VkPushConstantRange pc = {VK_SHADER_STAGE_VERTEX_BIT, 0, 6 * sizeof(float)};
+        VkShaderModuleCreateInfo mv = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = sizeof vka_rot_vert, .pCode = vka_rot_vert};
+        VkShaderModuleCreateInfo mf = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = sizeof vka_depthcopy_frag, .pCode = vka_depthcopy_frag};
+        VkSamplerCreateInfo si = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .magFilter = VK_FILTER_NEAREST, .minFilter = VK_FILTER_NEAREST, .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                  .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+        if (!(r = vk.vkCreateDescriptorSetLayout(V.dev, &dl, NULL, &g_dcp_dsl))) {
+            VkPipelineLayoutCreateInfo li = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &g_dcp_dsl, .pushConstantRangeCount = 1, .pPushConstantRanges = &pc};
+            r = vk.vkCreatePipelineLayout(V.dev, &li, NULL, &g_dcp_lay);
+        }
+        if (!r) r = vk.vkCreateShaderModule(V.dev, &mv, NULL, &g_dcp_vs);
+        if (!r) r = vk.vkCreateShaderModule(V.dev, &mf, NULL, &g_dcp_fs);
+        if (!r) r = vk.vkCreateSampler(V.dev, &si, NULL, &g_dcp_smp);
+        if (r) { VRED("scaled depth copy: layout / shaders / sampler %d", r); g_ndcp = 8; return VK_NULL_HANDLE; }
+    }
+    VkPipelineShaderStageCreateInfo st[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = g_dcp_vs, .pName = "main"},
+                                             {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = g_dcp_fs, .pName = "main"}};
+    VkPipelineVertexInputStateCreateInfo vi = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineInputAssemblyStateCreateInfo ia = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+    VkPipelineViewportStateCreateInfo vp = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
+    VkPipelineRasterizationStateCreateInfo rs = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, .polygonMode = VK_POLYGON_MODE_FILL, .cullMode = VK_CULL_MODE_NONE, .lineWidth = 1};
+    VkPipelineMultisampleStateCreateInfo ms = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+    VkPipelineDepthStencilStateCreateInfo dss = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO, .depthTestEnable = VK_TRUE, .depthWriteEnable = VK_TRUE, .depthCompareOp = VK_COMPARE_OP_ALWAYS};
+    VkPipelineColorBlendStateCreateInfo cb = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    VkDynamicState dyn[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo ds = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, .dynamicStateCount = 2, .pDynamicStates = dyn};
+    VkPipelineRenderingCreateInfo rci = {VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, .depthAttachmentFormat = f};
+    VkGraphicsPipelineCreateInfo gi = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &rci, .stageCount = 2, .pStages = st, .pVertexInputState = &vi, .pInputAssemblyState = &ia,
+        .pViewportState = &vp, .pRasterizationState = &rs, .pMultisampleState = &ms, .pDepthStencilState = &dss, .pColorBlendState = &cb, .pDynamicState = &ds, .layout = g_dcp_lay};
+    VkPipeline p = VK_NULL_HANDLE;
+    if ((r = vk.vkCreateGraphicsPipelines(V.dev, VK_NULL_HANDLE, 1, &gi, NULL, &p))) { VRED_ONCE("scaled depth copy pipeline (format %d): %d", f, r); return VK_NULL_HANDLE; }
+    g_dcp[g_ndcp++] = (typeof(g_dcp[0])){f, p};
+    return p;
+}
+// ss, ds: the copy's subresources (image levels); x0..y1: the source rectangle (swapped for a mirror); dr: the destination rectangle. 0 = not done
+static int t2t_depth_draw(vka_img *s, vka_img *d, VkImageSubresourceLayers ss, VkImageSubresourceLayers ds, int x0, int y0, int x1, int y1, VkRect2D dr) {
+    if (!(s->usage & VK_IMAGE_USAGE_SAMPLED_BIT) || !(d->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) || s->depth > 1 || d->depth > 1) {
+        VRED_ONCE("scaled depth copy (serial %llu → %llu): the source cannot be sampled or the destination cannot be a depth attachment: not done", (unsigned long long)s->serial, (unsigned long long)d->serial); return 0; }
+    if (s->img == d->img && ss.mipLevel == ds.mipLevel) { VRED_ONCE("scaled depth copy within one level of one image: not done"); return 0; }
+    VkPipeline p = dcp_pipeline(d->f.vk);
+    if (!p) { VRED_ONCE("scaled depth copy (format %d): no pipeline (push descriptors: %d): not done", d->f.vk, V.push_desc); return 0; }
+    uint32_t sw, sh; level_size(s, ss.mipLevel, &sw, &sh);
+    float pc[6] = {(float)(x1 - x0) / sw, 0, 0, (float)(y1 - y0) / sh, (float)x0 / sw, (float)y0 / sh};   // uv = m * p + t, p = 0..1 over the viewport
+    VkViewport v = {(float)dr.offset.x, (float)dr.offset.y, (float)dr.extent.width, (float)dr.extent.height, 0, 1};
+    vka_barrier(g_cb);
+    for (uint32_t i = 0; i < ds.layerCount; i++) {
+        VkImageView sv = vka_view(s, s->f.view ? s->f.view : s->f.vk, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, ss.mipLevel, 1, ss.baseArrayLayer + i, 1, NULL);
+        VkImageView dv = vka_view(d, d->f.vk, VK_IMAGE_VIEW_TYPE_2D, d->aspect, ds.mipLevel, 1, ds.baseArrayLayer + i, 1, NULL);
+        if (!sv || !dv) return 0;
+        VkRenderingAttachmentInfo a = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = dv, .imageLayout = VK_IMAGE_LAYOUT_GENERAL, .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD, .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
+        VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = dr, .layerCount = 1, .pDepthAttachment = &a};
+        VkDescriptorImageInfo ii = {g_dcp_smp, sv, VK_IMAGE_LAYOUT_GENERAL};
+        VkWriteDescriptorSet wr = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii};
+        vk.vkCmdBeginRendering(g_cb, &ri);
+        vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+        vk.vkCmdPushDescriptorSetKHR(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_dcp_lay, 0, 1, &wr);
+        vk.vkCmdPushConstants(g_cb, g_dcp_lay, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof pc, pc);
+        vk.vkCmdSetViewport(g_cb, 0, 1, &v); vk.vkCmdSetScissor(g_cb, 0, 1, &dr);
+        vk.vkCmdDraw(g_cb, 3, 1, 0, 0);
+        vk.vkCmdEndRendering(g_cb);
+    }
+    vka_dyn_invalidate();   // its pipeline replaced the draws' state
+    static _Atomic int n; if (!atomic_exchange(&n, 1)) VLOG("scaled depth copy drawn (format %d has no BLIT_DST): serial %llu level %u → serial %llu level %u, %ux%u", d->f.vk,
+                                                            (unsigned long long)s->serial, ss.mipLevel, (unsigned long long)d->serial, ds.mipLevel, dr.extent.width, dr.extent.height);
+    return 1;
+}
 static void copy_t2t(const p_copy_t2t *c) {
     if (!c->src || !c->dst) return;
     vka_img *s = vka_tex_get(c->src, g_cb), *d = vka_tex_get(c->dst, g_cb);
@@ -1062,12 +1142,18 @@ static void copy_t2t(const p_copy_t2t *c) {
                && s->samples == d->samples && s->f.bpb == d->f.bpb && s->f.bw == d->f.bw && s->f.bh == d->f.bh) {
         VkImageCopy r = {ss, {c->sr.xoffset, c->sr.yoffset, s3 ? c->sr.zoffset : 0}, ds, {c->dr.xoffset, c->dr.yoffset, d3 ? c->dr.zoffset : 0}, {(uint32_t)c->sr.width, (uint32_t)c->sr.height, s3 ? (uint32_t)nz : 1}};
         vk.vkCmdCopyImage(g_cb, s->img, VK_IMAGE_LAYOUT_GENERAL, d->img, VK_IMAGE_LAYOUT_GENERAL, 1, &r);
-    } else {   // a scaled, mirrored or format-changing copy: a blit (filtered with LINEAR_FILTER)
-        if (s->f.kind != d->f.kind || (s->f.kind && s->f.kind < 3) || s->f.bw > 1 || d->f.bw > 1 || s->samples > 1 || d->samples > 1) {
-            VRED_ONCE("texture copy %#x → %#x needs a draw (integer, compressed, multisampled or depth with scaling)", c->src->d.format, c->dst->d.format); return; }
+    } else {   // a scaled, mirrored or format-changing copy: a blit (filtered with LINEAR_FILTER), or a draw into a depth format that is no blit destination (vka_t2tpath.h)
+        VkFormatProperties dp; vk.vkGetPhysicalDeviceFormatProperties(V.pd, d->f.vk, &dp);
+        int path = t2t_path(0, s->f.kind, d->f.kind, s->f.bw > 1 || d->f.bw > 1, s->samples > 1 || d->samples > 1, (dp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT) != 0);
+        if (path == T2T_NONE) {
+            VRED_ONCE("texture copy %#x → %#x needs a draw (integer, compressed, multisampled, stencil, or into a format that is no blit destination, VkFormat %d)", c->src->d.format, c->dst->d.format, d->f.vk); return; }
         int x0 = c->sr.xoffset, x1 = x0 + c->sr.width, y0 = c->sr.yoffset, y1 = y0 + c->sr.height, t;
         if (c->flags & NVN_COPY_FLAGS_MIRROR_X_BIT) { t = x0; x0 = x1; x1 = t; }
         if (c->flags & NVN_COPY_FLAGS_MIRROR_Y_BIT) { t = y0; y0 = y1; y1 = t; }
+        if (path == T2T_DEPTH_DRAW) {
+            if (!t2t_depth_draw(s, d, ss, ds, x0, y0, x1, y1, (VkRect2D){{c->dr.xoffset, c->dr.yoffset}, {(uint32_t)c->dr.width, (uint32_t)c->dr.height}})) return;
+            vka_img_written(d); g_stat_ops++; vka_barrier(g_cb); return;
+        }
         VkImageBlit r = {ss, {{x0, y0, 0}, {x1, y1, 1}}, ds, {{c->dr.xoffset, c->dr.yoffset, 0}, {c->dr.xoffset + c->dr.width, c->dr.yoffset + c->dr.height, 1}}};
         VkFormatProperties fp; vk.vkGetPhysicalDeviceFormatProperties(V.pd, s->f.vk, &fp);
         VkFilter fl = (c->flags & NVN_COPY_FLAGS_LINEAR_FILTER_BIT) && sa == VK_IMAGE_ASPECT_COLOR_BIT && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;

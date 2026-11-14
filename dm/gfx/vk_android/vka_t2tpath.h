@@ -9,10 +9,12 @@ enum {
 };
 // exact: a plain copy is possible; skind, dkind: vka_fmt.kind of the source and destination (0 float / unorm / snorm, 1 uint, 2 sint, 3 depth, 4 stencil, 5 depth-stencil);
 // compressed: either is block-compressed; ms: either is multisampled; blit_dst: the destination's VkFormat has VK_FORMAT_FEATURE_BLIT_DST_BIT (optimal tiling).
+// A blit into a format without BLIT_DST is invalid, and Vulkan does not require it for depth formats: Adreno 830's system driver has none for D16, D32, D24S8 or D32S8. A depth
+// destination is then drawn; a stencil or depth-stencil one is not done (gl_FragDepth writes no stencil), nor is a colour one (no format of the games' needs it so far)
 static inline int t2t_path(int exact, int skind, int dkind, int compressed, int ms, int blit_dst) {
-    (void)blit_dst;
     if (exact) return T2T_COPY;
     if (skind != dkind || (skind && skind < 3) || compressed || ms) return T2T_NONE;
+    if (!blit_dst) return dkind == 3 ? T2T_DEPTH_DRAW : T2T_NONE;
     return T2T_BLIT;
 }
 #endif
