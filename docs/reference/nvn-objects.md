@@ -201,6 +201,13 @@ The game may also write into an NVN object directly, without an NVN call, throug
 - **Fix:** a registry entry carries `gone` (`cap_treg`), and a gone entry keeps neither its pool nor its storage address and is not read back. `nvn_replay` registers it and then marks it gone (`mtl_reg_tex_gone`), as the live run left it. Captures made before keep working (the byte was padding, 0). `check_t_capture_live` registers a texture on a pool of its own and finalizes that pool, then fills the pool object with such bytes. Without the fix the capture is incomplete.
 - **Found on:** [Pokemon Scarlet](../../dm/games/0100A3D008C5C000/README.md) (texture IDs 1726 to 1786 in the bedroom, each texture with a pool of its own).
 
+### Descriptor pools made and finalized as the game goes
+
+- **Symptom:** after a game has made more than 16 texture or sampler pools in all, textures draw from the wrong pool: text or images vanish or show another texture (Mario Tennis Fever: menu text lost after about 15 sub-menus).
+- **Cause:** each texture and sampler pool gets its own range of IDs in the host's table (`nvn_dpool.h`, 16 ranges of each kind). Finalizing a pool did not free its range, so a game that makes and finalizes pools as it goes ran out, and the 17th pool was numbered from 0, sharing the first pool's IDs.
+- **Fix:** general: `nvnTexturePoolFinalize` and `nvnSamplerPoolFinalize` free the pool's range (`nvn_dpool_release`), and a new pool takes the smallest freed range that holds it before a new range is made at the table's end (`nvn_dpool_add`; test `t_nvn_dpool.c`). A pool that takes a freed range finds the old registrations there until it writes its own, as an NVN pool's new descriptors are whatever its memory held. Sixteen live pools of a kind still fill the table.
+- **Found on:** Mario Tennis Fever (`0400D4201C6EA000`, profile in pull request #268) (a texture and a sampler pool per sub-menu), Odin 3 (Adreno 830), Mainline Turnip v32, 2026-11-13.
+
 ### A frame capture runs under the standard thread policy
 
 - **Symptom:** `regress.py capture` stops with `frame N was not captured within … s` although the game reached the frame before it; a capture takes 5 to 20 minutes where an earlier one of the same frame took 2 to 3, and a sample of the host shows the submitting thread in `lzfseEncodeBase` under `nvn_cap_submit`.
