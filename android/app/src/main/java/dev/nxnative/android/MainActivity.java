@@ -283,6 +283,10 @@ public final class MainActivity extends Activity {
         sys.addView(gpuRow.view);
         timeRow = new Ui.Setting(this, "🕒", "Time of day", v -> timeOfDay()).chevron(this);   // the clock the next start gives the game (Prefs.timeOverride → DM_TIME)
         sys.addView(timeRow.view);
+        Ui.Setting usersRow = new Ui.Setting(this, "👤", "Users", null).chevron(this);   // the console's users and the one games start with (UsersUi.java)
+        usersRow.view.setOnClickListener(v -> UsersUi.dialog(this, () -> usersRow.value(UsersUi.summary(this))));
+        usersRow.value(UsersUi.summary(this));
+        sys.addView(usersRow.view);
         sys.addView(new Ui.Setting(this, "📁", "Folders", v -> Folders.dialog(this)).value("Game, pack and save folders").chevron(this).view);
         sys.addView(new Ui.Setting(this, "🧹", "Storage", v -> StorageUi.dialog(this)).value("Remove leftovers and old files; never saves").chevron(this).view);   // (StorageUi.java)
         // some phones stop or slow a background job once the screen is off (GitHub discussion 58): Home keeps the screen on while preparing (Ondevice), the service its wake lock

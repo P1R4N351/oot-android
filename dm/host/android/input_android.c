@@ -190,6 +190,20 @@ int android_text_input(const char *title, const char *sub, const char *guide, co
     if (r > 0 && out_cap > 0) out[out_cap - 1] = 0;
     return r > 0 ? 1 : 0;
 }
+// ---- User selector: the launcher's picker (front_user_select), the input held around it as for the input box ----
+static nxhost_user_select_fn _Atomic g_us_fn; static void *_Atomic g_us_ctx;
+void nxhost_user_select_callback(nxhost_user_select_fn fn, void *ctx) {
+    atomic_store(&g_us_ctx, ctx); atomic_store(&g_us_fn, fn);
+    LOG("input: the user selector goes to the launcher's picker%s", fn ? "" : " (none: the preselected user)");
+}
+int android_user_select(const char *const *names, const int *offered, int n, int def) {
+    nxhost_user_select_fn fn = atomic_load(&g_us_fn);
+    if (!fn) return -2;
+    input_hold(1);
+    int r = fn(atomic_load(&g_us_ctx), names, offered, n, def);
+    input_hold(0);
+    return r;
+}
 
 // ---- Motion: ASensorManager on a looper thread of its own ----
 static pthread_mutex_t g_mo_mu = PTHREAD_MUTEX_INITIALIZER;   // start / stop

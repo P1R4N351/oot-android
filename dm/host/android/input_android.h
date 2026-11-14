@@ -59,6 +59,11 @@ typedef int (*nxhost_text_input_fn)(void *ctx, const char *title, const char *su
 NXHOST_API void nxhost_text_input_callback(nxhost_text_input_fn fn, void *ctx);
 // Host-internal (front_android.c): asks the callback (-1 without one), with the input held around it
 int android_text_input(const char *title, const char *sub, const char *guide, const char *initial, int max_chars, int min_chars, char *out, int out_cap);
+// The user selector (nn::account::ShowUserSelector): fn shows the launcher's picker over the game with the n users' names (UTF-8), offered[i] = whether user i may be
+// picked, def = the preselected user, and returns the picked index or -1 for a cancel. Without a callback the host takes the preselected user. The input is held as for text
+typedef int (*nxhost_user_select_fn)(void *ctx, const char *const *names, const int *offered, int n, int def);
+NXHOST_API void nxhost_user_select_callback(nxhost_user_select_fn fn, void *ctx);
+int android_user_select(const char *const *names, const int *offered, int n, int def);   // host-internal (front_android.c): -2 without a callback
 
 // ---- Lifecycle ----
 // event: 0 onPause, 1 onStop, 2 onStart (after onStop), 3 onResume, 4 pause, 5 continue. The app is suspended while it is stopped (1 until 2) or paused (4 until 5):
