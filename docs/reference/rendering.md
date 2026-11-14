@@ -1004,6 +1004,14 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Fix:** such copies (a format change, a scaled region or a mirrored one) are drawn (`copy_t2t_draw`), one render pass per layer; a destination made without render-target use is upgraded first ([Render-target use added on demand](#render-target-use-added-on-demand)); depth and stencil are written from a fragment shader, stencil through `[[stencil]]` export from an `X32_Stencil8` view of the source.
 - **Found on:** [The Legend of Zelda: Link's Awakening](../../dm/games/01006BB00C6F0000/README.md): RG11B10F → RGBA16F every frame, half-size depth-stencil copies, and a scaled `MIRROR_Y` copy of the frame to 1280×720 RGBA8. [Super Mario 3D World + Bowser's Fury](../../dm/games/010028600EBDA000/README.md): one scaled copy when leaving the title (1920×1080 → 1280×720, RGB10A2, flags `ENGINE_2D`; probably the captured frame for the transition): 04 listed it as open (skipped with a red line); `copy_t2t_draw` now draws scaled copies too (its comment in `nvn_mtl.m` names this one), so it is no longer skipped.
 
+### A scaled depth copy into a format with no BLIT_DST (Android)
+
+- **Symptom:** (Android) a depth texture filled by a scaled texture-to-texture copy stays empty, or the validation layer reports `vkCmdBlitImage` on a format without `VK_FORMAT_FEATURE_BLIT_DST_BIT`; on Qualcomm's driver only.
+- **Cause:** a scaled copy was always a `vkCmdBlitImage`, and Vulkan does not require `BLIT_DST` for depth formats. Qualcomm's driver V@0800.72 on the Adreno 830 (Vulkan `0x80320048`) reports `BLIT_SRC` but no `BLIT_DST` for D16, D32, D24S8 and D32S8; Turnip reports it for D32.
+- **Fix:** general: `copy_t2t` asks `t2t_path` (`vka_t2tpath.h`; test `t_android_t2tpath.c`) for the way, with the destination format's `BLIT_DST`. Without it a depth destination is drawn (`vka_exec.c` `t2t_depth_draw`): per layer a full-viewport triangle over the destination rectangle (the present's `rot.vert`, its texture coordinates an affine map onto the source rectangle, so mirrored copies hold) whose fragment shader (`vka_depthcopy_spv.h`, GLSL in its comment) samples the source nearest and writes `gl_FragDepth`. The source and destination may be two levels of one image. Where the format has `BLIT_DST` the blit stays.
+- **Open:** a stencil, depth-stencil or colour destination without `BLIT_DST` is not copied, with a `[RED]` line.
+- **Found on:** Mario Tennis Fever (`0400D4201C6EA000`, profile in pull request #268): its shadow map's level 0 to level 1, 3584x3584 D32, Odin 3 (Adreno 830), Qualcomm's driver, 2026-11-13. [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md) takes the path once there (a 360x202 depth copy).
+
 ### `Downsample` of a single-sample texture
 
 - **Symptom:** `[RED] Downsample case not implemented: 320x176 1 samples format 70 → 80x48`; a missing bloom.
