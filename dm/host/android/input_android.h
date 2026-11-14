@@ -21,6 +21,11 @@ NXHOST_API bool nxhost_input_key(int device, int keycode, bool down);
 NXHOST_API bool nxhost_input_axis(int device, int axis, float value);
 NXHOST_API bool nxhost_input_axes(int device, const int *axes, const float *values, int n);
 NXHOST_API void nxhost_input_deadzone(float dz);   // radial stick dead zone, 0..0.9 (default 0.1, or DM_PAD_DEADZONE)
+// A gamepad's own motion sensors (the launcher reads them with InputDevice.getSensorManager, PadMotion.java): one sample of the device's accelerometer (m/s², Android's specific force)
+// and gyroscope (rad/s) in the controller's frame, as player n's six-axis sensor (dm_motion_set), a rest offset taken off the gyro (pad_motion.h). DM_MOTION_AXES maps the controller's
+// axes to the Switch's, DM_MOTION_LOG=1 logs the result. False when controller motion is off (DM_MOTION=0 or DM_PAD_MOTION=0): the launcher then stops reading the sensors.
+// A device without a player yet is dropped (true); the phone's own sensors (nxhost_motion_start) stay the fallback for player 1 while no controller motion arrives
+NXHOST_API bool nxhost_input_motion(int device, const float acc_ms2[3], const float gyro_rads[3]);
 
 // ---- Touch ----
 // One pointer of a MotionEvent from the SurfaceView's onTouchEvent: action = getActionMasked(), id = getPointerId(i), x / y = the pointer's position divided by the view's width

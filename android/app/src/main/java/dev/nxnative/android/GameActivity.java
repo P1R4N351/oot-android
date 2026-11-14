@@ -75,6 +75,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private final Runnable comboHeld = () -> { if (panel != null && combo.fire(android.os.SystemClock.uptimeMillis())) panel.padToggle(); };
     private File log;
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private PadMotion padMotion;   // a gamepad's own gyroscope and accelerometer as its player's six-axis sensor (PadMotion), the phone's own sensors stay the host's
     private volatile Rumble rumble;   // the game's vibration on the controller's or the phone's vibrator
     private boolean input, started;
     private InputManager inputManager;
@@ -906,6 +907,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         UserPicker.gone(this);
         ui.removeCallbacksAndMessages(null);
         if (rumble != null) rumble.stopAll();
+        if (padMotion != null) { padMotion.release(); padMotion = null; }
         if (inputManager != null) inputManager.unregisterInputDeviceListener(this);
         if (audio != null) {
             if (focus != null) audio.abandonAudioFocusRequest(focus);
@@ -1038,6 +1040,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private void hostSetup() {
         inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         inputManager.registerInputDeviceListener(this, ui);
+        padMotion = new PadMotion();
         order = new PadOrder(new PadOrder.Host() {
             @Override public int add(PadOrder.Pad p) { int pl = Native.deviceAdded(p.id, p.name, false); if (pl >= 0) padConnected(p.id); return pl; }
             @Override public int first(PadOrder.Pad p) {
@@ -1051,7 +1054,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         for (int id : inputManager.getInputDeviceIds()) { InputDevice d = InputDevice.getDevice(id); if (gamepadLike(d)) now.add(pad(d)); }
         order.start(now);   // best first: an external controller is player 1 before a phone's own gamepad-like device (PadOrder)
         Native.motionRotation(getDisplay().getRotation());
-        if (resumedNow && !paused) Native.motionStart();   // the screen was resumed before the game started (onResume then did nothing): the sensors start here
+        if (resumedNow && !paused) { Native.motionStart(); padMotion.resume(); }   // the screen was resumed before the game started (onResume then did nothing): the sensors start here
         audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN).build())
@@ -1128,6 +1131,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         paused = true;
         Native.lifecycle(4);
         Native.motionStop();
+        if (padMotion != null) padMotion.pause();
         if (rumble != null) rumble.stopAll();
         pausedView.setVisibility(View.VISIBLE);
     }
@@ -1137,7 +1141,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         paused = false;
         pausedView.setVisibility(View.GONE);
         Native.lifecycle(5);
-        if (resumedNow) Native.motionStart();
+        if (resumedNow) { Native.motionStart(); if (padMotion != null) padMotion.resume(); }
     }
 
     /**
@@ -1205,12 +1209,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (!started) return;
         Native.lifecycle(3);
         Native.motionRotation(getDisplay().getRotation());
-        if (!paused) Native.motionStart();   // paused: the sensors stay off (they would wake the host at their rate for a frozen game); unpause starts them
+        if (!paused) { Native.motionStart(); if (padMotion != null) padMotion.resume(); }   // paused: the sensors stay off (they would wake the host at their rate for a frozen game); unpause starts them
     }
     private boolean resumedNow;
     @Override protected void onPause() {
         resumedNow = false;
-        if (started) { Native.motionStop(); Native.lifecycle(0); }
+        if (started) { Native.motionStop(); if (padMotion != null) padMotion.pause(); Native.lifecycle(0); }
         super.onPause();
     }
     @Override protected void onStop() {
@@ -1257,6 +1261,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
     @Override public void onInputDeviceRemoved(int id) {
         Native.deviceRemoved(id); deviceAxes.remove(id);
+        if (padMotion != null) padMotion.detach(id);
         if (order != null) order.removed(id);
         if (pads.remove(id)) controls.setGamepad(!pads.isEmpty());
     }
@@ -1264,6 +1269,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (!pads.add(id)) return;
         controls.setGamepad(true);
         if (rumble != null) rumble.route(id);
+        if (padMotion != null) padMotion.attach(id);
     }
     @Override public void onInputDeviceChanged(int id) { deviceAxes.remove(id); }
 
