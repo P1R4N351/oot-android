@@ -602,6 +602,16 @@ final class Job {
         return new File(c.getNoBackupFilesDir(), "split.scan/" + titleId());
     }
 
+    /** The shaders step's results (Outputs.results): in the app's own storage, one folder a game */
+    synchronized File results(Context c) {
+        return Outputs.results(dir(), c.getNoBackupFilesDir(), titleId());
+    }
+
+    /** Deletes the shaders step's results, wherever results() kept them */
+    synchronized void deleteResults(Context c) {
+        for (File f : Outputs.resultFolders(dir(), c.getNoBackupFilesDir(), titleId())) deleteTree(f);
+    }
+
     /** Deletes a folder of the job's own outputs: ondevice/ paths, and the pack the job made itself (Ondevice's Manage, asked first; never the dump or the saves) */
     static void deleteTree(File f) { Outputs.deleteTree(f); }
 
