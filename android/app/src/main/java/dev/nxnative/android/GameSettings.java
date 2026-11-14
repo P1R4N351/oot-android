@@ -83,6 +83,14 @@ final class GameSettings {
         tab = keys[t];
         Ui.add(content, Ui.tabs(a, labels, t, k -> { tab = keys[k]; a.gameSettingsTop(); }), 4);
         if (missing != null) Ui.add(content, Ui.small(a, missing), 12);
+        if (Edition.offered(g)) {   // a set with a Switch 2 Edition (program 1) whose profile this APK has: which one Play starts (Edition); one save for both
+            LinearLayout ed = Ui.add(content, Ui.listCard(a), 12);
+            boolean on = Edition.on(a, id);
+            Ui.Setting s = new Ui.Setting(a, "🎮", "Switch 2 Edition", null)
+                    .value(on ? "Play starts the Switch 2 Edition (its own pack). Same save as the Switch game." : "Play starts the Switch game. Turn on for the Switch 2 Edition; the save is shared.")
+                    .toggle(a, on, (b, x) -> { Edition.set(a, id, x); again.run(); });
+            ed.addView(s.view);
+        }
         if (!tab.equals(PERFORMANCE) && !tab.equals(GAME)) { a.gameTab(content, g, tab.equals(SAVES)); return; }
         boolean perf = tab.equals(PERFORMANCE);
         if (perf) Ui.add(content, Ui.statusChip(a, chipText(a, id)), 12, Ui.wrap());
@@ -323,7 +331,7 @@ final class GameSettings {
         meta.setPadding(Ui.dp(a, wide ? 62 : 4), 0, Ui.dp(a, 4), 0);
         meta.setVisibility(View.GONE);
         Ui.add(out, meta, 2);
-        GameMeta.load(new File(g.gameDir), m -> { String l = m.line(); if (l != null) { meta.setText(l); meta.setVisibility(View.VISIBLE); } });
+        GameMeta.loadControl(new File(g.gameDir), Edition.control(a, g), m -> { String l = m.line(); if (l != null) { meta.setText(l); meta.setVisibility(View.VISIBLE); } });
         return out;
     }
 

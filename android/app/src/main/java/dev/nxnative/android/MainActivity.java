@@ -550,7 +550,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams np = Ui.fill();
         np.topMargin = dp(8);
         c.addView(name, np);
-        GameMeta.load(new File(g.gameDir), m -> { if (m.icon != null) Ui.tileIcon(tile, m.icon); });
+        GameMeta.loadControl(new File(g.gameDir), Edition.control(this, g), m -> { if (m.icon != null) Ui.tileIcon(tile, m.icon); });   // with the edition switch on, program 1's icon
         boolean other = Profile.of(g.titleId) == null;   // no profile in this APK: it cannot run here (Profile.missing says why)
         TextView st = other ? Ui.status(this, "Not in this app version", R.color.bn_danger) : Ui.status(this, "Checking\u2026", R.color.bn_text_2);
         st.setTextSize(12);
@@ -1249,6 +1249,16 @@ public final class MainActivity extends Activity {
 
     void launch(Game card) {
         if (needAccess(new File(card.gameDir))) return;
+        if (Edition.on(this, card.titleId) && Edition.offered(card)) {   // the card's edition switch: program 1 of its set, as a game of its own (Edition.forPlay)
+            Game e = Edition.forPlay(this, card);
+            if (e == null) {
+                Ui.explain(this, "No pack for the Switch 2 Edition yet", Edition.name(card) + " needs its own pack (its own code and shaders). Prepare it on a computer with "
+                        + "scripts/pack_android.py --program 1 and put it in the app's packs/" + Edition.program1(new File(card.gameDir)) + ", or switch the edition back on the game's page.",
+                        "Game: " + card.gameDir).setPositiveButton("OK", null).show();
+                return;
+            }
+            card = e;
+        }
         Game g = Folders.repack(this, card);   // a remembered pack folder that is gone: the usual search instead
         File saveGone = Folders.goneSave(this, g);
         if (saveGone != null) { Folders.saveGoneDialog(this, g, saveGone); return; }

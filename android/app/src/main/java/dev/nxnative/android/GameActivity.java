@@ -655,7 +655,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             user.addAll(guard(LinkPlay.env(this, id), "Link Play", false));   // Game settings › Link Play (before the typed lines, which win)
             user.addAll(guard(envLines(Prefs.gameEnv(this, id)), "the game's settings", false));   // the game's own lines (its Game settings): after env.txt, so they win for this game
             user.addAll(guard(userEnv(new File(files, "env-" + id + ".txt")), "env-" + id + ".txt", testApp()));   // and env-<title ID>.txt (adb), the same for one game
-            File save = saveDir(files, game, id), temp = mkdirs(new File(files, "temp/" + id)), root = mkdirs(new File(files, "root"));
+            // the save is the application's: a program pack (a Switch 2 Edition's program 1, its pack.tsv's application row) keeps the game's save, as on the console;
+            // its temp, logs and host are its own. So every start of it (the card's edition switch, a frontend, a shortcut) plays the same save
+            String saveId = pack.application.isEmpty() ? id : pack.application;
+            File save = saveDir(files, game, saveId), temp = mkdirs(new File(files, "temp/" + id)), root = mkdirs(new File(files, "root"));
             // The DLC links live in internal app storage: the external files folder is shared storage (FUSE), which refuses symbolic links (errno not yet confirmed on a phone; a refused link is now a [RED] line), so
             // every link failed there and no game saw its DLC (docs/reference/packing.md "DLC links in shared storage"). Their targets stay where they are
             File aoc = aocLinks(mkdirs(new File(getFilesDir(), "aoc/" + id)), game, pack, nupFd);
@@ -668,6 +671,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     "HOME=" + files, "TMPDIR=" + getCacheDir(), "DM_BUILD_COMMIT=" + BuildConfig.NX_COMMIT,
                     "DM_CTL=" + new File(files, "ctl.txt"), "NX_EXIT_RECORD=" + ExitWatch.record(this)));   // live control lines (android/TESTING.md "Live control", android/tools/nxctl.sh); DM_CTL= in env.txt turns it off
             env.add(0, "NX_BUILD_TAG=" + Prefs.buildTag(this) + " \u00b7 signer " + Prefs.signerId(this));   // nxlaunch.c writes it as the log's first line; the signer says which key signed the APK (Signer)
+            // a program pack (a Switch 2 Edition's program 1): each program index's RomFS for the indexed MountRom (hle_fs.c DM_ROMFS_PROGRAM_<i>; 0 is the game's, "conorig")
+            for (Map.Entry<Integer, String> e : pack.romfsProgramPaths(game).entrySet())
+                env.add("DM_ROMFS_PROGRAM_" + e.getKey() + "=" + e.getValue());
             try (java.io.InputStream fin = getAssets().open(GameFonts.ASSET)) {   // the shared-font stand-in (dm/third_party/fonts): the host serves it instead of the phone's own fonts; a DM_FONT_DIR line of the user's comes later and wins
                 File fontDir = new File(getFilesDir(), "fonts");
                 GameFonts.place(fontDir, GameFonts.STANDARD, fin.readAllBytes());

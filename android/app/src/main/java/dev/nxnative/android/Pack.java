@@ -26,6 +26,11 @@ final class Pack {
     final String packer;   // the commit of the tools that made it ("" when not recorded)
     final String madeBy;   // its made_by row: "app <version>" when this app's pack step made it, "" for a pack from other tools (or from before the row)
     final Map<String, String> scenes = new LinkedHashMap<>();   // its scene_res rows: Scene resolution preset → its RomFS overlay folder in the pack (SceneRes; none from older packs)
+    // A pack of program n > 0 of a dump folder (pack_android.py --program; a Switch 2 Edition's program 1, updates/<v>/program/1/): which program, its application (the save and the add-ons
+    // are the application's) and each program index's RomFS (the host's DM_ROMFS_PROGRAM_<i>: 0 is the game's, the edition mounts it as "conorig"). 0 / "" / empty otherwise
+    final int program;
+    final String application;
+    final Map<Integer, String> romfsProgram = new LinkedHashMap<>();
 
     private Pack(File dir, Map<String, List<String>> rows) throws IOException {
         this.dir = dir;
@@ -55,6 +60,30 @@ final class Pack {
             String[] c = v.split("\t", 2);
             if (c.length == 2) scenes.put(c[0], c[1]);
         }
+        List<String> pg = rows.get("program"), ap = rows.get("application");
+        program = pg == null || pg.isEmpty() ? 0 : Integer.parseInt(pg.get(0).trim());
+        application = ap == null || ap.isEmpty() ? "" : ap.get(0).trim().toUpperCase(Locale.ROOT);
+        for (String v : rows.getOrDefault("romfs_program", List.of())) {
+            String[] c = v.split("\t", 2);
+            if (c.length == 2) romfsProgram.put(Integer.parseInt(c[0]), c[1]);
+        }
+    }
+
+    /** A program pack's code: "program/&lt;n&gt;" (BuildCheck.module reads it from DumpLayout.programDir), null for the game's own (program 0) */
+    String programSelector() { return program > 0 ? "program/" + program : null; }
+
+    /**
+     * A program pack's DM_ROMFS_PROGRAM_&lt;i&gt; values for a dump folder: each romfs_program row's folder (relative to the dump, as pack_android.py writes it) when
+     * it is there; empty for another pack or a .nup (which holds program 0 only)
+     */
+    Map<Integer, String> romfsProgramPaths(File game) {
+        Map<Integer, String> out = new LinkedHashMap<>();
+        if (program == 0 || Nup.isNup(game)) return out;
+        for (Map.Entry<Integer, String> e : romfsProgram.entrySet()) {
+            File d = new File(game, e.getValue());
+            if (d.isDirectory()) out.put(e.getKey(), d.getPath());
+        }
+        return out;
     }
 
     /** Whether this app made the pack (its made_by row), so its code can be updated without asking when only the tools changed */
@@ -259,7 +288,7 @@ final class Pack {
      */
     String romfsPath(File game) throws IOException {
         String gv = gameVersion(game);
-        if (!gv.equals(version)) {   // the pack's build under another version of this dump: that version's RomFS (its own, else the base's), as Prepare would pack it
+        if (program == 0 && !gv.equals(version)) {   // (a program pack's RomFS is its own program/<n> folder's, whatever program 0's versions are) the pack's build under another version of this dump: that version's RomFS (its own, else the base's), as Prepare would pack it
             long v = Long.parseLong(gv);
             if (!DumpLayout.hasRomfs(game, v)) return null;
             return Nup.isNup(game) ? Nup.spec(game, DumpLayout.selector(game, v, true), "romfs") : DumpLayout.path(game, v, "romfs");
@@ -285,6 +314,7 @@ final class Pack {
      * identical code, so the pack plays it as it is; another build is not found here, and BuildCheck refuses it
      */
     String gameVersion(File game) {
+        if (program > 0) return programSelector();   // a program pack: its program/<n> folder (BuildCheck.module reads it), not one of program 0's versions
         long v = DumpLayout.versionWith(game, BuildCheck.builds(this));
         return v >= 0 ? String.valueOf(v) : version;
     }
