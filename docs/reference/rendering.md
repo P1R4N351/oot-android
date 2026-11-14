@@ -296,6 +296,15 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Fix:** general: a binding marks its image written only when the library says the shader writes it (`DMSH_VK_BF_RW`: an `OpImageWrite` or an atomic on the variable, `vk_android_build.py` `m_writes`), through `VKA_VIEW_RO` (`vka_wbfollow.h` `wbf_view_of_binding`; test `t_android_wbfollow.c`). Every library the host loads carries the flag. The host's own passes (NDSR, FSR outputs) stay writes; the image keeps its storage view and memory as before.
 - **Open:** an image registered in the bindless table's image slots still marks its texture written, since no binding says which draw writes through the table.
 - **Found on:** Mario Tennis Fever (`0400D4201C6EA000`, profile in pull request #268), Odin 3 (Adreno 830), Qualcomm's driver and Mainline Turnip v32, 2026-11-13.
+### A texture over mip levels of another (Android)
+
+- **Symptom:** (Android) a pass draws into a texture whose storage is a mip level of a larger one, and readers of the larger texture's level never see it (Mario Tennis Fever: a 3584x3584 depth texture over level 1 of its 7168x7168 shadow map).
+- **Cause:** NVN textures are views of pool memory: a texture placed on a level of another, with the same format and layout, is that level. The replay made each texture of no shape of its own an image of its own, so the two never shared content.
+- **Fix:** general: `nvn_tex_level_of` (`nvn_tex.c`) says when a texture's levels are levels k.. of another (same format, texel size, block height and depth, GOB width, offsets; single layer and sample, block-linear 2D, not sparse), and `nvn_tex_parent_off` where such a parent would start. On the Vulkan replay a texture with no image of its own shape looks for a live parent at k 1-4 and becomes a level child (`vka_tex.c` `level_child`): the parent's image, its level j the parent's j + k, no memory, upload or tracking of its own. Its writes mark the parent written, a CPU write to its storage re-uploads the parent, and the parent is not evicted while it has children. `DM_VK_LEVEL_SHARE=0` gives the old image of its own.
+- **Open:** only a parent made before the child is found; a pass drawing into a child while sampling its parent is not seen as sampling its own target (the check compares images); neither is remade with storage use (a `[RED]` line says so).
+- **Found on:** Mario Tennis Fever (`0400D4201C6EA000`, profile in pull request #268), Odin 3 (Adreno 830), 2026-11-13: its shadow map's level 1 is now written. The game's cut far shadows have another cause (a geometry shader's viewport-mask broadcast, not translated), so they stay cut.
+
+## Render targets, passes and clears
 
 ## Render targets, passes and clears
 

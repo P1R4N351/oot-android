@@ -90,6 +90,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_nvn_dpool
 	$(B)/t_android_t2tpath
 	$(B)/t_android_wbfollow
+	$(B)/t_nvn_levelof
 	$(B)/t_android_pckeep
 	$(B)/t_android_pwlist
 	$(B)/t_android_fmtlist
@@ -451,6 +452,10 @@ run: $(B)/t_nvn_dpool
 $(B)/t_android_t2tpath: t_android_t2tpath.c $(VKA)/vka_t2tpath.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_t2tpath.c
 run: $(B)/t_android_t2tpath
+# A texture over the mip levels of another is those levels (nvn_tex.c nvn_tex_level_of; vka_tex.c level children)
+$(B)/t_nvn_levelof: t_nvn_levelof.c ../../gfx/nvn/nvn_tex.c ../../gfx/nvn/nvn_tex.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -I.. -o $@ t_nvn_levelof.c ../../gfx/nvn/nvn_tex.c
+run: $(B)/t_nvn_levelof
 # The background pipeline compiles' gate: slots by MemAvailable and the maps' headroom, the frame's compiles before prewarm's and the optimizer's (vka_psogate.h; vka_pso.c gate_enter)
 # A tracked texture the GPU wrote follows the CPU's writes again once its copy-back into the storage has run (vka_wbfollow.h; vka_tex.c, the prepare's scan)
 $(B)/t_android_wbfollow: t_android_wbfollow.c $(VKA)/vka_wbfollow.h | $(B)

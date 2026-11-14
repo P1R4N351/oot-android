@@ -283,6 +283,9 @@ typedef struct vka_img {
     // Texture levels in views, render targets and copies go through vka_img_lv
     // vmin: the texture level its sampled views start at (vka_tex.c sparse_base: the finest level from which every level is wholly mapped)
     uint32_t base, vmin;
+    // A level child (vka_tex.c level_child): a texture whose storage is levels lvk.. of par's (nvn_tex_level_of), seen through par's image: its VkImage, geometry and levels are
+    // par's, its texture level j is the image's level j + lvk (vka_img_lv, view_of), and it has no memory or upload of its own. nkids: a parent's live children (it is kept and not remade)
+    struct vka_img *par; uint32_t lvk, nkids;
     // A sparse residency image (vka_sparse.c): memory only behind its mapped 64 KB tiles (rs_tw x rs_th texels), va bytes of the sparse address space; bfloor: the finest level it
     // may start at (levels left out to fit the address space, vka_tex.c img_create), a hint kept while vks_va_free() is less than bneed (the address space the next finer start asked for when it did not fit)
     struct vks_img *rs; uint32_t rs_tw, rs_th, bfloor; uint64_t va, bneed;
@@ -304,7 +307,7 @@ typedef struct vka_img {
     int live_ix; struct vka_img *mnext; uint64_t vep;
 } vka_img;
 // Texture level lv as a level of im (a sparse or soft texture's image starts at level im->base): 0 when the image does not hold it
-static inline int vka_img_lv(const vka_img *im, uint32_t *lv) { return vksoft_lv(im->base, im->levels, lv); }
+static inline int vka_img_lv(const vka_img *im, uint32_t *lv) { if (!vksoft_lv(im->base, im->levels - im->lvk, lv)) return 0; *lv += im->lvk; return 1; }   // (a level child's: + lvk)
 // The layers a render target view of level lv can name: a 3D texture's slices at that level (drawn into through 2D / 2D-array views, VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT), else the array layers
 static inline uint32_t vka_img_slices(const vka_img *im, uint32_t lv) { return im->d.target == NVN_TEXTURE_TARGET_3D ? (im->depth >> lv ? im->depth >> lv : 1) : im->layers; }
 vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb);   // the texture's image, made (and filled from guest memory, or cleared) on first use in cb; NULL = no image
