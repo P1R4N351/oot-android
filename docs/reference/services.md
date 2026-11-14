@@ -879,6 +879,15 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Found on:** [Absolum](../../dm/games/0100A83022A22000/README.md) (SDK 18.3.2, one boot each); [Hades](../../dm/games/0100535012974000/README.md): it never asks for the module (checked on 1.0.38233: `refused an NRR that registers only online SDKs (1 hashes)`, no `LoadModule`, its frames as before). Hades' `main` imports only EOS Auth, Connect and PlayerDataStorage, Epic-account cross-save the host cannot serve; the real SDK would at best fail its login and at worst wait on time-outs or contact Epic's servers, with an unknown risk to the player's account.
 - **Note:** open question for the maintainer: always load, refuse online SDKs (as now), or decide per profile.
 
+### The game's code packed into `main` by a boot stub
+
+- **Symptom:** `ro::LoadModule` of an NRO that no RomFS file holds: `[RED] … not in the patched modules' nro.tsv`, and `nro_collect.py` reports the registered hash not found (before it read version 1 NRRs: `no NRR file with hashes`).
+- **Cause:** [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md)'s `main` is a boot stub. Six threads each decode one part of the game's code, a 24.7 MB NRO, out of `main`'s data segment. Each part is a stream read backwards, every byte unscrambled against the byte read before it and a key that grows per byte (the last part also against an MT19937 stream), then Camelot's LZ (the CRA archive's). The stub registers the RomFS's NRR and loads the result with `nn::ro`. That NRR is version 1 (byte +5): its header is 0x180 longer, so the hash table's offset and count are at +0x4c0, not +0x340.
+- **Fix:** `dm/tools/boot_nro.py` decodes the parts offline, for the builds it lists (`BUILDS`, by `main`'s build ID: the table of stream ends is a fixed address). `nro_collect.py` reads the modules of the ExeFS beside the RomFS (a dump's `exefs`, an extraction's `ExeFS`, a `.nup` package's) and keeps a decoded NRO, like any other, only when an NRR registers its SHA-256; it reads version 1 NRRs as `hle_ro.c` does. No run of the game is needed (nxnative's Mac host captures the NRO from a run of the game instead; that capture is not ported).
+- **Android pack:** `scripts/pack_android.py` collects the NROs this way into `<title ID>-work/android-nro/`, rewrites them with the modules and lists them in the pack's `nro.tsv` ([Pack a game](../../android/README.md#pack-a-game)); its shader split gets that folder as `DM_NRO_DIR`. The phone's Prepare does not collect them yet (open).
+- **Check:** `dm/tools/tests/test_boot_nro.py` (synthetic streams made by the inverse of the format, both NRR versions, a boot-stub NRO beside a RomFS). On 1.1.1 `nro_collect.py` finds the NRO in 3.5 s, from the extraction and from the `.nup` package: the SHA-256 the NRR registers, the same bytes nxnative captured.
+- **Found on:** [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md) (1.1.1).
+
 ### GPU driver modules that are never loaded
 
 - **Symptom:** `main` imports EGL (SDL3's GL support) and `vkGetInstanceProcAddr` (its Vulkan support), but the game renders with NVN (`FNA3D_Driver_NVN.cpp`).

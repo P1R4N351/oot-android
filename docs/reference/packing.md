@@ -325,6 +325,22 @@
 - **Fix:** `pack_android.py` `selected_keys` passes the selected set as the phone does (minus the shaders of `shader_optional.tsv` a build lacks); on Windows as `@<file>`, which `vk_android_win.py` `expand_args` reads (a command line there takes 32,767 characters). The library is then the phone's, and the delta keeps every shader from the older library. No tools change: `vk_android_build.py` and `DMSH_VK_CHAIN` are unchanged. Test: `dm/tools/tests/test_android_shader_delta.py` (`test_mac_pack_builds_the_phones_selection`, `test_windows_wrapper_reads_a_keys_file`).
 - **Found on:** [Pokémon Pokopia](../../dm/games/0400A3A01EE4C000/README.md#found-on-this-game) update 655360 on a Mac, v0.3.12 (issue 178). Applies to every profile with a `shader_seen.tsv` packed on a computer.
 
+### Prepare stops at the split of a game whose code a boot stub packs into `main`
+
+- **Symptom:** on the phone, Prepare of [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md#found-on-this-game) stops at "Finding the shaders" on every Retry; `split.log` ends with `[RED] /42: a CRA archive, and no NRO in DM_NRO_DIR (None) holds its file table`. The same dump packs on a computer.
+- **Cause:** the archive's file table, and 40 of the game's shaders, are in the game's code, an NRO that `main` decodes at run time ([The game's code packed into `main` by a boot stub](services.md#the-games-code-packed-into-main-by-a-boot-stub)). No RomFS file holds it. `pack_android.py` collects it with `nro_collect.py` and hands the split its folder as `DM_NRO_DIR`; the phone's `PackService` runs the split without one, so the split had no NRO to read.
+- **Fix:** general, in the split. `shader_split.py` `runtime_nros` takes `DM_NRO_DIR`'s NROs when it is set, else the NROs a boot stub packs into the version's `main` that the RomFS's NRRs register (`nro_collect.boot_stub_nros`), named as `nro_collect.py` names them (`nro<i>.nro` in hash order, so the map's source column is the desktop split's). They reach `cra_jobs` and are scanned like RomFS files. Decoding takes about 3 s; nothing is written.
+- **Check:** `dm/tools/tests/test_split_boot_nro.py` (registered NROs only, the names, `DM_NRO_DIR` first, the archive's table from the given NROs). On 1.1.1 a split as the phone runs it (one process, targeted, no `DM_NRO_DIR`) makes the profile's four tables byte for byte; on an Odin 3 the phone's Prepare passes the split and its check against the profile.
+- **Found on:** [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md#found-on-this-game) 1.1.1. Applies to every game whose `main` is a boot stub `boot_nro.py` knows.
+
+### The phone's split of Camelot's archive takes about an hour on one core
+
+- **Symptom:** Prepare of [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md#found-on-this-game) stands at "Finding the shaders: reading the 1 files that hold shaders" for about an hour, one of its 56 ranges a minute on an Odin 3, with one core busy and the others idle.
+- **Cause:** the phone's split runs in the app's process, one job after another (`J=1`: the process must not fork), and every file of the archive is unscrambled in 16-byte blocks by a Python loop (`cra.unscramble`): 87 of 120 s in a profile of that split on a Mac, about 22 MB/s on one core.
+- **Fix:** the loop is in C, `dm/gfx/tools/cra_unscramble.c`, built by `android/ondevice/build.sh` as `libcra.so`, which the APK carries and requires. `cra.py` loads it through ctypes (`DM_CRA_LIB`, else `libcra.so` on Android), as `nso.py` loads `libzbicdec.so`, and keeps choosing the variant and the CRC table; without the library (a PC or Mac, which split in several processes) the Python loop runs. A `DM_CRA_LIB` that does not load is an error.
+- **Check:** `dm/tools/tests/test_split_cra.py` `Native` (every variant, against the Python loop; a library that does not load). 514 MB/s on one Mac core; the in-process split of 1.1.1 in 40 s on a Mac, every file passing the game's checksums and the tables the profile's; on an Odin 3 the split took 6 min 23 s, against about an hour.
+- **Found on:** [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md#found-on-this-game) 1.1.1, the only game with this archive.
+
 ## In-app updates (Android)
 
 ### The app says up to date though a newer release is on git.eden-emu.dev
