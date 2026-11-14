@@ -37,6 +37,7 @@ void nxhost_env_changed(void);
 #pragma weak nxhost_input_device_removed
 #pragma weak nxhost_input_key
 #pragma weak nxhost_input_axes
+#pragma weak nxhost_input_motion
 #pragma weak nxhost_input_touch
 #pragma weak nxhost_touch_layout
 #pragma weak nxhost_touch_controls_enable
@@ -366,6 +367,12 @@ JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_touchControlsState(JNIEn
     nxhost_touch_controls_state(p, NXT_MAX, s);
     if (pressed) { int n = (*env)->GetArrayLength(env, pressed); if (n > NXT_MAX) n = NXT_MAX; (*env)->SetLongArrayRegion(env, pressed, 0, n, (const jlong *)p); }
     if (stick && (*env)->GetArrayLength(env, stick) >= 4) (*env)->SetFloatArrayRegion(env, stick, 0, 4, s);
+}
+// A gamepad's own accelerometer (m/s²) and gyroscope (rad/s), PadMotion.java. False: the host takes no controller motion (switched off, or an older host): the launcher stops reading
+JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_padMotion(JNIEnv *env, jclass cls, jint device, jfloat ax, jfloat ay, jfloat az, jfloat gx, jfloat gy, jfloat gz) {
+    (void)env; (void)cls; if (!nxhost_input_motion) return JNI_FALSE;
+    const float a[3] = {ax, ay, az}, g[3] = {gx, gy, gz};
+    return nxhost_input_motion(device, a, g);
 }
 JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_motionStart(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_motion_start ? nxhost_motion_start() : JNI_FALSE; }
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_motionStop(JNIEnv *env, jclass cls) { (void)env; (void)cls; if (nxhost_motion_stop) nxhost_motion_stop(); }

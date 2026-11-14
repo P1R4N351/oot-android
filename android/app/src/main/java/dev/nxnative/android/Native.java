@@ -66,6 +66,9 @@ final class Native {
     /** What each control holds now (DM_BTN_* bits) and the sticks (lx, ly, rx, ry; -1..1, y up). */
     static native void touchControlsState(long[] pressed, float[] stick);
 
+    /** One sample of a gamepad's own accelerometer (m/s², Android's specific force) and gyroscope (rad/s), PadMotion: the player's six-axis sensor. False: the host takes none (DM_MOTION=0 / DM_PAD_MOTION=0, or no such entry point). */
+    static native boolean padMotion(int device, float ax, float ay, float az, float gx, float gy, float gz);
+
     static native boolean motionStart();
 
     static native void motionStop();

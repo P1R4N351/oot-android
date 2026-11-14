@@ -5,6 +5,7 @@
 #include "../hle_haptics.h"
 #include "../pad_slots.h"
 #include "input_android.h"
+#include "pad_motion.h"
 #include <android/looper.h>
 #include <dirent.h>
 #include <stdio.h>
@@ -24,6 +25,8 @@ static nxin_pad g_pad[DM_PLAYERS];
 static float g_dz = -1;
 static nxin_touch g_touch; static int g_touch_init;
 static uint64_t g_shake_btn;
+static pad_motion_cal g_pm_cal[DM_PLAYERS];   // each controller's rest offset of the gyro (pad_motion.h), under g_mu
+static int g_pm_log[DM_PLAYERS];
 static int g_held;   // the text input box is up: pad and touch events are dropped (android_text_input)
 
 static void touch_once(void) { if (!g_touch_init) { nxin_touch_init(&g_touch); g_touch_init = 1; } }
@@ -77,7 +80,7 @@ void nxhost_input_device_removed(int device) {
     int p = pad_slot_free(&g_slots, owner(device));
     if (p >= 0) {
         memset(&g_pad[p], 0, sizeof g_pad[p]); dm_pad_set_player(p, 0, 0, 0, 0, 0);
-        dm_pad_players(pad_slot_mask(&g_slots)); dm_motion_clear(p);
+        dm_pad_players(pad_slot_mask(&g_slots)); dm_motion_clear(p); pad_motion_cal_reset(&g_pm_cal[p]); g_pm_log[p] = 0;
         LOG("input: device %d (player %d) removed", device, p + 1);
     }
     pthread_mutex_unlock(&g_mu);
@@ -212,6 +215,21 @@ static _Atomic int g_rotation = 1;   // a phone held in landscape, its top to th
 void nxhost_motion_sens(float f) { dm_motion_sens(f); }
 void nxhost_motion_rotation(int r) { atomic_store(&g_rotation, r & 3); }
 static int env_off(const char *n) { const char *e = getenv(n); return e && !strcmp(e, "0"); }
+
+// ---- A controller's own motion sensors (the launcher's PadMotion.java reads them): the six-axis sensor of the player the device has ----
+static int pad_motion_off(void) { static int off = -1; if (off < 0) off = env_off("DM_MOTION") || env_off("DM_PAD_MOTION"); return off; }
+bool nxhost_input_motion(int device, const float acc[3], const float gyro[3]) {
+    if (pad_motion_off()) return false;
+    pthread_mutex_lock(&g_mu);
+    int p = pad_slot_of(&g_slots, owner(device));
+    if (p >= 0 && !g_held) {
+        float a[3], w[3]; pad_motion_feed(&g_pm_cal[p], acc, gyro, now_ns(), a, w);
+        if (!g_pm_log[p]) { g_pm_log[p] = 1; LOG("input: player %d: six-axis sensor from the controller's own gyroscope and accelerometer", p + 1); }
+        dm_motion_set(p, a, w);   // GameController's path: DM_MOTION_AXES / DM_MOTION_ACC_SIGN apply, and the controller's motion outranks the phone's
+    }
+    pthread_mutex_unlock(&g_mu);
+    return true;
+}
 static void *motion_thread(void *arg) {
     (void)arg; plat_thread_set_name("dm sensors");
     ALooper *lp = ALooper_prepare(0); atomic_store(&g_mo_looper, lp);
