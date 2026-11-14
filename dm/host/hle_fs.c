@@ -204,21 +204,29 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
             if (txn && g_mnt[i].save && g_mnt[i].commit[0] && strcmp(g_mnt[i].commit, dir)) LOG("[RED] fs mount %s: the name still holds the save %s, not %s (no Unmount before it)", name, g_mnt[i].commit, dir);
             pthread_mutex_unlock(&g_lock); return RES_OK;
         }
-    if (g_nmnt >= MAX_MOUNT) die("mount table full");
-    strlcpy(g_mnt[g_nmnt].name, name, sizeof g_mnt[0].name);
-    g_mnt[g_nmnt].ro = ro; g_mnt[g_nmnt].overlay[0] = 0; g_mnt[g_nmnt].commit[0] = 0;
-    g_mnt[g_nmnt].txn_root = -1; g_mnt[g_nmnt].save = txn;
-    atomic_store(&g_mnt[g_nmnt].poison, 0);
-    atomic_store(&g_mnt[g_nmnt].first_write_ns, 0);
+    // A save takes an entry an Unmount freed (h_fs_Unmount: only save entries are ever freed), unless a mounted entry still shares that entry's transaction (txn_root):
+    // a game that mounts and unmounts its save again and again then keeps one entry instead of filling the table. Other mounts are never unmounted: they always append
+    int s = g_nmnt;
+    for (int f = 0; txn && f < g_nmnt && s == g_nmnt; f++) {
+        if (g_mnt[f].name[0]) continue;
+        int used = 0; for (int j = 0; j < g_nmnt && !used; j++) used = g_mnt[j].name[0] && g_mnt[j].txn_root == f;
+        if (!used) s = f;
+    }
+    if (s == g_nmnt && g_nmnt >= MAX_MOUNT) die("mount table full");
+    strlcpy(g_mnt[s].name, name, sizeof g_mnt[0].name);
+    g_mnt[s].ro = ro; g_mnt[s].overlay[0] = 0; g_mnt[s].commit[0] = 0;
+    g_mnt[s].txn_root = -1; g_mnt[s].save = txn;
+    atomic_store(&g_mnt[s].poison, 0);
+    atomic_store(&g_mnt[s].first_write_ns, 0);
     if (!strcmp(name, "rom") && getenv("DM_ROMFS_OVERLAY"))
-        strlcpy(g_mnt[g_nmnt].overlay, getenv("DM_ROMFS_OVERLAY"), sizeof g_mnt[0].overlay);
+        strlcpy(g_mnt[s].overlay, getenv("DM_ROMFS_OVERLAY"), sizeof g_mnt[0].overlay);
     // The transaction directory cannot be set up (leftovers cannot be cleared / clone failed, which really happens on a full disk): do not exit; mount the committed directory read-only -- saves still read, every write fails, commits are no-ops, the committed version is untouched, and the front end is told
     // (each of these three failures used to call die: with the phone's storage full the game exited as soon as it mounted its saves)
     int txn_err = 0, k = 0;
     while (txn && k < g_nmnt && (strcmp(g_mnt[k].commit, dir) || !g_mnt[k].name[0])) k++;   // (an unmounted entry's transaction is not taken up again: a new mount starts from the committed save)
     if (txn && k < g_nmnt) {   // a second name for a save already mounted (account and device save data are one host save): it shares that transaction, whose pending writes a new clone would drop
-        strlcpy(g_mnt[g_nmnt].commit, g_mnt[k].commit, sizeof g_mnt[0].commit); strlcpy(g_mnt[g_nmnt].dir, g_mnt[k].dir, sizeof g_mnt[0].dir);
-        g_mnt[g_nmnt].txn_root = g_mnt[k].txn_root;
+        strlcpy(g_mnt[s].commit, g_mnt[k].commit, sizeof g_mnt[0].commit); strlcpy(g_mnt[s].dir, g_mnt[k].dir, sizeof g_mnt[0].dir);
+        g_mnt[s].txn_root = g_mnt[k].txn_root;
     } else if (txn) {
         char work[1100], neu[1100]; snprintf(work, sizeof work, "%s.work", dir); snprintf(neu, sizeof neu, "%s.new", dir);
         plat_swap_recover(dir);   // a commit killed inside the file-level swap that stands in for RENAME_EXCHANGE on shared storage is finished (plat_rename_swap)
@@ -228,24 +236,24 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
         else if (!access(neu, F_OK) && rm_tree(neu)) why = "cannot clear the .new left over from last time";
         else if (dm_fs_test_fail("mountclone") || plat_clone_tree(dir, work))   // ENOTSUP: HFS+ and exFAT can neither clone nor swap directories (RENAME_SWAP), so no transaction can work on them
             why = errno == ENOTSUP ? "the save folder's filesystem cannot clone directories (save transactions need APFS: set DM_SAVE to a folder on an APFS volume)" : "cloning the work directory failed";
-        if (why) { txn_err = errno ? errno : EIO; g_mnt[g_nmnt].ro = 1; strlcpy(g_mnt[g_nmnt].dir, dir, sizeof g_mnt[0].dir);
+        if (why) { txn_err = errno ? errno : EIO; g_mnt[s].ro = 1; strlcpy(g_mnt[s].dir, dir, sizeof g_mnt[0].dir);
             LOG("[RED] save transaction: %s (%s, errno=%d) -- mounting the committed directory %s read-only instead: saves cannot be written this session, the committed version is unchanged", why, work, txn_err, dir); }
         else {
-            strlcpy(g_mnt[g_nmnt].commit, dir, sizeof g_mnt[0].commit);
-            g_mnt[g_nmnt].txn_root = g_nmnt;
-            atomic_store(&g_mnt[g_nmnt].poison, 0);
-            atomic_store(&g_mnt[g_nmnt].first_write_ns, 0);
-            strlcpy(g_mnt[g_nmnt].dir, work, sizeof g_mnt[0].dir); }
-    } else strlcpy(g_mnt[g_nmnt].dir, dir, sizeof g_mnt[0].dir);
-    g_mnt[g_nmnt].img = NULL;
+            strlcpy(g_mnt[s].commit, dir, sizeof g_mnt[0].commit);
+            g_mnt[s].txn_root = s;
+            atomic_store(&g_mnt[s].poison, 0);
+            atomic_store(&g_mnt[s].first_write_ns, 0);
+            strlcpy(g_mnt[s].dir, work, sizeof g_mnt[0].dir); }
+    } else strlcpy(g_mnt[s].dir, dir, sizeof g_mnt[0].dir);
+    g_mnt[s].img = NULL;
     struct stat ist;
     if (ro && !txn) {   // game files: a RomFS folder, or a RomFS image file in its place
         // A path that is neither is a stale or mistyped one (an old run command still naming the RomFS folder a rebuild replaced with RomFS.img): stop here, not at the game's
         // first failed read (Echoes of Wisdom crashed 0.3 s after nnMain, GitHub issue #615). Add-on content and system data check their own paths before they mount
         const char *bad = NULL;
-        if (nup_is_spec(dir)) { if (!(g_mnt[g_nmnt].img = img_open(dir))) bad = "cannot be used as a NUP package (the log line above says why)"; }
+        if (nup_is_spec(dir)) { if (!(g_mnt[s].img = img_open(dir))) bad = "cannot be used as a NUP package (the log line above says why)"; }
         else if (stat(dir, &ist) || !(S_ISDIR(ist.st_mode) || S_ISREG(ist.st_mode))) bad = "are missing: neither a folder nor a RomFS image";
-        else if (S_ISREG(ist.st_mode) && !(g_mnt[g_nmnt].img = img_open(dir))) bad = "are not a complete RomFS image";
+        else if (S_ISREG(ist.st_mode) && !(g_mnt[s].img = img_open(dir))) bad = "are not a complete RomFS image";
         if (bad && soft) {
             pthread_mutex_unlock(&g_lock);
             LOG("[RED] fs mount %s: the files %s %s: answered \"target not found\"", name, dir, bad);
@@ -253,11 +261,12 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
         }
         if (bad) die("the game files %s (%s:) %s%s", dir, name, bad, strstr(bad, "missing") ? " (the rom mount is DM_ROMFS, or $DM_ROOT/romfs when DM_ROMFS is unset)" : "");
     }
-    g_nmnt++;
+    int reused = s < g_nmnt; if (!reused) g_nmnt++;
+    char shown[sizeof g_mnt[0].dir]; strlcpy(shown, txn ? g_mnt[s].dir : dir, sizeof shown); int ov = g_mnt[s].overlay[0] != 0;   // read under the lock: an Unmount and a later mount may take the entry again
     pthread_mutex_unlock(&g_lock);
     if (txn_err) front_save_failed(txn_err);
     if (!ro && !txn) mkdir(dir, 0755);
-    LOG("fs mount %s: → %s%s%s", name, txn ? g_mnt[g_nmnt - 1].dir : dir, ro || txn_err ? " (read-only)" : txn ? " (transactional save: work directory, swapped in atomically on Commit)" : "", g_mnt[g_nmnt - 1].overlay[0] ? " (overlay first)" : "");
+    LOG("fs mount %s: → %s%s%s%s", name, shown, ro || txn_err ? " (read-only)" : txn ? " (transactional save: work directory, swapped in atomically on Commit)" : "", ov ? " (overlay first)" : "", reused ? " (an unmounted entry taken again)" : "");
     return RES_OK;
 }
 static Result mount(const char *name, const char *dir, int ro) { return mount_ex(name, dir, ro, 0, 0); }
@@ -634,8 +643,10 @@ HLE_FORCE("_ZN2nn2fs14ExtendSaveDataERKNS_7account3UidEll", "fsp-srv; extend sav
     (void)uid; LOG("fs extend save data to %lld bytes (journal %lld): nothing to do", (long long)size, (long long)journal); return RES_OK;
 }
 // Each user's save directory (hle_account.c dm_account_save_dir): the first user's (the fixed Uid every earlier run had) is DM_SAVE, so its save stays where it was; another
-// user's is DM_SAVE_user_<uid>, made by EnsureSaveData. 1 when it is DM_SAVE
-int dm_account_save_dir(const void *uid, const char *base, char *out, size_t cap);
+// user's is DM_SAVE_user_<uid>, made by EnsureSaveData. 1 when it is DM_SAVE. The weak forms are the single user's, for programs that link this file without hle_account.c
+// (the fs unit tests); the host's strong ones replace them
+__attribute__((weak)) int dm_account_save_dir(const void *uid, const char *base, char *out, size_t cap) { (void)uid; snprintf(out, cap, "%s", base); return 1; }
+__attribute__((weak)) int dm_account_users(void) { return 1; }
 static int user_save_dir(const void *uid, char *dd, size_t cap) {
     const char *d = getenv("DM_SAVE");
     if (!d) die("DM_SAVE is not set: point it at a writable copy of a save directory");
@@ -786,8 +797,12 @@ HLE_FORCE("_ZN2nn2fs6CommitEPKcRKNS0_12CommitOptionE", "fsp-srv; same as Commit 
 HLE_FORCE("_ZN2nn2fs14CommitSaveDataEPKc", "fsp-srv; same as Commit (SDK 11's old name)", Result, h_fs_CommitSaveData, const char *name) { return h_fs_Commit(name); }
 // Unmount: a save's name is freed, so the next MountSaveData under it mounts that user's save (Super Mario Bros. Wonder unmounts "save" and mounts it again for the user
 // whose save file it opens: a permanent table kept the first user's save under the name, and every user's save file was the first user's). What was not committed is
-// dropped, as on Horizon. Other mounts (rom, add-on content, cache storage) stay: their table entries are permanent, as before
-HLE_FORCE("_ZN2nn2fs7UnmountEPKc", "fsp-srv; a save's name is freed (its uncommitted writes dropped); other mounts stay", void, h_fs_Unmount, const char *name) {
+// dropped, as on Horizon. Other mounts (rom, add-on content, cache storage) stay: their table entries are permanent, as before. The freed entry is taken by the next save mount
+// (mount_ex), so a game that mounts and unmounts its save again and again does not fill the table.
+// Only with more than one user (dm_account_users): with one, every MountSaveData names the same save, so a kept name mounts the right one, and Unmount stays the no-op it
+// always was (a game that unmounts with writes not committed keeps them, as every earlier run did)
+HLE_FORCE("_ZN2nn2fs7UnmountEPKc", "fsp-srv; with more than one user a save's name is freed (its uncommitted writes dropped); other mounts, and every mount with one user, stay", void, h_fs_Unmount, const char *name) {
+    if (dm_account_users() < 2) return;
     PATH_LOCK(); pthread_mutex_lock(&g_lock);
     for (int i = 0; i < g_nmnt; i++)
         if (g_mnt[i].save && !strcmp(g_mnt[i].name, name)) { LOG("fs unmount %s (save %s)", name, g_mnt[i].commit[0] ? g_mnt[i].commit : g_mnt[i].dir); g_mnt[i].name[0] = 0; }

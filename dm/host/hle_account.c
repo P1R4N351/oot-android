@@ -72,6 +72,8 @@ int dm_account_save_dir(const void *uid, const char *base, char *out, size_t cap
     snprintf(out, cap, "%s_user_%s", base, h);
     return 0;
 }
+// How many users the console has (DM_USERS, else the one fixed user): hle_fs.c frees a save's mount name on Unmount only when there is more than one
+int dm_account_users(void) { users(); return g_nusers; }
 
 // The front end's user picker (front.h): without one (the Mac, iOS, the unit tests) -2, and the host takes the preselected user
 __attribute__((weak)) int front_user_select(const char *const *names, const int *offered, int n, int def) { (void)names; (void)offered; (void)n; (void)def; return -2; }
