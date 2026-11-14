@@ -320,6 +320,12 @@ final class GameSettings {
             t.setPadding(Ui.dp(a, 4), 0, Ui.dp(a, 4), 0);
             Ui.add(out, t, 4);
         }
+        // the dump's version and publisher ("1.2.1 · Nintendo": a .nup's meta block, a folder's control data), under the name once read
+        TextView meta = Ui.small(a, "");
+        meta.setPadding(Ui.dp(a, wide ? 62 : 4), 0, Ui.dp(a, 4), 0);
+        meta.setVisibility(View.GONE);
+        Ui.add(out, meta, 2);
+        GameMeta.load(new File(g.gameDir), m -> { String l = m.line(); if (l != null) { meta.setText(l); meta.setVisibility(View.VISIBLE); } });
         return out;
     }
 

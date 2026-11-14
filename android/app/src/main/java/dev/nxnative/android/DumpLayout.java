@@ -115,7 +115,7 @@ final class DumpLayout {
     /**
      * A version folder's package, the folder that holds its exefs/ and romfs/ (scripts/pack_dump.py package_root): the folder itself, or in OunceCake's layout
      * program/0/ in it (each content at program/&lt;index&gt;/, with program/ below that when a data content shares the index). Program 0 is the application's own;
-     * a Switch 2 Edition's program/1/ is another program, not read
+     * a Switch 2 Edition's program/1/ is another program (programDir)
      */
     static File root(File verDir) {
         for (String r : new String[] {"", "program/0", "program/0/program"}) {
@@ -123,6 +123,66 @@ final class DumpLayout {
             if (new File(d, "exefs").isDirectory() || new File(d, "romfs").isDirectory()) return d;
         }
         return verDir;
+    }
+
+    /**
+     * Program n &gt; 0 of a folder dump (a Switch 2 Edition's program 1, scripts/pack_dump.py program_dir): the package (the folder with exefs/ and romfs/) of the
+     * newest version that has its exefs/main.npdm, an update's, else the base's. Where the dump tools keep it: program/&lt;n&gt;/ in the version folder in the
+     * console's layout (program/&lt;n&gt;/program/ when a data content shares the index), program&lt;n&gt;/ beside the version's exefs/ and romfs/ in the flattened one
+     * (updates/&lt;v&gt;/program1/, leading zeros allowed), and Yoink's switch2/updates/&lt;v&gt;/ and switch2/base/ (program 1); a one-version folder's own
+     * program&lt;n&gt;/ is the base's. null when none has it, and for a .nup, which holds program 0 only
+     */
+    static File programDir(File dump, int n) {
+        if (Nup.isNup(dump)) return null;
+        long best = -1;
+        File found = null;
+        List<Object[]> vers = new ArrayList<>();   // {version, version folder, whether the folder is program n itself (Yoink's switch2/)}
+        for (File u : numbered(new File(dump, "updates"))) vers.add(new Object[] {Long.parseLong(u.getName()), u, false});
+        vers.add(new Object[] {0L, new File(dump, "base"), false});
+        vers.add(new Object[] {0L, dump, false});
+        if (n == 1) {
+            for (File u : numbered(new File(dump, "switch2/updates"))) vers.add(new Object[] {Long.parseLong(u.getName()), u, true});
+            vers.add(new Object[] {0L, new File(dump, "switch2/base"), true});
+        }
+        for (Object[] e : vers) {
+            long ver = (Long) e[0];
+            File v = (File) e[1];
+            List<File> cands = new ArrayList<>();
+            if ((Boolean) e[2]) cands.add(v);
+            else {
+                cands.add(new File(v, "program/" + n));
+                cands.add(new File(v, "program/" + n + "/program"));
+                File[] flat = v.listFiles(f -> f.isDirectory() && f.getName().matches("program0*[1-9]\\d{0,2}") && Integer.parseInt(f.getName().substring(7)) == n);
+                if (flat != null) { java.util.Arrays.sort(flat); cands.addAll(java.util.Arrays.asList(flat)); }
+            }
+            for (File d : cands)
+                if (ver > best && new File(d, "exefs/main.npdm").isFile()) { best = ver; found = d; break; }
+        }
+        return found;
+    }
+
+    /**
+     * A folder dump's control data (Nacp): the control/ folder with control.nacp of the newest version that has one, an update's, else the base's, in the
+     * console's layout (program/0/control/) or the flattened one (&lt;version&gt;/control/). A dump of an installed game has only its update's (the Control
+     * content goes with the update), which then stands for the game, as github.com/a55uka/nup pack takes it. null when none has it, and for a .nup
+     */
+    static File controlDir(File dump) {
+        if (Nup.isNup(dump)) return null;
+        List<File> vers = numbered(new File(dump, "updates"));
+        vers.sort((a, b) -> Long.compare(Long.parseLong(b.getName()), Long.parseLong(a.getName())));
+        vers.add(new File(dump, "base"));
+        vers.add(dump);
+        for (File v : vers)
+            for (File d : new File[] {new File(root(v), "control"), new File(v, "program/0/control"), new File(v, "control")})
+                if (new File(d, "control.nacp").isFile()) return d;
+        return null;
+    }
+
+    private static List<File> numbered(File parent) {
+        List<File> out = new ArrayList<>();
+        File[] l = parent.listFiles(f -> f.isDirectory() && f.getName().matches("\\d{1,18}"));
+        if (l != null) out.addAll(java.util.Arrays.asList(l));
+        return out;
     }
 
     private static boolean nonEmpty(File d) {
