@@ -1775,6 +1775,14 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Open:** not run on the phone yet. Entry 0's sink must stay intact for the old modules: the hint loop in `gmem_map` also writes word 6 of entry 0 for a 2 MiB chunk whose number is a multiple of 8,192 (a guest address at a multiple of 16 GiB), which the new modules' sink needs fixed as well (being fixed on another branch).
 - **Found on:** [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md#found-on-this-game): phones with the `v-d64f157175fd` library when the APKs of `228b73bd10f6` came.
 
+### The Mac host read the raw-memory write log in its old layout
+
+- **Symptom:** `make -C dm/host` stops at `nvn_mtl.m: use of undeclared identifier 'DMSH_GMEM_LOG_LOG2'`: the Mac host does not build, so neither the NSP script's heap check nor its address region check can run.
+- **Cause:** the change above made the write log a bitmap of pool-table entries (`dmsh_abi.h`, Ryujinx `GlobalToStorage.GmemLogCbOffset`) and removed `DMSH_GMEM_LOG_LOG2`; the Vulkan replay read it the new way (`vka_gml.h`), the Mac's `gml_read` still read a hash set of guest pages, so it would also have read the shaders' bits as page numbers.
+- **Fix:** `gml_read` reads the bitmap: each set bit names an entry of the pool table the draw was encoded with (`gml_take` keeps that table with the log), whose range gives the pool; the log cannot run out of slots any more, so its overflow handling is gone. The table carries no lookup hints, which the format allows (a hint of 0 makes the shader search).
+- **Check:** the Mac host builds and boots Super Mario Bros. Wonder's program 1 to its heap request and 15 s into `nnMain`; no game was played on the Mac with it.
+- **Found on:** [Super Mario Bros. Wonder - Nintendo Switch 2 Edition](../../dm/games/040015100B514001/README.md), whose heap check needed the Mac host.
+
 ### A shader package of another split gives shaders other shaders' code
 
 - **Symptom:** on the Android replay, a black or wrong picture from a pack whose shader library loads without a `[RED]` line: every pipeline gets shaders, but the wrong ones. `pack_android.py` printed `[RED] the dump's shader_map.tsv differs from the profile's` when it split, or was given a package (`--shader-pkg`, or one already in `<work>/android-shaders/pkg`) made by another split.

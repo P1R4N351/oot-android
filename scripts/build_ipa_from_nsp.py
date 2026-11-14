@@ -1341,6 +1341,12 @@ def heap_checked(g):   # the heap check's stamp in the profile ("# heap check: .
     return any(l.startswith('# heap check: ') for l in (g.dir / 'game.tsv').read_text(encoding='utf-8').splitlines())
 
 
+def check_aoc(work):   # the DLC the build packed (pack_dlc, <id>_build/aoc/<index>.img) for the heap and region checks' boots, as the IPA's run has it: a game that mounts
+    # its add-on at boot stops without it (Super Mario Bros. Wonder's program 1 mounts aocup, its Switch 2 content, and crashed in the sdk when the index did not exist)
+    a = work / 'aoc'
+    return {'DM_AOC_DIR': str(a)} if a.is_dir() and any(a.glob('*.img')) else {}
+
+
 def heap_check(repo, d, patched, work, env, logs, g):
     """The heap check of a provisional profile whose game has virtual address memory (an NPDM system resource) and sets a heap (dm/games/profile_guess.py heap_check_needed):
     its heap request decides the alias / heap split of the guest block, and only a run shows it (Wonder asks for 1.44 GB, Tears of the Kingdom for 2.09 GB, which Engage's split
@@ -1352,7 +1358,7 @@ def heap_check(repo, d, patched, work, env, logs, g):
     rmtree(rd)
     for x in ('save', 'temp', 'msl'): (rd / x).mkdir(parents=True)
     # a fresh save and temporary storage, no shader libraries (only the heap request matters), the profile's shader map
-    henv = dict(env, DM_ROMFS=str(rfs.source(d)), DM_SAVE=str(rd / 'save'), DM_TEMP=str(rd / 'temp'), DM_MSL_DIR=str(rd / 'msl'), DM_NVN_SHMAP=str(g.table('shader_map.tsv')))
+    henv = dict(env, DM_ROMFS=str(rfs.source(d)), DM_SAVE=str(rd / 'save'), DM_TEMP=str(rd / 'temp'), DM_MSL_DIR=str(rd / 'msl'), DM_NVN_SHMAP=str(g.table('shader_map.tsv')), **check_aoc(work))
     PROG.set(step='booting the game')
     t0, seen = time.time(), {}
     def done():   # the first heap request answered (or refused for good), or nnMain running for a while without one
@@ -1407,7 +1413,7 @@ def region_check(repo, d, patched, work, env, logs, g):
     rmtree(rd); table.unlink(missing_ok=True)
     for x in ('save', 'temp', 'msl'): (rd / x).mkdir(parents=True)
     henv = dict(env, DM_ROMFS=str(rfs.source(d)), DM_SAVE=str(rd / 'save'), DM_TEMP=str(rd / 'temp'), DM_MSL_DIR=str(rd / 'msl'), DM_NVN_SHMAP=str(g.table('shader_map.tsv')),
-                DM_ALIAS_SIZE=f'{SWITCH_ALIAS:#x}', DM_REGIONS=str(table))
+                DM_ALIAS_SIZE=f'{SWITCH_ALIAS:#x}', DM_REGIONS=str(table), **check_aoc(work))
     PROG.set(step='booting the game')
     t0, seen = time.time(), {}
     def done():

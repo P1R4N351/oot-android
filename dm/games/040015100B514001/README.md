@@ -20,6 +20,7 @@ Program 1 of application `010015100B514000`, display version 1.2.1 (update v3276
 ## Found on this game
 
 - [Built-in fonts of SDK 21](../../../docs/reference/services.md#built-in-fonts-and-the-audio-device-notification-of-sdk-21): main calls `GetBuiltInFontData` and imports `ScalableFontEngineHelper::Decode`, so the host gave it the font with its BFTTF header; it now gives the TTF past the header, as the service's offsets do (taken from nxnative PR #1639; what the header did to this game's text was not recorded).
+- Its heap check on the Mac needed the Mac host to build ([dav1d and a weak reference](../../../docs/reference/packing.md#the-mac-host-does-not-link-dav1d-and-a-weak-reference-to-the-vulkan-replay), [the write log in its old layout](../../../docs/reference/shaders.md#the-mac-host-read-the-raw-memory-write-log-in-its-old-layout)), [a block sized for its heap](../../../docs/reference/packing.md#the-heap-check-sized-the-block-for-a-1-gb-alias-region), and [its add-on at boot](../../../docs/reference/packing.md#the-heap-and-region-checks-booted-a-game-without-its-dlc).
 
 ## Open
 
