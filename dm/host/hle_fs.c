@@ -460,6 +460,18 @@ HLE_FORCE("_ZN2nn2fs8MountRomEPKcPvm", "fsp-srv; rom → host RomFS directory", 
     }
     return r;
 }
+// SDK 19+ overloads with a program index after the name (Metroid Prime 4: Beyond; a Switch 2 Edition's program 1, which reads program 0's RomFS too: Super Mario Bros. Wonder
+// mounts its own as "content" and the original's as "conorig"). Index n mounts DM_ROMFS_PROGRAM_<n> (a directory or a RomFS / .nup spec, as DM_ROMFS); without one, index 0
+// is DM_ROMFS (one program, as before), and another index fails as a missing target, rather than mounting this program's files under the other's name (PR #1639 upstream)
+HLE_FORCE("_ZN2nn2fs8MountRomEPKciPvm", "fsp-srv; rom of program index n → DM_ROMFS_PROGRAM_<n> (DM_ROMFS for 0)", Result, h_fs_MountRomIdx, const char *name, int idx, void *cache, size_t sz) {
+    char key[64]; snprintf(key, sizeof key, "DM_ROMFS_PROGRAM_%d", idx);
+    const char *dir = getenv(key);
+    if (dir && *dir) { dm_thread_service_request(); return mount(name, dir, 1); }
+    if (!idx) return h_fs_MountRom(name, cache, sz);
+    LOG("[RED] fs::MountRom(%s, program index %d): %s is unset", name, idx, key);
+    return RES_TARGET_NOT_FOUND;
+}
+HLE_FORCE("_ZN2nn2fs22QueryMountRomCacheSizeEPmi", "fsp-srv; the cache gets only the minimum size (overload with a program index)", Result, h_fs_QueryRomCacheIdx, size_t *out, int idx) { (void)idx; return h_fs_QueryRomCache(out); }
 // Add-on content (DLC) RomFS: DM_AOC_DIR/<index>/, extracted from the player's DLC NSPs by the packing script; mounted read-only, using the directory index like rom.
 // The owned index list is reported by the aoc calls in hle_misc.c from the same directory; the game only mounts indices it was given, and a missing directory answers "target not found" (fs 2-1002, as on hardware without that DLC)
 // The cache a Query…CacheSize asks for is, on Horizon, the RomFS's file table as RomFsFileSystem::GetRequiredWorkingMemorySize sizes it: the directory and file hash tables (4 bytes a bucket)

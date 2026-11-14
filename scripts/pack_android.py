@@ -473,7 +473,7 @@ def selected_keys(profile_dir):
     return vk_android_delta.selection(seen.read_text(encoding='utf-8'), keys)
 
 
-def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs, exefs) when they are not vdir's own (pack_dump.version_part)
+def split_shaders(a, g, vdir, pkg, parts=None, aoc=()):   # parts: the version's (romfs, exefs) when they are not vdir's own (pack_dump.version_part); aoc: add-on RomFS roots to split too
     """The Switch shader package from the dump, as the phone's split step makes it (the version's romfs and main, android/app PackService "split"): shader_split.py into
     <pkg> (written beside it, then renamed, so a stopped split leaves no half package). Its tables go beside the package. The library is the profile's (its shader_map.tsv
     decides what is built, and vk_android_build.py finds each of its shaders in the package by key), so the split must hold every shader of the profile's map: one that
@@ -483,8 +483,9 @@ def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs,
     tmp = pkg.with_name(pkg.name + '.tmp'); shutil.rmtree(tmp, ignore_errors=True); tmp.mkdir(parents=True)
     print(f'shaders: splitting the shaders out of {rd} into {pkg} with {py} (a few minutes)', flush=True)
     env = child_env(DM_GAME=g.id, DM_SPLIT_TARGETED='1')   # as the phone: only the files the profile's map names, when the build is the profile's and the tables come out the same
+    # a program n > 0 (--program) keeps its shaders in the application's add-ons: a Switch 2 Edition's NVN2 archives are in its add-on (Wonder's 010015100B515001)
     r = subprocess.run([py, str(SPLIT), str(rd), str(ed / 'main'), str(tmp / 'pkg'),
-                        *[str(tmp / f) for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv', 'pso_pairs.tsv')]], env=env)
+                        *[str(tmp / f) for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv', 'pso_pairs.tsv')], *([','.join(map(str, aoc))] if aoc else [])], env=env)
     if r.returncode: raise Error(f'shader_split.py exit code {r.returncode}')
     if (g.dir / 'shader_map.tsv').is_file():
         want, have = map_keys(g.dir / 'shader_map.tsv'), map_keys(tmp / 'shader_map.tsv')
@@ -504,7 +505,7 @@ def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs,
     tmp.rmdir()
 
 
-def pack_shaders(a, g, work, out, vdir, parts=None):
+def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
     """shaders/v-<V>/ in the pack: an up-to-date library from the cache (built there first when it is missing or stale, from the shader package, split from the dump
     first when there is none and --shader-pkg names none). → the library path in the pack, or None"""
     v = vk_chain(); name = VK_PREFIX + v
@@ -514,7 +515,7 @@ def pack_shaders(a, g, work, out, vdir, parts=None):
     if not library_current(lib, g):
         if a.in_process: raise Error(f'no current shader library {lib}: --in-process does not build one yet (vk_android_build.py starts the translator and spirv-val as programs); --no-shaders packs without')
         pkg = (a.shader_pkg or work / 'android-shaders' / 'pkg').resolve()
-        if not pkg.is_dir(): split_shaders(a, g, vdir, pkg, parts)   # also into a --shader-pkg folder that is not there yet
+        if not pkg.is_dir(): split_shaders(a, g, vdir, pkg, parts, aoc)   # also into a --shader-pkg folder that is not there yet
         py = shader_python(a.shader_python)
         print(f'shaders: building the Vulkan library {lib} from {pkg} with {py} (J={a.J}; about 10 minutes on DKB)', flush=True)
         (work / 'android-shaders' / 'work').mkdir(parents=True, exist_ok=True)
@@ -596,6 +597,8 @@ def main():
     ap = argparse.ArgumentParser(description='Pack a dumped game for the Android launcher: its code modules rewritten with --target android, no RomFS')
     ap.add_argument('game', type=Path, help='the game folder (base/exefs, base/romfs or an update\'s romfs, updates/<version>/, dlc/), or a .nup file')
     ap.add_argument('--version', type=int, help='the update version to pack (default: the newest in updates/; 0 = the base game)')
+    ap.add_argument('--program', type=int, default=0, help='pack program n > 0 of a dump folder (a Switch 2 Edition\'s program 1: updates/<version>/program/1/ in the console\'s layout) instead of the game '
+                                                            '(program 0): its own profile and pack folder; program 0\'s newest RomFS and the add-ons are named beside its own RomFS')
     ap.add_argument('--out', type=Path, help='the pack folder (default: <game folder>/../<title ID>-work/android-pack)')
     ap.add_argument('-j', type=int, default=2, help='modules rewritten at once (default 2)')
     ap.add_argument('--shader-cache', type=Path, help='the folder of Vulkan shader libraries v-<V>/ (default: <title ID>-work/android-shaders/lib, the <title ID>-work beside or holding the pack folder)')
@@ -618,15 +621,28 @@ def main():
         except ImportError as e: raise Error(f'{e.name} is missing in {sys.executable}: see android/README.md for the environment') from None
         if capstone.cs_version()[0] != 5: raise Error(f'Capstone {capstone.__version__}: the rewriter needs Capstone 5')
         app, vers, dlc = pack_dump.scan(folder)
+        app0, conorig = app, None
+        if a.program:   # program n > 0: its package program/<n> stands where a version folder would; program 0's newest RomFS is its "conorig"
+            if pack_dump.nup.is_nup(folder): raise Error(f'--program {a.program}: {folder} is a .nup, which holds program 0 only; pack from the dump folder (updates/<version>/program/{a.program}/)')
+            found = pack_dump.program_dir(folder, a.program)
+            if found is None: raise Error(f'{folder}: no program/{a.program}/exefs/main.npdm in updates/<version>/ or base/ (the console\'s layout, docs/agents/01-extract.md)')
+            ver, vdir = found
+            conorig = pack_dump.version_part(folder, vers, max(vers, default=0), 'romfs')
+            app = pack_dump.program_id(vdir / 'exefs/main.npdm')
+            if (app & pack_dump.TITLE_NUMBER & ~0xFF) != (app0 & pack_dump.TITLE_NUMBER) or (app & 0xFF) != a.program:
+                raise Error(f'{vdir}: program ID {app:016X} is not program {a.program} of {app0:016X}')
         try: g = game.load(f'{app:016X}')
         except SystemExit: raise Error(f'no profile dm/games/{app:016X}: the Android pack needs one (build_ipa_from_nsp.py makes a provisional one)') from None
-        ver = a.version if a.version is not None else max(vers, default=0)
-        if ver and ver not in vers: raise Error(f'no updates/{ver} (have: {", ".join(map(str, sorted(vers))) or "none"})')
+        if not a.program:
+            ver = a.version if a.version is not None else max(vers, default=0)
+            if ver and ver not in vers: raise Error(f'no updates/{ver} (have: {", ".join(map(str, sorted(vers))) or "none"})')
         for tid, p in sorted(dlc.items()):   # the add-on's content meta record: the game version it needs (pack_dump.dlc_required_version)
             if (need := pack_dump.dlc_required_version(p)) > ver:
                 print(f'[RED] DLC {tid:016X} needs game version {need} or later (its content meta record); this pack is version {ver}: the game may not use it', flush=True)
-        vdir = pack_dump.version_dir(folder, vers, ver)
-        exe, romfs = pack_dump.version_part(folder, vers, ver, 'exefs'), pack_dump.version_part(folder, vers, ver, 'romfs')   # its own, else the base's
+        if a.program: exe, romfs = vdir / 'exefs', vdir / 'romfs'
+        else:
+            vdir = pack_dump.version_dir(folder, vers, ver)
+            exe, romfs = pack_dump.version_part(folder, vers, ver, 'exefs'), pack_dump.version_part(folder, vers, ver, 'romfs')   # its own, else the base's
         if not (exe / 'main.npdm').is_file() or not romfs.is_dir(): raise Error(f'{vdir}: no exefs/main.npdm and romfs (neither its own nor the base\'s)')
         if (pid := pack_dump.program_id(exe / 'main.npdm')) != app: raise Error(f'{vdir}: program ID {pid:016X}, the base is {app:016X}')
         mods = dump_modules(g, exe)
@@ -660,13 +676,16 @@ def main():
         if a.code_only: print(f'done: the modules in {out} (--code-only: pack.tsv and the shaders unchanged)'); return
         if a.keep_code: upgrade_keys(srcs, out, g)   # before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
         shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
-        shaders = None if a.no_shaders else pack_shaders(a, g, work, out, vdir, (romfs, exe))
+        # a program n > 0 splits program 0's RomFS (its conorig) and the add-ons with its own main: its own RomFS holds no shaders (Wonder's program 1: one text file)
+        shaders = None if a.no_shaders else pack_shaders(a, g, work, out, vdir, (conorig, exe) if a.program else (romfs, exe), list(dlc.values()) if a.program else ())
         scenes = scene_overlays(g, romfs, out)
         top = folder.parent if pack_dump.nup.is_nup(folder) else folder   # a NUP file's paths are `<name>.nup:<package>/...`, relative to its folder
         rel = lambda p: p.relative_to(top).as_posix()
         rows = [('format', str(FORMAT)), ('title_id', f'{app:016X}'), ('name', g.get('name', '')), ('version', str(ver)), ('target', 'android'),
                 ('modules', ' '.join(mods)), *[('build', f'{m}={ids[m]}') for m in mods], ('romfs', rel(romfs)),
-                *[('aoc', f'{tid - app - 0x1000}\t{rel(p)}') for tid, p in sorted(dlc.items())],
+                *[('aoc', f'{pack_dump.dlc_index(tid, app)}\t{rel(p)}') for tid, p in sorted(dlc.items())],
+                # program n > 0: which program it is, the application (its save and add-ons), and each program index's RomFS (DM_ROMFS_PROGRAM_<i>: 0 is the game's, "conorig")
+                *([('program', str(a.program)), ('application', f'{app0:016X}'), ('romfs_program', f'0\t{rel(conorig)}'), ('romfs_program', f'{a.program}\t{rel(romfs)}')] if a.program else []),
                 *([('shaders', shaders.relative_to(out).as_posix())] if shaders else []), *[('scene_res', f'{n}\t{p}') for n, p in scenes], ('packer', commit()), *([('made_by', a.made_by)] if a.made_by else [])]
         stage('writing the pack\'s list of files')
         tmp = out / 'pack.tsv.partial'

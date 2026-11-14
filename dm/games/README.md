@@ -156,6 +156,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Subnautica: Below Zero](010014C011146000/README.md) | `010014C011146000` | 1.23.55063 | 13.3.5 | Unity 2019.4.36f1 IL2CPP, FMOD | NVN |
 | [Super Mario 3D World + Bowser's Fury](010028600EBDA000/README.md) | `010028600EBDA000` | 1.2.2 | 10.4.0 | Nintendo EPD (sead / agl, NintendoWare) | NVN |
 | [Super Mario Bros. Wonder](010015100B514000/README.md) | `010015100B514000` | 1.2.1 (and 1.0.0) | 16.2.12 (1.0.0: 16.2.0) | Nintendo EPD (sead / agl) | NVN |
+| [Super Mario Bros. Wonder - Nintendo Switch 2 Edition](040015100B514001/README.md) | `040015100B514001` | 1.2.1 (program 1) | 21.4.1 (Ounce) | Nintendo EPD (sead / agl) | NVN2 |
 | [Super Mario Galaxy](010099C022B96000/README.md) | `010099C022B96000` | 1.3.1 | 18.3.5 | NERD's Hagi Wii layer (recompiled PowerPC) | Vulkan |
 | [Super Mario Galaxy 2](0100FD8022DAA000/README.md) | `0100FD8022DAA000` | 1.4.0 | 18.3.5 | NERD's Hagi Wii layer (recompiled PowerPC) | Vulkan |
 | [Super Mario Odyssey](0100000000010000/README.md) | `0100000000010000` | 1.4.1 | 7.3.2 | Nintendo EPD (sead / agl, NintendoWare) | NVN |
