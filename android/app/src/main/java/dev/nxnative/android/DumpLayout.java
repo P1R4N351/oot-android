@@ -161,6 +161,23 @@ final class DumpLayout {
         return found;
     }
 
+    /**
+     * A folder dump's control data (Nacp): the control/ folder with control.nacp of the newest version that has one, an update's, else the base's, in the
+     * console's layout (program/0/control/) or the flattened one (&lt;version&gt;/control/). A dump of an installed game has only its update's (the Control
+     * content goes with the update), which then stands for the game, as github.com/a55uka/nup pack takes it. null when none has it, and for a .nup
+     */
+    static File controlDir(File dump) {
+        if (Nup.isNup(dump)) return null;
+        List<File> vers = numbered(new File(dump, "updates"));
+        vers.sort((a, b) -> Long.compare(Long.parseLong(b.getName()), Long.parseLong(a.getName())));
+        vers.add(new File(dump, "base"));
+        vers.add(dump);
+        for (File v : vers)
+            for (File d : new File[] {new File(root(v), "control"), new File(v, "program/0/control"), new File(v, "control")})
+                if (new File(d, "control.nacp").isFile()) return d;
+        return null;
+    }
+
     private static List<File> numbered(File parent) {
         List<File> out = new ArrayList<>();
         File[] l = parent.listFiles(f -> f.isDirectory() && f.getName().matches("\\d{1,18}"));
