@@ -10,7 +10,7 @@
 
 #define VKTL_MIB (1ull << 20)
 enum { VKTL_KEEP_FRAMES = 2,      // an image used in the current or the previous frame stays
-       VKTL_GPU_FRAMES = 120 };   // an image whose content is only the GPU's (rendered, not uploaded) stays this long unused, and goes after every image that can be uploaded again
+       VKTL_GPU_FRAMES = 120 };   // an image whose content is only the GPU's (rendered, not uploaded): kept whatever its age, unless the system is stalling hard on memory; then it goes after this many unused frames and after every image that can be uploaded again
 #define VKTL_FLOOR (512 * VKTL_MIB)
 
 typedef struct {
@@ -56,11 +56,15 @@ static inline uint64_t vktl_limit(const vktl_in *in) {
 // Prune down to this once over the limit (a margin, so one new image does not start another prune)
 static inline uint64_t vktl_target(uint64_t limit) { return limit - limit / 16; }
 
-// Whether an image may be evicted now: not held from outside the recording thread, not a playing video's, its last submission done, unused for VKTL_KEEP_FRAMES frames
-// (VKTL_GPU_FRAMES when its content is the GPU's). last_frame 0 = never used (kept: it was just made)
-static inline int vktl_evictable(uint64_t cur_frame, uint64_t last_frame, int holds, int gpu_owned, int video_playing, int fence_pending) {
+// Whether an image may be evicted now: not held from outside the recording thread, not a playing video's, its last submission done, unused for VKTL_KEEP_FRAMES frames.
+// An image whose content is the GPU's (gpu_owned: rendered, copied or computed into) is never a candidate: its storage holds what the CPU last wrote, not what the GPU made,
+// so a texture made again for it starts empty and stays wrong until the game renders it again (a shadow or a menu background drawn once; docs/reference/rendering.md
+// "A GPU-written image evicted and made again empty"). Only with allow_gpu (the system stalls past VKTL_PSI_SHRINK, where lmkd would end the game) and after
+// VKTL_GPU_FRAMES unused frames. last_frame 0 = never used (kept: it was just made)
+static inline int vktl_evictable(uint64_t cur_frame, uint64_t last_frame, int holds, int gpu_owned, int video_playing, int fence_pending, int allow_gpu) {
     if (holds || video_playing || fence_pending || !last_frame || cur_frame <= last_frame) return 0;
-    return cur_frame - last_frame >= (uint64_t)(gpu_owned ? VKTL_GPU_FRAMES : VKTL_KEEP_FRAMES);
+    if (gpu_owned) return allow_gpu && cur_frame - last_frame >= (uint64_t)VKTL_GPU_FRAMES;
+    return cur_frame - last_frame >= (uint64_t)VKTL_KEEP_FRAMES;
 }
 // Eviction order: images that can be uploaded again before GPU-only ones, then least recently used first (qsort-style: < 0 = a goes first)
 static inline int vktl_order(int gpu_a, uint64_t last_a, int gpu_b, uint64_t last_b) {

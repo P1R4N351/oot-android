@@ -21,6 +21,8 @@ graphics to Vulkan. It is an Android port of [nxnative](https://github.com/seedd
 | Pokémon Pokopia (`0400A3A01EE4C000`) | update 655360 (Ver. 2.0.1) | Supported | about 60 fps |
 | The Legend of Zelda: Ocarina of Time (`0400486024DEC000`) | 2.0 | Experimental | plays on the system driver and Turnip, full foliage; about 30 fps in Kokiri Forest, 50 indoors |
 | Star Fox (`0400E88025B1A000`) | update 131072 | Experimental | boots and reaches its first scenes on both drivers; not tested further |
+| Mario Tennis Fever (`0400D4201C6EA000`) | update 327680 (1.1.1) | Experimental | plays at 60 fps on Turnip on the tested phone; Qualcomm's own driver stalls and shows dark patches on the player intros; a long first Prepare (35,045 shaders) |
+| Super Mario Bros. Wonder - Nintendo Switch 2 Edition (`040015100B514001`) | update 327680 (1.2.1), program 1 | Experimental | reached a first course at 30 fps on Turnip on one phone; the system driver is not tested; needs a dump with the edition's own program |
 | Splatoon Raiders (`0400380020056000`) | update 65536 | Experimental | boots and runs, but not playable yet (very low frame rate) |
 
 The app tells you if your dump is another version. Splatoon Raiders is not playable yet: it boots and runs at a very low

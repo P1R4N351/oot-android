@@ -23,7 +23,7 @@ static int run(int n, int use, uint64_t each, uint64_t limit, int frames, int *u
             if (!im[id].live) {   // a miss: prune, then make it
                 if (bytes > limit) {
                     int nc = 0;
-                    for (int i = 0; i < n; i++) if (im[i].live && vktl_evictable(f, im[i].last, 0, im[i].gpu, 0, 0)) c[nc++] = &im[i];
+                    for (int i = 0; i < n; i++) if (im[i].live && vktl_evictable(f, im[i].last, 0, im[i].gpu, 0, 0, 0)) c[nc++] = &im[i];
                     qsort(c, (size_t)nc, sizeof *c, cmp);
                     for (int i = 0; i < nc && bytes > vktl_target(limit); i++) { c[i]->live = 0; bytes -= each; }
                 }
@@ -71,14 +71,16 @@ int main(void) {
     p5.psi_some10 = VKTL_PSI_SHRINK; CHECK(vktl_limit(&p5) == 2 * GIB - 2 * GIB / 8, "only pressure takes images back");
 
     // candidates
-    CHECK(!vktl_evictable(100, 100, 0, 0, 0, 0), "used this frame: kept");
-    CHECK(!vktl_evictable(100, 99, 0, 0, 0, 0), "used the previous frame: kept");
-    CHECK(vktl_evictable(100, 98, 0, 0, 0, 0), "two frames unused: a candidate");
-    CHECK(!vktl_evictable(100, 50, 1, 0, 0, 0), "held: kept");
-    CHECK(!vktl_evictable(100, 50, 0, 0, 1, 0), "a playing video's: kept");
-    CHECK(!vktl_evictable(100, 50, 0, 0, 0, 1), "its submission not done: kept");
-    CHECK(!vktl_evictable(100, 0, 0, 0, 0, 0), "never stamped: kept");
-    CHECK(!vktl_evictable(100, 50, 0, 1, 0, 0) && vktl_evictable(200, 50, 0, 1, 0, 0), "GPU content: only after VKTL_GPU_FRAMES");
+    CHECK(!vktl_evictable(100, 100, 0, 0, 0, 0, 0), "used this frame: kept");
+    CHECK(!vktl_evictable(100, 99, 0, 0, 0, 0, 0), "used the previous frame: kept");
+    CHECK(vktl_evictable(100, 98, 0, 0, 0, 0, 0), "two frames unused: a candidate");
+    CHECK(!vktl_evictable(100, 50, 1, 0, 0, 0, 0), "held: kept");
+    CHECK(!vktl_evictable(100, 50, 0, 0, 1, 0, 0), "a playing video's: kept");
+    CHECK(!vktl_evictable(100, 50, 0, 0, 0, 1, 0), "its submission not done: kept");
+    CHECK(!vktl_evictable(100, 0, 0, 0, 0, 0, 0), "never stamped: kept");
+    CHECK(!vktl_evictable(100, 50, 0, 1, 0, 0, 0) && !vktl_evictable(200, 50, 0, 1, 0, 0, 0) && !vktl_evictable(100000, 50, 0, 1, 0, 0, 0), "GPU content: never a candidate, however old (its storage cannot give it back; #215)");
+    CHECK(!vktl_evictable(100, 50, 0, 1, 0, 0, 1) && vktl_evictable(200, 50, 0, 1, 0, 0, 1) && !vktl_evictable(200, 50, 1, 1, 0, 0, 1) && !vktl_evictable(200, 50, 0, 1, 0, 1, 1),
+          "GPU content under hard memory pressure: after VKTL_GPU_FRAMES unused frames, never held or in flight");
     CHECK(vktl_order(0, 90, 1, 10) < 0 && vktl_order(0, 10, 0, 90) < 0 && vktl_order(1, 10, 1, 90) < 0, "uploadable before GPU-only, oldest first");
 
     // A working set (1,800 MiB, 900 images of 2 MiB) over a 1,536 MiB limit: uploaded once, then kept over the limit, not again every frame
@@ -87,6 +89,13 @@ int main(void) {
     // Under the limit: one upload each
     up = run(1200, 600, 2 * MIB, 1536 * MIB, 120, &last);
     CHECK(up == 600 && last == 0, "under the limit: one upload each (%d, last frame %d)", up, last);
+    // A cache with 100 uploadable and 100 GPU-written images over the limit, all long unused: only the uploadable ones go, the GPU-written ones stay (over the limit, as logged)
+    { enum { N = 200 }; img im[N]; img *c[N]; uint64_t bytes = N * 8 * MIB, limit = 700 * MIB; int nc = 0, evicted_gpu = 0;
+      for (int i = 0; i < N; i++) { im[i] = (img){.last = (uint64_t)(10 + i), .live = 1, .gpu = i % 2}; }
+      for (int i = 0; i < N; i++) if (vktl_evictable(5000, im[i].last, 0, im[i].gpu, 0, 0, 0)) c[nc++] = &im[i];
+      qsort(c, (size_t)nc, sizeof *c, cmp);
+      for (int i = 0; i < nc && bytes > vktl_target(limit); i++) { evicted_gpu += c[i]->gpu; c[i]->live = 0; bytes -= 8 * MIB; }
+      CHECK(nc == N / 2 && evicted_gpu == 0 && bytes == N / 2 * 8 * MIB && bytes > limit, "GPU-written images stay over the limit: %d candidates, %d GPU-written evicted, %llu MiB left", nc, evicted_gpu, (unsigned long long)(bytes >> 20)); }
     if (!fails) printf("t_android_texlimit: ok\n");
     return fails != 0;
 }

@@ -1,0 +1,6 @@
+# What this game needs of an Android phone, for the launcher's readiness check (android/README.md "Readiness check"; the format in dm/games/README.md "Readiness rows").
+# A status row also marks the game as supported on Android: gradle.properties' nxGames builds every such profile into the APK (dm/tools/tests/test_android_games.py).
+
+# Experimental: boots and plays on an Odin 3 (Adreno 830; pull request 268): a whole tournament at 60 fps on Turnip v32, GPU stalls and dark patches on Qualcomm's own driver
+# (the note). No memory row until a phone run measures it.
+status	bring-up

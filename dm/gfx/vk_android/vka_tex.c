@@ -1486,10 +1486,11 @@ void vka_tex_soft_stats(char *b, size_t n) { pthread_mutex_lock(&g_tmu); soft_li
 // ---------- Where the image memory goes (diagnostic, the ctl stats) ----------
 // The live images by content and by why the cache keeps them (vktl_evictable's reasons), and the largest ones: for a game whose images in use overrun memory (Mario Kart World,
 // 3.9 GB on a 12 GB device) this says which lever helps - smaller texture assets (soft textures, compressed or resized), render targets (resolution), or images kept by a rule
+static int g_psi_shrink;    // memory pressure past VKTL_PSI_SHRINK at the last update: GPU-written images may go too (vktl_evictable)
 enum { IK_GPU, IK_ZERO_SHARED, IK_BC, IK_RAW, IK_SPARSE, IK_CLEARED, IK_N };
 static const char *const ik_name[IK_N] = {"GPU-written", "zero-shared, not yet written", "from storage, block-compressed", "from storage, uncompressed", "sparse", "cleared, never written"};
 enum { IR_HELD, IR_NEW, IR_FENCE, IR_RECENT, IR_GPU_GRACE, IR_EVICTABLE, IR_N };
-static const char *const ir_name[IR_N] = {"held", "never used", "GPU not done", "used in the last 2 frames", "GPU-written, used in the last 120 frames", "evictable"};
+static const char *const ir_name[IR_N] = {"held", "never used", "GPU not done", "used in the last 2 frames", "GPU-written, kept", "evictable"};
 static int img_kind(const vka_img *im) {
     if (im->gpu_owned) return IK_GPU;
     if (im->m.z) return IK_ZERO_SHARED;
@@ -1503,7 +1504,7 @@ static int img_keep_reason(const vka_img *im, uint64_t cur, uint64_t done) {
     if (im->last_fence && done < im->last_fence) return IR_FENCE;
     uint64_t age = cur - im->last_frame;
     if (age < VKTL_KEEP_FRAMES) return IR_RECENT;
-    if (im->gpu_owned && age < VKTL_GPU_FRAMES) return IR_GPU_GRACE;
+    if (im->gpu_owned && !(g_psi_shrink && age >= VKTL_GPU_FRAMES)) return IR_GPU_GRACE;
     return IR_EVICTABLE;
 }
 void vka_tex_kind_log(void) {
@@ -1672,6 +1673,7 @@ static void img_limit_update(uint64_t cur_frame) {   // caller holds g_tmu
     uint64_t measured = lim, ceil_mb = env <= 0 && DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB && vka_low_ram() ? DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB : 0;
     lim = vklr_ceiling(lim, ceil_mb << 20);
     int pressed = env <= 0 && in.psi_some10 >= VKTL_PSI_HOLD;
+    g_psi_shrink = env <= 0 && in.psi_some10 >= VKTL_PSI_SHRINK;
     if (pressed != g_psi_pressed) {
         static _Atomic int np;
         if (atomic_fetch_add(&np, 1) < 32) VLOG("image cache: memory pressure %.1f %% (some avg10): %s, limit %llu MiB, images %.0f MiB", in.psi_some10 < 0 ? 0 : in.psi_some10,
@@ -1713,17 +1715,24 @@ static void vka_tex_prune_locked(void) {
             smap_ent *se = map_get(te->t.serial);
             if (se && se->im && se->im->pool_frame != cur_frame) { se->im->pool_frame = cur_frame; npool++; }
         }
+    uint64_t gpu_kept = 0; int ngpu_kept = 0;
     for (int i = 0; i < g_nlive; i++) {
         vka_img *im = g_live[i];
         if (pool_keep && im->pool_frame == cur_frame) continue;
         if (im->nkids) continue;   // (a level child's parent: its children see its image)
-        if (vktl_evictable(cur_frame, im->last_frame, im->holds, im->gpu_owned, im->is_video && video, im->last_fence && done_fence < im->last_fence))
+        if (vktl_evictable(cur_frame, im->last_frame, im->holds, im->gpu_owned, im->is_video && video, im->last_fence && done_fence < im->last_fence, g_psi_shrink))
             c[nc++] = (prune_ent){im, im->last_frame, im->gpu_owned != 0};
+        else if (im->gpu_owned) { gpu_kept += im->bytes; ngpu_kept++; }
     }
     qsort(c, (size_t)nc, sizeof *c, prune_cmp);
     uint64_t target = vktl_target(limit_bytes), bytes_freed = 0; int pruned = 0;
     for (int k = 0; k < nc && total_bytes > target; k++) {
         uint64_t before = g_img_bytes + vka_imem_zbytes();
+        if (c[k].gpu) {   // (only under hard memory pressure: the image comes back empty, so say so)
+            static _Atomic int ng;
+            if (atomic_fetch_add(&ng, 1) < 8) VRED("image cache: GPU-written image serial %llu %ux%u format %#x evicted under memory pressure: it is made again empty when the game uses it",
+                                                   (unsigned long long)c[k].im->serial, c[k].im->w, c[k].im->h, c[k].im->d.format);
+        }
         img_evict_locked(c[k].im);
         uint64_t after = g_img_bytes + vka_imem_zbytes(), b = before > after ? before - after : 0;
         pruned++; bytes_freed += b; total_bytes = after;
@@ -1739,8 +1748,8 @@ static void vka_tex_prune_locked(void) {
         static uint64_t logged; static _Atomic int n;
         if (total_bytes >= logged + 256 * VKTL_MIB && atomic_fetch_add(&n, 1) < 8) {
             logged = total_bytes;
-            VLOG("image cache over its limit: %.0f MiB of images, limit %.0f MiB; the rest was used in the last %d frames, is held or is named by a texture pool slot (%d images), so it stays (evicting it would upload it again)",
-                 total_bytes / 1048576.0, limit_bytes / 1048576.0, VKTL_KEEP_FRAMES, npool);
+            VLOG("image cache over its limit: %.0f MiB of images, limit %.0f MiB; the rest was used in the last %d frames, is held, is named by a texture pool slot (%d images) or is GPU-written (%d images, %.0f MiB: its content cannot be uploaded again), so it stays",
+                 total_bytes / 1048576.0, limit_bytes / 1048576.0, VKTL_KEEP_FRAMES, npool, ngpu_kept, gpu_kept / 1048576.0);
         }
     }
 }
