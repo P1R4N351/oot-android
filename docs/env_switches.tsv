@@ -143,7 +143,7 @@ DM_MOVIE_RGBA_NEON	diagnostic	`0` keeps `md_rgba`'s scalar loop (`hle_movie.c`; 
 DM_MOVIE_SKIP	diagnostic	Off by default (every movie plays). `all` ends every video stream after 4 packets, `1` those of the session's second decoder and later; the stream ends once and later packets are dropped until Stop / Flush. Not the console's behaviour: a player that checks its pictures can abort (`hle_codec_video.c`)
 DM_MOVIE_TRACE	diagnostic	When set, the movie decoder logs every call with its thread and decoder (by default the first 12 calls, then every 2^k-th)
 DM_MSL_DIR	path	Parent folder of the shader libraries: NVN loads from `b-<chain version>/` beneath it, Vulkan from `vk/`, GL from `gl/`; the app and the Mac launcher set it
-DM_NICK	switch	The account nickname the game sees (default `Player`)
+DM_NICK	switch	The account nickname the game sees (default `Player`) when `DM_USERS` is not set
 DM_NRO	switch	`0` turns off loading of the NRO modules the game's NRR files register (on by default): every `nn::ro::LoadModule` then fails
 DM_NUP_CACHE_MB	diagnostic	`=<MB>` sizes the cache of closed, decompressed `.nup` files (nup_image.c; default 128, `0` keeps nothing after close)
 DM_NUP_DISK_MB	diagnostic	`=<MB>` (default 64; `0` none) a compressed `.nup` file of at least this size is decompressed into an unlinked temporary file and mapped, instead of whole into memory (nup_image.h)
@@ -405,6 +405,8 @@ DM_TZ	switch	`=<zone>` (Android) the zone the user clock's fields are read in (`
 DM_UDC_SELFTEST	diagnostic	`=1` runs a start-up check of DontCare load and store on private depth-stencil and RGBA8 textures (clear, Load + DontCare, read back) and logs one result line
 DM_UE_SHADERS	path	Folder of the Unreal shader code archives decoded by `uepak.py`, for `shader_split.py` (default `ue_shaders` beside the RomFS); needed when the RomFS has Unreal paks
 DM_UE_TEXTURE_POOL	switch	Megabytes Unreal's texture streaming pool (`r.Streaming.PoolSize`) is raised to, overriding the profile's `ue_texture_pool`; `0` keeps the game's own pool. On iOS only this switch turns it on (`Documents/env.txt`)
+DM_USER	switch	The Uid of the user the game starts with (the console's preselected user; default the first of `DM_USERS`)
+DM_USERS	switch	The console's users: `<uid>:<name>,…` (uid: 32 hex digits; name: UTF-8, percent-encoded, at most 32 bytes). Unset: one user, `DM_NICK`. The first user with the host's fixed Uid keeps `DM_SAVE`; another user's save is `<DM_SAVE>_user_<uid>` (`hle_account.c`; the Android launcher's Settings › Users sets it)
 DM_VK_ADPF	switch	`0` (Android, restart, on) no ADPF performance hint session (`APerformanceHint`, `vka_perf.c`): the replay reports no work durations to the system
 DM_VK_ADPF_GPU	switch	`0` (Android, live, 1) ADPF work duration reports leave out the frame's GPU time (with `1` they carry it when the platform has `AWorkDuration`, and then the `DM_VK_ADPF_SPAN` span)
 DM_VK_ADPF_PIPELINE	switch	`0` (Android, restart, default 1) the ADPF session is made plainly instead of as part of the graphics pipeline (`ASessionCreationConfig_setGraphicsPipeline`, API 36; a session the platform refuses as one is made plainly)

@@ -53,6 +53,7 @@ typedef struct {
     romfs_img *img;                  // non-NULL: dir is a RomFS image file
     int ro;
     int txn_root;                    // canonical mount entry for this backing transaction, or -1
+    int save;                        // mounted as save data (a transaction, or its read-only fallback): Unmount frees its name (h_fs_Unmount)
     _Atomic int poison;              // failure state belongs to this backing, not to the process
     _Atomic uint64_t first_write_ns;
 } mount_t;
@@ -197,22 +198,35 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
     pthread_once(&g_txn_lock_once, txn_locks_init);
     PATH_LOCK(); pthread_mutex_lock(&g_lock);
     for (int i = 0; i < g_nmnt; i++)
-        if (!strcmp(g_mnt[i].name, name)) { pthread_mutex_unlock(&g_lock); return RES_OK; }
-    if (g_nmnt >= MAX_MOUNT) die("mount table full");
-    strlcpy(g_mnt[g_nmnt].name, name, sizeof g_mnt[0].name);
-    g_mnt[g_nmnt].ro = ro; g_mnt[g_nmnt].overlay[0] = 0; g_mnt[g_nmnt].commit[0] = 0;
-    g_mnt[g_nmnt].txn_root = -1;
-    atomic_store(&g_mnt[g_nmnt].poison, 0);
-    atomic_store(&g_mnt[g_nmnt].first_write_ns, 0);
+        if (!strcmp(g_mnt[i].name, name)) {
+            // A save mounted under a name that already holds another user's save, with no Unmount between: on Horizon the mount fails (the name exists); here the name keeps
+            // the save it has, which the game then reads as the other user's
+            if (txn && g_mnt[i].save && g_mnt[i].commit[0] && strcmp(g_mnt[i].commit, dir)) LOG("[RED] fs mount %s: the name still holds the save %s, not %s (no Unmount before it)", name, g_mnt[i].commit, dir);
+            pthread_mutex_unlock(&g_lock); return RES_OK;
+        }
+    // A save takes an entry an Unmount freed (h_fs_Unmount: only save entries are ever freed), unless a mounted entry still shares that entry's transaction (txn_root):
+    // a game that mounts and unmounts its save again and again then keeps one entry instead of filling the table. Other mounts are never unmounted: they always append
+    int s = g_nmnt;
+    for (int f = 0; txn && f < g_nmnt && s == g_nmnt; f++) {
+        if (g_mnt[f].name[0]) continue;
+        int used = 0; for (int j = 0; j < g_nmnt && !used; j++) used = g_mnt[j].name[0] && g_mnt[j].txn_root == f;
+        if (!used) s = f;
+    }
+    if (s == g_nmnt && g_nmnt >= MAX_MOUNT) die("mount table full");
+    strlcpy(g_mnt[s].name, name, sizeof g_mnt[0].name);
+    g_mnt[s].ro = ro; g_mnt[s].overlay[0] = 0; g_mnt[s].commit[0] = 0;
+    g_mnt[s].txn_root = -1; g_mnt[s].save = txn;
+    atomic_store(&g_mnt[s].poison, 0);
+    atomic_store(&g_mnt[s].first_write_ns, 0);
     if (!strcmp(name, "rom") && getenv("DM_ROMFS_OVERLAY"))
-        strlcpy(g_mnt[g_nmnt].overlay, getenv("DM_ROMFS_OVERLAY"), sizeof g_mnt[0].overlay);
+        strlcpy(g_mnt[s].overlay, getenv("DM_ROMFS_OVERLAY"), sizeof g_mnt[0].overlay);
     // The transaction directory cannot be set up (leftovers cannot be cleared / clone failed, which really happens on a full disk): do not exit; mount the committed directory read-only -- saves still read, every write fails, commits are no-ops, the committed version is untouched, and the front end is told
     // (each of these three failures used to call die: with the phone's storage full the game exited as soon as it mounted its saves)
     int txn_err = 0, k = 0;
-    while (txn && k < g_nmnt && strcmp(g_mnt[k].commit, dir)) k++;
+    while (txn && k < g_nmnt && (strcmp(g_mnt[k].commit, dir) || !g_mnt[k].name[0])) k++;   // (an unmounted entry's transaction is not taken up again: a new mount starts from the committed save)
     if (txn && k < g_nmnt) {   // a second name for a save already mounted (account and device save data are one host save): it shares that transaction, whose pending writes a new clone would drop
-        strlcpy(g_mnt[g_nmnt].commit, g_mnt[k].commit, sizeof g_mnt[0].commit); strlcpy(g_mnt[g_nmnt].dir, g_mnt[k].dir, sizeof g_mnt[0].dir);
-        g_mnt[g_nmnt].txn_root = g_mnt[k].txn_root;
+        strlcpy(g_mnt[s].commit, g_mnt[k].commit, sizeof g_mnt[0].commit); strlcpy(g_mnt[s].dir, g_mnt[k].dir, sizeof g_mnt[0].dir);
+        g_mnt[s].txn_root = g_mnt[k].txn_root;
     } else if (txn) {
         char work[1100], neu[1100]; snprintf(work, sizeof work, "%s.work", dir); snprintf(neu, sizeof neu, "%s.new", dir);
         plat_swap_recover(dir);   // a commit killed inside the file-level swap that stands in for RENAME_EXCHANGE on shared storage is finished (plat_rename_swap)
@@ -222,24 +236,24 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
         else if (!access(neu, F_OK) && rm_tree(neu)) why = "cannot clear the .new left over from last time";
         else if (dm_fs_test_fail("mountclone") || plat_clone_tree(dir, work))   // ENOTSUP: HFS+ and exFAT can neither clone nor swap directories (RENAME_SWAP), so no transaction can work on them
             why = errno == ENOTSUP ? "the save folder's filesystem cannot clone directories (save transactions need APFS: set DM_SAVE to a folder on an APFS volume)" : "cloning the work directory failed";
-        if (why) { txn_err = errno ? errno : EIO; g_mnt[g_nmnt].ro = 1; strlcpy(g_mnt[g_nmnt].dir, dir, sizeof g_mnt[0].dir);
+        if (why) { txn_err = errno ? errno : EIO; g_mnt[s].ro = 1; strlcpy(g_mnt[s].dir, dir, sizeof g_mnt[0].dir);
             LOG("[RED] save transaction: %s (%s, errno=%d) -- mounting the committed directory %s read-only instead: saves cannot be written this session, the committed version is unchanged", why, work, txn_err, dir); }
         else {
-            strlcpy(g_mnt[g_nmnt].commit, dir, sizeof g_mnt[0].commit);
-            g_mnt[g_nmnt].txn_root = g_nmnt;
-            atomic_store(&g_mnt[g_nmnt].poison, 0);
-            atomic_store(&g_mnt[g_nmnt].first_write_ns, 0);
-            strlcpy(g_mnt[g_nmnt].dir, work, sizeof g_mnt[0].dir); }
-    } else strlcpy(g_mnt[g_nmnt].dir, dir, sizeof g_mnt[0].dir);
-    g_mnt[g_nmnt].img = NULL;
+            strlcpy(g_mnt[s].commit, dir, sizeof g_mnt[0].commit);
+            g_mnt[s].txn_root = s;
+            atomic_store(&g_mnt[s].poison, 0);
+            atomic_store(&g_mnt[s].first_write_ns, 0);
+            strlcpy(g_mnt[s].dir, work, sizeof g_mnt[0].dir); }
+    } else strlcpy(g_mnt[s].dir, dir, sizeof g_mnt[0].dir);
+    g_mnt[s].img = NULL;
     struct stat ist;
     if (ro && !txn) {   // game files: a RomFS folder, or a RomFS image file in its place
         // A path that is neither is a stale or mistyped one (an old run command still naming the RomFS folder a rebuild replaced with RomFS.img): stop here, not at the game's
         // first failed read (Echoes of Wisdom crashed 0.3 s after nnMain, GitHub issue #615). Add-on content and system data check their own paths before they mount
         const char *bad = NULL;
-        if (nup_is_spec(dir)) { if (!(g_mnt[g_nmnt].img = img_open(dir))) bad = "cannot be used as a NUP package (the log line above says why)"; }
+        if (nup_is_spec(dir)) { if (!(g_mnt[s].img = img_open(dir))) bad = "cannot be used as a NUP package (the log line above says why)"; }
         else if (stat(dir, &ist) || !(S_ISDIR(ist.st_mode) || S_ISREG(ist.st_mode))) bad = "are missing: neither a folder nor a RomFS image";
-        else if (S_ISREG(ist.st_mode) && !(g_mnt[g_nmnt].img = img_open(dir))) bad = "are not a complete RomFS image";
+        else if (S_ISREG(ist.st_mode) && !(g_mnt[s].img = img_open(dir))) bad = "are not a complete RomFS image";
         if (bad && soft) {
             pthread_mutex_unlock(&g_lock);
             LOG("[RED] fs mount %s: the files %s %s: answered \"target not found\"", name, dir, bad);
@@ -247,11 +261,12 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
         }
         if (bad) die("the game files %s (%s:) %s%s", dir, name, bad, strstr(bad, "missing") ? " (the rom mount is DM_ROMFS, or $DM_ROOT/romfs when DM_ROMFS is unset)" : "");
     }
-    g_nmnt++;
+    int reused = s < g_nmnt; if (!reused) g_nmnt++;
+    char shown[sizeof g_mnt[0].dir]; strlcpy(shown, txn ? g_mnt[s].dir : dir, sizeof shown); int ov = g_mnt[s].overlay[0] != 0;   // read under the lock: an Unmount and a later mount may take the entry again
     pthread_mutex_unlock(&g_lock);
     if (txn_err) front_save_failed(txn_err);
     if (!ro && !txn) mkdir(dir, 0755);
-    LOG("fs mount %s: → %s%s%s", name, txn ? g_mnt[g_nmnt - 1].dir : dir, ro || txn_err ? " (read-only)" : txn ? " (transactional save: work directory, swapped in atomically on Commit)" : "", g_mnt[g_nmnt - 1].overlay[0] ? " (overlay first)" : "");
+    LOG("fs mount %s: → %s%s%s%s", name, shown, ro || txn_err ? " (read-only)" : txn ? " (transactional save: work directory, swapped in atomically on Commit)" : "", ov ? " (overlay first)" : "", reused ? " (an unmounted entry taken again)" : "");
     return RES_OK;
 }
 static Result mount(const char *name, const char *dir, int ro) { return mount_ex(name, dir, ro, 0, 0); }
@@ -639,21 +654,41 @@ HLE_FORCE("_ZN2nn2fs16GetFreeSpaceSizeEPlPKc", "fsp-srv; free space of a mount: 
 HLE_FORCE("_ZN2nn2fs14ExtendSaveDataERKNS_7account3UidEll", "fsp-srv; extend save data: the host directory has no size limit", Result, h_fs_ExtendSave, const void *uid, int64_t size, int64_t journal) {
     (void)uid; LOG("fs extend save data to %lld bytes (journal %lld): nothing to do", (long long)size, (long long)journal); return RES_OK;
 }
-HLE_FORCE("_ZN2nn2fs14EnsureSaveDataERKNS_7account3UidE", "fsp-srv; the save directory is created at mount time", Result, h_fs_EnsureSave, const void *uid) { (void)uid; return RES_OK; }
-// Another application's save data (Tears of the Kingdom asks by application ID and would mount it read-only): the host keeps only this game's own save, which exists once mounted
-HLE_FORCE("_ZN2nn2fs18IsSaveDataExistingENS_13ApplicationIdERKNS_7account3UidE", "fsp-srv; only this game's own save data exists", int, h_fs_SaveExisting, uint64_t app, const void *uid) {
-    (void)uid; LOG("fs asks whether save data exists: program %016llx → %s", (unsigned long long)app, app == DM_GAME_PROGRAM_ID ? "this game, yes" : "another program, no"); return app == DM_GAME_PROGRAM_ID;
+// Each user's save directory (hle_account.c dm_account_save_dir): the first user's (the fixed Uid every earlier run had) is DM_SAVE, so its save stays where it was; another
+// user's is DM_SAVE_user_<uid>, made by EnsureSaveData. 1 when it is DM_SAVE. The weak forms are the single user's, for programs that link this file without hle_account.c
+// (the fs unit tests); the host's strong ones replace them
+__attribute__((weak)) int dm_account_save_dir(const void *uid, const char *base, char *out, size_t cap) { (void)uid; snprintf(out, cap, "%s", base); return 1; }
+__attribute__((weak)) int dm_account_users(void) { return 1; }
+static int user_save_dir(const void *uid, char *dd, size_t cap) {
+    const char *d = getenv("DM_SAVE");
+    if (!d) die("DM_SAVE is not set: point it at a writable copy of a save directory");
+    char b[1024]; strlcpy(b, d, sizeof b); size_t L = strlen(b); while (L > 1 && b[L - 1] == '/') b[--L] = 0;   // strip trailing slashes (.work / .new are appended at the same level)
+    return dm_account_save_dir(uid, b, dd, cap);
+}
+static int user_save_exists(const void *uid) {   // the first user's save exists from the game's point of view (made at mount, as before); another user's once EnsureSaveData made it
+    char dd[1024]; if (user_save_dir(uid, dd, sizeof dd)) return 1;
+    struct stat st; return stat(dd, &st) == 0 && S_ISDIR(st.st_mode);
+}
+HLE_FORCE("_ZN2nn2fs14EnsureSaveDataERKNS_7account3UidE", "fsp-srv; the user's save directory (the first user's is made at mount time)", Result, h_fs_EnsureSave, const void *uid) {
+    char dd[1024];
+    if (!user_save_dir(uid, dd, sizeof dd) && mkdir(dd, 0755) == 0) LOG("fs save data of another user made: %s", dd);
+    return RES_OK;
+}
+// Another application's save data (Tears of the Kingdom asks by application ID and would mount it read-only): the host keeps only this game's own saves, one per user
+HLE_FORCE("_ZN2nn2fs18IsSaveDataExistingENS_13ApplicationIdERKNS_7account3UidE", "fsp-srv; only this game's own save data exists, a user's once made", int, h_fs_SaveExisting, uint64_t app, const void *uid) {
+    int r = app == DM_GAME_PROGRAM_ID && user_save_exists(uid);
+    LOG("fs asks whether save data exists: program %016llx → %s", (unsigned long long)app, app != DM_GAME_PROGRAM_ID ? "another program, no" : r ? "this game, yes" : "this game, not for this user yet");
+    return r;
 }
 HLE_FORCE("_ZN2nn2fs21MountSaveDataReadOnlyEPKcNS_13ApplicationIdERKNS_7account3UidE", "fsp-srv; another program's save data: none", Result, h_fs_MountSaveRO, const char *name, uint64_t app, const void *uid) {
     (void)uid; LOG("[RED] fs read-only mount of another program's save data %s: program %016llx, the host has none", name, (unsigned long long)app); return 0x7d402u;   // fs ResultTargetNotFound
 }
-HLE_FORCE("_ZN2nn2fs13MountSaveDataEPKcRKNS_7account3UidE", "fsp-srv; save data → host directory (single user)", Result, h_fs_MountSave, const char *name, const void *uid) { dm_thread_service_request();
-    (void)uid;
+HLE_FORCE("_ZN2nn2fs13MountSaveDataEPKcRKNS_7account3UidE", "fsp-srv; save data → the user's host directory (DM_SAVE for the first user)", Result, h_fs_MountSave, const char *name, const void *uid) { dm_thread_service_request();
     // No default directory: silently landing on a directory with no characters distorts the "character select" measurement (this once caused a misjudgment). Runs always use a fresh copy of save_ref
-    const char *d = getenv("DM_SAVE");
-    if (!d) die("DM_SAVE is not set: point it at a writable copy of a save directory");
-    char dd[1024]; strlcpy(dd, d, sizeof dd); size_t L = strlen(dd); while (L > 1 && dd[L - 1] == '/') dd[--L] = 0;   // strip trailing slashes (.work / .new are appended at the same level)
-    save_sync_mount(dd, DM_GAME_ID);   // DM_SAVE_SYNC: the cloud's save comes in before the work directory is cloned from the committed one (save_sync.h)
+    char dd[1024];
+    if (user_save_dir(uid, dd, sizeof dd))
+        save_sync_mount(dd, DM_GAME_ID);   // DM_SAVE_SYNC: the cloud's save comes in before the work directory is cloned from the committed one (save_sync.h)
+    else { static int once; if (!once++) LOG("fs save data of another user: %s (save sync, DM_SAVE_SYNC, covers the first user's save only)", dd); }
     return mount_ex(name, dd, 0, 1, 0);
 }
 // Device save data: one save for the console instead of one per user. Animal Crossing: New Horizons keeps its island there (3.0.3's main mounts no account save data at all); the host
@@ -772,7 +807,19 @@ out:
 HLE_FORCE("_ZN2nn2fs6CommitEPKcRKNS0_12CommitOptionE", "fsp-srv; same as Commit (the option only clears the restore flag)", Result, h_fs_CommitOpt, const char *name, const void *opt) { (void)opt; return h_fs_Commit(name); }
 // SDK 11's old name: CommitSaveData(mount name) is the later Commit (Metroid Dread)
 HLE_FORCE("_ZN2nn2fs14CommitSaveDataEPKc", "fsp-srv; same as Commit (SDK 11's old name)", Result, h_fs_CommitSaveData, const char *name) { return h_fs_Commit(name); }
-HLE_FORCE("_ZN2nn2fs7UnmountEPKc", "fsp-srv; the mount table is permanent, unmounting is a no-op", void, h_fs_Unmount, const char *name) { (void)name; }
+// Unmount: a save's name is freed, so the next MountSaveData under it mounts that user's save (Super Mario Bros. Wonder unmounts "save" and mounts it again for the user
+// whose save file it opens: a permanent table kept the first user's save under the name, and every user's save file was the first user's). What was not committed is
+// dropped, as on Horizon. Other mounts (rom, add-on content, cache storage) stay: their table entries are permanent, as before. The freed entry is taken by the next save mount
+// (mount_ex), so a game that mounts and unmounts its save again and again does not fill the table.
+// Only with more than one user (dm_account_users): with one, every MountSaveData names the same save, so a kept name mounts the right one, and Unmount stays the no-op it
+// always was (a game that unmounts with writes not committed keeps them, as every earlier run did)
+HLE_FORCE("_ZN2nn2fs7UnmountEPKc", "fsp-srv; with more than one user a save's name is freed (its uncommitted writes dropped); other mounts, and every mount with one user, stay", void, h_fs_Unmount, const char *name) {
+    if (dm_account_users() < 2) return;
+    PATH_LOCK(); pthread_mutex_lock(&g_lock);
+    for (int i = 0; i < g_nmnt; i++)
+        if (g_mnt[i].save && !strcmp(g_mnt[i].name, name)) { LOG("fs unmount %s (save %s)", name, g_mnt[i].commit[0] ? g_mnt[i].commit : g_mnt[i].dir); g_mnt[i].name[0] = 0; }
+    pthread_mutex_unlock(&g_lock);
+}
 
 // ---------- Files ----------
 // With DM_FS: the host's time in open(2) and pread(2) for the game, one line every 2 s while it reads (how much of a load the files take; on Android's shared storage each
@@ -1401,8 +1448,9 @@ HLE_FORCE("_ZN2nn2fs22GetDirectoryEntryCountEPlNS0_15DirectoryHandleE", "fsp-srv
     }
     closedir(d); *out = n; return RES_OK;
 }
-// Whether save data exists: the host's save directory is created at mount time, so from the game's point of view it always exists (EnsureSaveData always succeeds too)
-HLE_FORCE("_ZN2nn2fs18IsSaveDataExistingERKNS_7account3UidE", "fsp-srv; save data always exists (returns bool)", unsigned, h_fs_SaveExists, const void *uid) { (void)uid; return 1; }
+// Whether the user's save data exists: the first user's directory is created at mount time, so from the game's point of view it always exists; another user's once
+// EnsureSaveData made it. A game asks before it offers to make one (Super Mario Bros. Wonder keeps a save file per user)
+HLE_FORCE("_ZN2nn2fs18IsSaveDataExistingERKNS_7account3UidE", "fsp-srv; save data exists: the first user's always, another user's once made (returns bool)", unsigned, h_fs_SaveExists, const void *uid) { return (unsigned)user_save_exists(uid); }
 // File system access log and thread priority: on the real device both ask fsp-srv (the access log switch lives in the service); the host has no access log and priority does not affect pread
 HLE_FORCE("_ZN2nn2fs26SetPriorityOnCurrentThreadENS0_8PriorityE", "fsp-srv; file read priority, ignored by the host", void, h_fs_SetPrio, int prio) { (void)prio; }
 HLE_FORCE("_ZN2nn2fs6detail18IsEnabledAccessLogEj", "fsp-srv; access log always off (returns bool)", unsigned, h_fs_AccessLogMask, unsigned mask) { (void)mask; return 0; }

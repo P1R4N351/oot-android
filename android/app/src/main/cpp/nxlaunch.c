@@ -68,6 +68,7 @@ void nxhost_fps_decouple_set(int on);
 #pragma weak nxhost_fps_hold60_set
 void nxhost_fps_hold60_set(int on);   // hle_fpslock.c: a steps framework held at one step a frame at the cap of 60, live from the in-game panel   // hle_fpslock.c: sead's controller at the measured rate, live from the in-game panel
 #pragma weak nxhost_text_input_callback
+#pragma weak nxhost_user_select_callback
 
 // ---- Log: the host's stdout and stderr go straight into the log file (nothing is lost when the process dies), and a thread copies new lines to logcat ----
 // At the end of the file the thread sleeps until the file is written (inotify IN_MODIFY), not on a 20 ms timer: the timer woke it 50 times a second for the whole game,
@@ -227,6 +228,41 @@ static void text_input_setup(JNIEnv *env) {
     nxhost_text_input_callback(text_input, NULL);
 }
 
+// ---- The user selector (nxhost_user_select_callback): UserPicker.ask shows the picker on the UI thread and blocks until a user is picked or it is cancelled; called the
+// way the input box is (a thread of this shim attached for the call while the guest thread waits). The names cross as one UTF-8 byte array, one name a line ----
+static jclass g_up_class; static jmethodID g_up_ask;
+typedef struct { const char *const *names; const int *offered; int n, def, pick; } user_req;
+static void *user_select_thread(void *p) {
+    user_req *q = p; JNIEnv *env = NULL; q->pick = -1;
+    JavaVMAttachArgs a = {JNI_VERSION_1_6, "nxusers", NULL};
+    if ((*g_vm)->AttachCurrentThread(g_vm, &env, &a) != JNI_OK) { fprintf(stderr, "[RED] [nxlaunch] user selector: cannot attach to the VM: cancel\n"); return NULL; }
+    size_t len = 0; for (int i = 0; i < q->n; i++) len += strlen(q->names[i]) + 1;
+    char *all = calloc(1, len + 1);
+    if (all) { for (int i = 0; i < q->n; i++) { strcat(all, q->names[i]); strcat(all, "\n"); } }
+    jbyteArray nm = jbytes(env, all ? all : ""); free(all);
+    jintArray of = (*env)->NewIntArray(env, q->n);
+    if (of) (*env)->SetIntArrayRegion(env, of, 0, q->n, (const jint *)q->offered);
+    q->pick = (*env)->CallStaticIntMethod(env, g_up_class, g_up_ask, nm, of, (jint)q->def);
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionDescribe(env); (*env)->ExceptionClear(env); fprintf(stderr, "[RED] [nxlaunch] user selector: UserPicker.ask threw: cancel\n"); q->pick = -1; }
+    (*g_vm)->DetachCurrentThread(g_vm);
+    return NULL;
+}
+static int user_select(void *ctx, const char *const *names, const int *offered, int n, int def) {
+    (void)ctx; user_req q = {names, offered, n, def, -1};
+    pthread_t t; int e = pthread_create(&t, NULL, user_select_thread, &q);
+    if (e) { fprintf(stderr, "[RED] [nxlaunch] user selector: cannot start its thread: %s: cancel\n", strerror(e)); return -1; }
+    pthread_join(t, NULL);
+    return q.pick;
+}
+static void user_select_setup(JNIEnv *env) {
+    if (!nxhost_user_select_callback) { fprintf(stderr, "[nxlaunch] user selector: not in this host (the preselected user)\n"); return; }
+    jclass k = (*env)->FindClass(env, "dev/nxnative/android/UserPicker");
+    jmethodID m = k ? (*env)->GetStaticMethodID(env, k, "ask", "([B[II)I") : NULL;
+    if (!m || (!g_vm && (*env)->GetJavaVM(env, &g_vm) != JNI_OK)) { (*env)->ExceptionClear(env); fprintf(stderr, "[RED] [nxlaunch] user selector: no UserPicker.ask: the preselected user\n"); return; }
+    g_up_class = (*env)->NewGlobalRef(env, k); g_up_ask = m;
+    nxhost_user_select_callback(user_select, NULL);
+}
+
 // A surface can arrive while the readiness dialog is still up, before Native.start opens the log file and applies env.txt / env-<id>.txt (DM_VK_DRIVER, DM_VK_GPL,
 // DM_VK_MESH, DM_VK_VALIDATE, ...). Hold the window here and hand it to nxhost_set_window only once Native.start has set the environment
 static ANativeWindow *g_window;
@@ -263,6 +299,7 @@ JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_start(JNIEnv *env, jclas
     fprintf(stderr, "[nxlaunch] hooks: window %s, input %s, lifecycle %s\n", nxhost_set_window ? "yes" : "not in this build", nxhost_input_key ? "yes" : "not in this build",
             nxhost_lifecycle ? "yes" : "not in this build");
     text_input_setup(env);
+    user_select_setup(env);
     pthread_attr_t a; pthread_attr_init(&a); pthread_attr_setstacksize(&a, HOST_STACK);
     pthread_t t; int r = pthread_create(&t, &a, host_thread, NULL); pthread_attr_destroy(&a);
     if (r) { fprintf(stderr, "[nxlaunch] cannot start the host thread: %s\n", strerror(r)); return -3; }
