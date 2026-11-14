@@ -488,12 +488,17 @@ static VkResult submit_x(VkCommandBuffer cb, uint64_t signal, uint32_t nwait, co
     if (r == VK_ERROR_DEVICE_LOST) vka_device_lost("a submission");
     return r;
 }
-// The queue idle, bounded by the hang time: the timeline up to the last value handed to it (the present's copies wait for no more), then vkQueueWaitIdle for the rest
+// The queue idle, bounded by the hang time: the timeline up to the last value handed to it (the present's copies wait for no more), then vkQueueWaitIdle for the rest.
+// A CPU wait on that value (vka_worker_cpu_wait): a gate the GPU is held at with nothing before it opens (the GPU would wait for this thread), as for any CPU fence wait.
+// Frame generation's teardown waited with vkQueueWaitIdle on the present thread while a gate held the queue and vka_gate_host_stall kept the gate's time from running:
+// Super Mario Bros. Wonder's program 1 hung when frame generation was switched on and off (the submission behind the gate never ran, the present never came back)
 int vka_queue_idle(void) {
     if (vka_hung()) return 0;
     uint64_t q = vka_fence_queued();
     VkSemaphoreWaitInfo wi = {VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, .semaphoreCount = 1, .pSemaphores = &V.tl, .pValues = &q};
+    int cw = q ? vka_worker_cpu_wait(q) : 0;
     VkResult r = q ? vk.vkWaitSemaphores(V.dev, &wi, vka_hang_ns()) : VK_SUCCESS;
+    vka_worker_cpu_wait_end(cw);
     if (r) { VRED("queue idle: fence %llu not reached in %.1f s (%d): not waited for", (unsigned long long)q, vka_hang_ns() / 1e9, r); return 0; }
     pthread_mutex_lock(&V.qmu); vk.vkQueueWaitIdle(V.q); pthread_mutex_unlock(&V.qmu);
     return 1;
@@ -570,6 +575,7 @@ static const volatile uint32_t *g_gban[NGBAN]; static int g_ngban;
 static pthread_mutex_t g_gmu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_gcv = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t g_gidle = PTHREAD_COND_INITIALIZER; static _Atomic int g_gate_pend;   // signaled at each opening; gates added and not yet opened (vka_gate_drain)
 static _Atomic uint64_t g_gate_nw, g_gate_nc, g_gate_nt, g_gate_ns;
+static _Atomic int g_gate_hold;   // the host's own stalls of the present path under way (vka_gate_host_stall, below)
 static int gate_pred(uint32_t cur, uint32_t mode, uint32_t target) { return mode == 0 ? cur == target : (uint32_t)(cur - target) < 0x80000000u; }
 VkSemaphore vka_gate_sem(void) { return g_gate_up > 0 ? g_gate_sem : VK_NULL_HANDLE; }
 static void gate_ban_locked(const volatile uint32_t *w) {
@@ -604,6 +610,9 @@ static void gate_poll_locked(void) {
             if (!x->t_cpu) x->t_cpu = now_ns();
             else if (now_ns() - x->t_cpu >= 2000000) { gate_open_locked(1); continue; }
         } else x->t_cpu = 0;
+        // The host holds the CPU (vka_gate_host_stall): its time stands still and starts again after. Only the time: a CPU wait above still opens it (the host's own
+        // waits for the queue during the stall are such waits, vka_queue_idle), which a stop placed before that rule turned into a deadlock
+        if (atomic_load(&g_gate_hold) > 0) { if (x->t_idle) x->t_idle = now_ns(); break; }
         if (x->park && x->t_idle && now_ns() - x->t_idle > x->park) {
             VRED("a GPU wait for the CPU (event %p: wants %s %u, holds %u; submission %llu) waited %.0f ms with the GPU idle (%.0f ms in all): opened, and its event parks the replay from now on",
                  (const void *)x->w, x->mode ? ">=" : "==", x->value, *x->w, (unsigned long long)x->fence, (now_ns() - x->t_idle) / 1e6, (now_ns() - x->t0) / 1e6);
@@ -612,6 +621,11 @@ static void gate_poll_locked(void) {
         break;
     }
 }
+// The host's own stalls of the present path (vka_gate_host_stall): the game's thread waits for the present thread (vka_present_reserve, 8 frames in flight), so while
+// that thread does long work of the host's (frame generation's chain, vka_framegen.c rebuild: 327 ms at 2560x1440 on the Adreno 740) the CPU cannot reach the signal a
+// gate waits for. Super Mario Bros. Wonder's program 1 turned frame generation on mid-run: a gate waited 200 ms with the GPU idle, opened by its time and banned its event
+// for the rest of the run, though the CPU was only held by the host. While a stall lasts a gate's time does not run; it starts again when the stall ends
+void vka_gate_host_stall(int on) { atomic_fetch_add(&g_gate_hold, on ? 1 : -1); }
 static void *gate_main(void *arg) {
     (void)arg; pthread_setname_np(pthread_self(), "vk-gate"); vka_fp_host("vk-gate");
     pthread_mutex_lock(&g_gmu);

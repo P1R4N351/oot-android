@@ -142,6 +142,7 @@ uint64_t vka_gate_add(volatile uint32_t *w, uint32_t mode, uint32_t value, uint6
 void vka_gate_poll(void);
 void vka_gate_cpu_wait(uint64_t fence);
 int vka_gate_banned(const volatile uint32_t *w);
+void vka_gate_host_stall(int on);   // 1 / 0 around the host's own long work on the present path (the game's thread waits behind it): the gates' time stands still
 void vka_gate_stats(uint64_t *n_word, uint64_t *n_cpu, uint64_t *n_time, uint64_t *wait_ns);   // cumulative: opened by their word, by a CPU wait, by their time; time armed
 int vka_gate_pending(void); int vka_gate_drain(uint64_t timeout_ns);   // gates not yet opened; wait until none is (the present on a driver that holds submissions back behind a gate: vka_dev.c)
 void vka_device_lost(const char *what);   // a call returned VK_ERROR_DEVICE_LOST: the GPU hang is declared now (vka_dev.c)
