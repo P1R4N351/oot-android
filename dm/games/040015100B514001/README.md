@@ -20,6 +20,7 @@ Program 1 of application `010015100B514000`, display version 1.2.1 (update v3276
 ## Found on this game
 
 - [Built-in fonts of SDK 21](../../../docs/reference/services.md#built-in-fonts-and-the-audio-device-notification-of-sdk-21): main calls `GetBuiltInFontData` and imports `ScalableFontEngineHelper::Decode`, so the host gave it the font with its BFTTF header; it now gives the TTF past the header, as the service's offsets do (taken from nxnative PR #1639; what the header did to this game's text was not recorded).
+- [A gate opened by its time while the host held the game's thread](../../../docs/reference/nvn-objects.md#a-gate-opened-by-its-time-while-the-host-held-the-games-thread-android): turning frame generation on mid-run banned an event for the rest of the run. The first fix hung the GPU when frame generation was switched on and off (a gate nothing could open while frame generation waited for the queue); fixed again, not yet checked on the phone.
 
 ## Open
 

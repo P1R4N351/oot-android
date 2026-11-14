@@ -370,7 +370,7 @@ lsfg_chain *lsfg_chain_new(const lsfg_modules *mods, VkExtent2D ext, float flow_
             r = vk.vkEndCommandBuffer(cb);
         }
         VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cb};
-        if (!r) { pthread_mutex_lock(&V.qmu); r = vk.vkQueueSubmit(V.q, 1, &si, VK_NULL_HANDLE); if (!r) r = vk.vkQueueWaitIdle(V.q); pthread_mutex_unlock(&V.qmu); }
+        if (!r) { pthread_mutex_lock(&V.qmu); r = vk.vkQueueSubmit(V.q, 1, &si, VK_NULL_HANDLE); pthread_mutex_unlock(&V.qmu); if (!r && !vka_queue_idle()) r = VK_TIMEOUT; }   // (vka_queue_idle: a CPU wait, so a gate holding the queue opens)
         if (r) { VRED("lsfg: layout setup: %d", r); c->bad = 1; }
     }
     if (c->bad) { lsfg_chain_free(c); return NULL; }
