@@ -9,6 +9,27 @@
 - **Fix:** `scripts/build_ipa_from_nsp.py` `configure_dotnet` derives the root from the `Microsoft.NETCore.App` entry in `dotnet --list-runtimes`, using the build's environment, before any tool runs. It exports `DOTNET_ROOT` both to that environment and to `os.environ`, for tools launched with an explicit environment and those that inherit it. Caller-supplied roots, including architecture-specific overrides, retain precedence. A failed or malformed probe leaves the environment unchanged rather than guessing the wrapper's directory.
 - **Found on:** [Balatro](../../dm/games/0100CD801CE5E000/README.md), first build with Homebrew .NET ([PR #284](https://github.com/seedds/nxnative/pull/284)). Applies to every game's build on that installation setup.
 
+### The Mac host does not link: dav1d, and a weak reference to the Vulkan replay
+
+- **Symptom:** `make -C dm/host` stops at `hle_movie_av1.c: fatal error: 'dav1d/dav1d.h' file not found`, then, with that fixed, at `Undefined symbols: "_vka_env_gen", referenced from: _probe_install in probe.o`.
+- **Cause:** the Android build brought `hle_movie_av1.c` and `dm/third_party/dav1d` but not upstream's Makefile rules that build dav1d for the Mac; and `probe.c`'s weak reference to the Vulkan replay's live-control generation (`vka_ctl.c`, Android only), which it checks for null, is refused by Apple's linker unless told it may stay undefined.
+- **Fix:** `dm/host/Makefile` builds dav1d into `gen/dav1d/libdav1d.a` as upstream's does (seedds/nxnative `dm/host/Makefile`) and links it, and passes `-Wl,-U,_vka_env_gen`.
+- **Found on:** [Super Mario Bros. Wonder - Nintendo Switch 2 Edition](../../dm/games/040015100B514001/README.md): the heap check, which boots the game in the Mac host.
+
+### The heap check sized the block for a 1 GB alias region
+
+- **Symptom:** the NSP script's heap check of a game whose heap is larger than the block leaves beside its alias region writes a `mem_reserve` whose heap region is still too small (Super Mario Bros. Wonder's program 1: `0x1a0000000` for a 4.94 GB heap beside a 4.375 GB alias region, a 1.6 GB heap region), and the address region check's boot then stops at `SetHeapSize OOM` and a crash in `nninitStartup`.
+- **Cause:** `profile_guess.py` `heap_signals` grew the block for a 1 GB alias region but left `mem_alias` as it was.
+- **Fix:** the block grows by the heap beside the profile's own alias region (at least 1 GB; the address region check sizes it after). `dm/tools/tests/test_heap_signals.py` checks both cases.
+- **Found on:** [Super Mario Bros. Wonder - Nintendo Switch 2 Edition](../../dm/games/040015100B514001/README.md).
+
+### The heap and region checks booted a game without its DLC
+
+- **Symptom:** the address region check of a game that mounts an add-on at boot reports `no address regions in 0:00`; its log shows `fs mount add-on content …: index 1 does not exist (DM_AOC_DIR=unset)` and a crash in the sdk right after.
+- **Cause:** the checks booted the game without `DM_AOC_DIR`, though the script had packed the dump's DLC (`<id>_build/aoc/<index>.img`) and the IPA's run passes it.
+- **Fix:** both checks pass the packed DLC (`build_ipa_from_nsp.py` `check_aoc`). A Switch 2 Edition's program 1 needs its add-on as on the console.
+- **Found on:** [Super Mario Bros. Wonder - Nintendo Switch 2 Edition](../../dm/games/040015100B514001/README.md): it mounts `aocup`, its Switch 2 content, at boot.
+
 ### The shader step stops with an empty `xlate_source`
 
 - **Symptom:** the packing and captures succeed, then the shader step stops with `translation chain tools do not match the lock file: xlate_source: lock … / actual` and nothing after `actual`, which reads like a stale translator.
