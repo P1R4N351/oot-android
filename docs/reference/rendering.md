@@ -281,6 +281,16 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Found on:** [DRAGON QUEST VII Reimagined](../../dm/games/0100A9D01C446000/README.md) (GitHub issue #589). The rewriter finds the pool in every Unreal main on the drive: OCTOPATH TRAVELER and Yoshi's Crafted World (UE 4.1x, UTF-32), Pikmin 4 (4.26), OCTOPATH TRAVELER II and DRAGON QUEST VII Reimagined (4.27), Octopath Traveler 0 (UE 5) and FINAL FANTASY RESONANCE (5.6).
 - **Check:** `t_uecvar` (the variable named in main's table, or not; the value raised, kept and left); the search itself, `test_ue_cvar.py`. On a Mac run, `DM_CTL` `cvari <main offset> <MB>` sets the pool while the game runs, for an A/B at one spot.
 
+### A texture over mip levels of another (Android)
+
+- **Symptom:** (Android) a pass draws into a texture whose storage is a mip level of a larger one, and readers of the larger texture's level never see it (Mario Tennis Fever: a 3584x3584 depth texture over level 1 of its 7168x7168 shadow map).
+- **Cause:** NVN textures are views of pool memory: a texture placed on a level of another, with the same format and layout, is that level. The replay made each texture of no shape of its own an image of its own, so the two never shared content.
+- **Fix:** general: `nvn_tex_level_of` (`nvn_tex.c`) says when a texture's levels are levels k.. of another (same format, texel size, block height and depth, GOB width, offsets; single layer and sample, block-linear 2D, not sparse), and `nvn_tex_parent_off` where such a parent would start. On the Vulkan replay a texture with no image of its own shape looks for a live parent at k 1-4 and becomes a level child (`vka_tex.c` `level_child`): the parent's image, its level j the parent's j + k, no memory, upload or tracking of its own. Its writes mark the parent written, a CPU write to its storage re-uploads the parent, and the parent is not evicted while it has children. `DM_VK_LEVEL_SHARE=0` gives the old image of its own.
+- **Open:** only a parent made before the child is found; a pass drawing into a child while sampling its parent is not seen as sampling its own target (the check compares images); neither is remade with storage use (a `[RED]` line says so).
+- **Found on:** Mario Tennis Fever (`0400D4201C6EA000`, profile in pull request #268), Odin 3 (Adreno 830), 2026-11-13: its shadow map's level 1 is now written. The game's cut far shadows have another cause (a geometry shader's viewport-mask broadcast, not translated), so they stay cut.
+
+## Render targets, passes and clears
+
 ## Render targets, passes and clears
 
 ### Transient render targets shared by storage
