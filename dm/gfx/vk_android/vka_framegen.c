@@ -102,7 +102,7 @@ static int load(void) {
 
 static void teardown(void) {
     if (!F.chain && !F.out[0]) return;
-    pthread_mutex_lock(&V.qmu); vk.vkQueueWaitIdle(V.q); pthread_mutex_unlock(&V.qmu);
+    vka_queue_idle();   // (a CPU wait: a gate holding the queue opens, vka_dev.c)
     for (int i = 0; i < NFG; i++) if (F.fr[i].held) { vka_tex_drop(F.fr[i].held); F.fr[i].held = NULL; }
     lsfg_chain_free(F.chain); F.chain = NULL;
     for (int i = 0; i < LSFG_MAX_GENERATIONS; i++) {
@@ -157,7 +157,11 @@ static VkFormat own_fmt(const vka_img *im, int format) {
     return w;
 }
 
-static int rebuild(VkExtent2D e, int flow) {
+static int rebuild_now(VkExtent2D e, int flow);
+// On the present thread, which the game's thread waits for: the gates' time stands still meanwhile (vka_gate_host_stall), or a GPU wait for the game's next signal
+// ran out during the chain's 327 ms and banned its event for the rest of the run
+static int rebuild(VkExtent2D e, int flow) { vka_gate_host_stall(1); int ok = rebuild_now(e, flow); vka_gate_host_stall(0); return ok; }
+static int rebuild_now(VkExtent2D e, int flow) {
     teardown();
     VkImage imgs[LSFG_MAX_GENERATIONS];
     for (int i = 0; i < LSFG_MAX_GENERATIONS; i++) { if (!(F.out[i] = out_new(e, i, &F.out_view[i]))) { teardown(); return 0; } imgs[i] = F.out[i]->img; }
