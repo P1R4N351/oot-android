@@ -2,16 +2,17 @@
 its inputs are unchanged), rewritten with the modules, and listed in the pack's nro.tsv, which the host reads beside the modules (loader.c preload_nros). The phone's pack step
 (--keep-code) checks that every NRO's rewrite finished, as it does for the modules."""
 import hashlib
+import importlib.util
 import struct
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 REPO = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO / 'scripts'))
-import pack_android   # noqa: E402
+spec = importlib.util.spec_from_file_location('pack_android', REPO / 'scripts/pack_android.py')
+assert spec and spec.loader
+pack_android = importlib.util.module_from_spec(spec); spec.loader.exec_module(pack_android)
 
 
 def nro(text=0x2000, tag=b'x'):
@@ -83,7 +84,7 @@ class Split(unittest.TestCase):
             work = Path(d) / 'work'; (work / 'android-nro').mkdir(parents=True)
             if with_nros: (work / 'android-nro' / 'nro.tsv').write_text('# name\n')
             seen = {}
-            def run(argv, env=None, **kw): seen.update(env); return mock.Mock(returncode=1)
+            def run(argv, env=None, **kw): seen.update(env or {}); return mock.Mock(returncode=1)
             a = mock.Mock(shader_python=None); g = mock.Mock(id='0400D4201C6EA000', dir=Path(d) / 'profile')
             with mock.patch.object(pack_android, 'shader_python', return_value='py'), mock.patch.object(pack_android.subprocess, 'run', run), \
                  mock.patch.dict(pack_android.os.environ, {}, clear=False), self.assertRaises(pack_android.Error):

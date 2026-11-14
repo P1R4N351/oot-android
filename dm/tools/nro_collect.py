@@ -160,8 +160,9 @@ def main():
             jobs += [(p, a, min(sz, a + step + 0x40), left) for a in range(0, sz, step)]
         print(f'{len(want)} registered NROs, {len(found)} loose; scanning {len(big)} files ({sum(s for _, s in big) / 2**30:.1f} GB) for the other {len(left)}', flush=True)
         serial = os.environ.get('DM_NRO_COLLECT_J') == '1'
-        with (contextlib.nullcontext() if serial else Pool(min(10, os.cpu_count() or 4))) as pool:
-            for r in (map(scan, jobs) if serial else pool.imap_unordered(scan, jobs)):
+        with contextlib.ExitStack() as stack:
+            results = map(scan, jobs) if serial else stack.enter_context(Pool(min(10, os.cpu_count() or 4))).imap_unordered(scan, jobs)
+            for r in results:
                 for h, path, off, how, body in r:
                     found.setdefault(h, (f'{os.path.relpath(path, romfs)}+{off:#x}', how, body))
     rows, i, refused = [], 0, 0
