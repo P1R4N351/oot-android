@@ -1071,11 +1071,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             @Override public int add(PadOrder.Pad p) { int pl = Native.deviceAdded(p.id, p.name, false); if (pl >= 0) padConnected(p.id); return pl; }
             @Override public int first(PadOrder.Pad p) {
                 int pl = Native.deviceFirst(p.id, p.name);
-                if (pl == 0 && rumble != null) for (int id : pads) rumble.route(id);   // two players traded devices: each gets its device's vibrator
+                if (pl == 0 && rumble != null) rumble.reroute(pads);   // two players traded devices: each gets its device's vibrator
                 return pl;
             }
             @Override public int player(int id) { return Native.devicePlayer(id); }
         }, Prefs.padFirst(this));
+        ui.postDelayed(padPlayers, 1000);
         java.util.List<PadOrder.Pad> now = new java.util.ArrayList<>();
         for (int id : inputManager.getInputDeviceIds()) { InputDevice d = InputDevice.getDevice(id); if (gamepadLike(d)) now.add(pad(d)); }
         order.start(now);   // best first: an external controller is player 1 before a phone's own gamepad-like device (PadOrder)
@@ -1279,6 +1280,21 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return KeyEvent.isGamepadButton(code) || code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT
                 || code == KeyEvent.KEYCODE_DPAD_RIGHT || code == KeyEvent.KEYCODE_DPAD_CENTER;
     }
+
+    /**
+     * The host moves a controller to another player when the game does not read its own (input_android.c fill: after a connect or a disconnect, when the game's supported
+     * npads change, when its controller applet opens), so the players are looked at once a second and the rumble follows them
+     */
+    private final java.util.HashMap<Integer, Integer> padPlayer = new java.util.HashMap<>();
+    private final Runnable padPlayers = new Runnable() {
+        @Override public void run() {
+            boolean moved = false;
+            for (int id : pads) { int p = Native.devicePlayer(id); Integer was = padPlayer.put(id, p); if (was != null && was != p) moved = true; }
+            padPlayer.keySet().retainAll(pads);
+            if (moved && rumble != null) rumble.reroute(pads);
+            ui.postDelayed(this, 1000);
+        }
+    };
 
     @Override public void onInputDeviceAdded(int id) {
         InputDevice d = InputDevice.getDevice(id);
