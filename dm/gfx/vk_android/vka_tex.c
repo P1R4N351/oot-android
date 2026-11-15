@@ -1701,7 +1701,19 @@ static void vka_tex_prune_locked(void) {
     if (!cur_frame) return;
     img_limit_update(cur_frame);
     uint64_t limit_bytes = g_img_lim, total_bytes = g_img_bytes + vka_imem_zbytes();
-    if (!limit_bytes || total_bytes <= limit_bytes || g_prune_dry == cur_frame) return;   // (dry: this frame had nothing to evict; a miss after it finds nothing new)
+    // DM_VK_PRUNE_MS=<ms> (0, the default: all at once): the most replay-thread time a frame gives to evictions. A prune takes the cache from its limit down a sixteenth,
+    // about 900 images in Mario Kart World at a 2300 MiB limit, and that took 0.8-1.2 s in one frame on Turnip (Adreno 740; each race lap met one). With a budget the
+    // evictions go on in the next frames (g_prune_more) until the target is reached; the cache is over its limit by what was made meanwhile
+    static uint64_t prune_frame, prune_ns; static int g_prune_more;
+    uint64_t budget_ns = (uint64_t)VKA_ENV("DM_VK_PRUNE_MS", 0) * 1000000ull, t_prune = 0;
+    if (!budget_ns) g_prune_more = 0;
+    if (!vktl_prune_due(total_bytes, limit_bytes, g_prune_more)) { g_prune_more = 0; return; }
+    if (g_prune_dry == cur_frame) return;   // (dry: this frame had nothing to evict; a miss after it finds nothing new)
+    if (budget_ns) {
+        if (prune_frame != cur_frame) { prune_frame = cur_frame; prune_ns = 0; }
+        if (prune_ns >= budget_ns) return;
+        t_prune = now_ns();
+    }
     static prune_ent *c; static int ccap; int nc = 0;
     if (ccap < g_nlive) { ccap = g_nlive + 256; c = realloc(c, (size_t)ccap * sizeof *c); }
     uint64_t done_fence = vka_done(); int video = dm_movie_playing();
@@ -1728,7 +1740,9 @@ static void vka_tex_prune_locked(void) {
     }
     qsort(c, (size_t)nc, sizeof *c, prune_cmp);
     uint64_t target = vktl_target(limit_bytes), bytes_freed = 0; int pruned = 0;
+    int cut = 0;
     for (int k = 0; k < nc && total_bytes > target; k++) {
+        if (budget_ns && vktl_budget_spent(budget_ns, k, prune_ns + (now_ns() - t_prune))) { cut = 1; break; }
         uint64_t before = g_img_bytes + vka_imem_zbytes();
         if (c[k].gpu) {   // (only under hard memory pressure: the image comes back empty, so say so)
             static _Atomic int ng;
@@ -1739,13 +1753,16 @@ static void vka_tex_prune_locked(void) {
         uint64_t after = g_img_bytes + vka_imem_zbytes(), b = before > after ? before - after : 0;
         pruned++; bytes_freed += b; total_bytes = after;
     }
+    if (budget_ns) { prune_ns += now_ns() - t_prune; g_prune_more = cut; }
     if (pruned) {
-        static _Atomic int n;
-        if (atomic_fetch_add(&n, 1) < 128)
-            VLOG("image cache pruned: evicted %d images unused for %llu+ frames (%.1f MiB freed, %d live remaining, %.1f MiB, limit %.0f MiB)",
-                 pruned, (unsigned long long)(cur_frame - c[pruned - 1].last), bytes_freed / 1048576.0, g_nlive, total_bytes / 1048576.0, limit_bytes / 1048576.0);
+        static _Atomic int n; static int was_cut;   // (a prune spread over frames is one line, its first)
+        int quiet = was_cut; was_cut = cut;
+        if (!quiet && atomic_fetch_add(&n, 1) < 128)
+            VLOG("image cache pruned: evicted %d images unused for %llu+ frames (%.1f MiB freed, %d live remaining, %.1f MiB, limit %.0f MiB)%s",
+                 pruned, (unsigned long long)(cur_frame - c[pruned - 1].last), bytes_freed / 1048576.0, g_nlive, total_bytes / 1048576.0, limit_bytes / 1048576.0,
+                 cut ? "; the frame's budget is spent, the rest in the next frames (DM_VK_PRUNE_MS)" : "");
     }
-    if (total_bytes > limit_bytes) {   // what is left is in use: kept over the limit (logged when the excess first appears and each time it grows by 256 MiB)
+    if (total_bytes > limit_bytes && !cut) {   // what is left is in use: kept over the limit (logged when the excess first appears and each time it grows by 256 MiB)
         g_prune_dry = cur_frame;
         static uint64_t logged; static _Atomic int n;
         if (total_bytes >= logged + 256 * VKTL_MIB && atomic_fetch_add(&n, 1) < 8) {

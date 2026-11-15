@@ -36,6 +36,37 @@ static int run(int n, int use, uint64_t each, uint64_t limit, int frames, int *u
     free(im); free(c); return uploads;
 }
 
+// DM_VK_PRUNE_MS, as vka_tex.c spreads a prune: a cache of `old` long-unused images at its limit, then `fresh` new images in the first frame and one in each later frame (each a miss that may prune first),
+// each eviction costing `cost` ns of a frame's `budget` ns (0: no budget). Returns the frames that evicted; the most one frame evicted, the total evicted and the bytes left
+static int run_budget(int old, int fresh, uint64_t each, uint64_t limit, int frames, uint64_t budget, uint64_t cost, int *most, int *evicted, uint64_t *bytes_left) {
+    int n = old + fresh + frames, nlive = old, more = 0, busy = 0; img *im = calloc((size_t)n, sizeof *im); img **c = malloc((size_t)n * sizeof *c);
+    uint64_t bytes = (uint64_t)old * each;
+    for (int i = 0; i < old; i++) im[i] = (img){.last = 1, .live = 1};
+    *most = 0; *evicted = 0;
+    for (uint64_t f = 100; f < 100 + (uint64_t)frames; f++) {
+        uint64_t spent = 0; int this_frame = 0;
+        for (int m = 0; m < (f == 100 ? fresh : 1); m++) {
+            if (!budget) more = 0;
+            if (!vktl_prune_due(bytes, limit, more)) more = 0;
+            else if (!budget || spent < budget) {
+                int nc = 0, k = 0, cut = 0;
+                for (int i = 0; i < nlive; i++) if (im[i].live && vktl_evictable(f, im[i].last, 0, im[i].gpu, 0, 0, 0)) c[nc++] = &im[i];
+                qsort(c, (size_t)nc, sizeof *c, cmp);
+                for (k = 0; k < nc && bytes > vktl_target(limit); k++) {
+                    if (vktl_budget_spent(budget, k, spent)) { cut = 1; break; }
+                    c[k]->live = 0; bytes -= each; spent += cost; this_frame++;
+                }
+                if (budget) more = cut;
+            }
+            im[nlive++] = (img){.last = f, .live = 1}; bytes += each;
+        }
+        if (this_frame) busy++;
+        if (this_frame > *most) *most = this_frame;
+        *evicted += this_frame;
+    }
+    *bytes_left = bytes; free(im); free(c); return busy;
+}
+
 int main(void) {
     // the limit: images plus what RAM can still give past the reserve, the budget's share past other usage, the floor
     vktl_in a = {.mem_total = 15 * GIB, .mem_avail = 4 * GIB, .img_bytes = 1 * GIB};
@@ -96,6 +127,21 @@ int main(void) {
       qsort(c, (size_t)nc, sizeof *c, cmp);
       for (int i = 0; i < nc && bytes > vktl_target(limit); i++) { evicted_gpu += c[i]->gpu; c[i]->live = 0; bytes -= 8 * MIB; }
       CHECK(nc == N / 2 && evicted_gpu == 0 && bytes == N / 2 * 8 * MIB && bytes > limit, "GPU-written images stay over the limit: %d candidates, %d GPU-written evicted, %llu MiB left", nc, evicted_gpu, (unsigned long long)(bytes >> 20)); }
+    // DM_VK_PRUNE_MS: 1,150 images of 2 MiB at a 2,300 MiB limit, a burst of 10 new ones, then one a frame, an eviction costing 1 ms. Without a budget one frame takes
+    // the whole sixteenth (the 0.8-1.2 s freeze seen in Mario Kart World on Turnip); with 3 ms each frame evicts at most the 8 between clock reads, the prune goes on
+    // over the next frames, and the cache still reaches its target
+    { int most, ev, busy; uint64_t left, lim = 2300 * MIB;
+      busy = run_budget(1150, 10, 2 * MIB, lim, 60, 0, 1000000, &most, &ev, &left);
+      CHECK(most >= 70 && busy == 1 && ev == most && left <= lim, "no budget: one frame evicts it all (%d at most, %d frames)", most, busy);
+      int ev0 = ev;
+      busy = run_budget(1150, 10, 2 * MIB, lim, 60, 3000000, 1000000, &most, &ev, &left);
+      CHECK(most <= 8 && busy >= 9 && ev >= ev0 && left <= lim, "a 3 ms budget: %d evictions a frame at most, over %d frames, %llu MiB left", most, busy, (unsigned long long)(left >> 20));
+      busy = run_budget(1150, 10, 2 * MIB, lim, 60, 1, 1000000, &most, &ev, &left);
+      CHECK(most >= 1 && left <= lim, "a budget under one eviction still moves on (%d a frame, %llu MiB left)", most, (unsigned long long)(left >> 20));
+      CHECK(!vktl_prune_due(lim, lim, 0) && vktl_prune_due(lim + 1, lim, 0) && vktl_prune_due(lim, lim, 1) && !vktl_prune_due(vktl_target(lim), lim, 1) && !vktl_prune_due(lim + 1, 0, 1),
+            "a prune is due over the limit, or while a spread one is above its target");
+      CHECK(!vktl_budget_spent(0, 8, ~0ull) && !vktl_budget_spent(5, 0, 9) && !vktl_budget_spent(5, 7, 9) && vktl_budget_spent(5, 8, 5) && !vktl_budget_spent(5, 8, 4),
+            "the budget: none at 0, the first eviction always, the clock every 8"); }
     if (!fails) printf("t_android_texlimit: ok\n");
     return fails != 0;
 }

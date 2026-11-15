@@ -55,6 +55,12 @@ static inline uint64_t vktl_limit(const vktl_in *in) {
 }
 // Prune down to this once over the limit (a margin, so one new image does not start another prune)
 static inline uint64_t vktl_target(uint64_t limit) { return limit - limit / 16; }
+// A prune spread over frames (DM_VK_PRUNE_MS: a budget of replay-thread time a frame gives to evictions). A miss prunes when the cache is over its limit, or when the
+// last prune ran out of its frame's budget (more) before the cache was down to its target
+static inline int vktl_prune_due(uint64_t total, uint64_t limit, int more) { return limit && (total > limit || (more && total > vktl_target(limit))); }
+// Whether the eviction loop stops before candidate k: the frame's budget (0: none) spent, counting this prune's time; the clock is read every 8 evictions, and the first
+// is always made so that a prune moves on even with a budget smaller than one eviction
+static inline int vktl_budget_spent(uint64_t budget_ns, int k, uint64_t spent_ns) { return budget_ns && k && !(k & 7) && spent_ns >= budget_ns; }
 
 // Whether an image may be evicted now: not held from outside the recording thread, not a playing video's, its last submission done, unused for VKTL_KEEP_FRAMES frames.
 // An image whose content is the GPU's (gpu_owned: rendered, copied or computed into) is never a candidate: its storage holds what the CPU last wrote, not what the GPU made,
