@@ -272,6 +272,15 @@ static unsigned pl_builtin_font(pl_builtin_font_t *out, int type) {
 }
 HLE_FORCE("_ZN2nn2pl18GetBuiltInFontDataEPNS0_17BuiltInFontDataNxENS0_17BuiltInFontTypeNxEb", "one built-in font (Switch 1 type): the stand-in TTFs", unsigned, h_pl_BuiltInNx, pl_builtin_font_t *out, int type, unsigned b) { (void)b; return pl_builtin_font(out, type); }
 HLE_FORCE("_ZN2nn2pl18GetBuiltInFontDataEPNS0_20BuiltInFontDataOunceENS0_20BuiltInFontTypeOunceEb", "one built-in font (Switch 2 type): the stand-in TTFs", unsigned, h_pl_BuiltInOunce, pl_builtin_font_t *out, int type, unsigned b) { (void)b; return pl_builtin_font(out, type); }
+// Several built-in fonts at once (Kirby and the Forgotten Land - Nintendo Switch 2 Edition, SDK 19.3.7: sdk+0x4fc780, from main+0x65b534): types is an array of n type bytes (the game asks for 0-5);
+//   the SDK takes at most 6, asks the pl service for them, fills one entry per font it returns with the same fill as GetBuiltInFontData's (sdk+0x4fc650) and returns whether they are loaded. The game
+//   retries every 100 ms until they are. Unhooked, the SDK connects to pl:u and aborts (result 0xe15, sdk+0x4fd4a4). The fonts come in the order asked
+HLE_FORCE("_ZN2nn2pl21GetBuiltInFontDataSetEPiPNS0_20BuiltInFontDataOunceEPKNS0_20BuiltInFontTypeOunceEiNS_8settings12LanguageCodeEb", "several built-in fonts (Switch 2 types): the stand-in TTFs, in the order asked",
+          unsigned, h_pl_BuiltInSetOunce, int *count, pl_builtin_font_t *out, const uint8_t *types, int n, uint64_t lang, unsigned b) {
+    (void)lang; (void)b; int k = 0;
+    for (int i = 0; i < n && i < 6; i++) k += (int)pl_builtin_font(&out[k], types[i]);
+    *count = k; return k > 0;
+}
 // Whether running on a Switch 2 (codename Ounce) (returns bool): what the loaded sdk module was built for (dm_sdk_ounce, its spec string). A Switch 1 program hears no, as before: Mario 1.2.1
 // (program 0, SDK 16) uses it to decide whether to count add-on content (the upgrade pack) and suggest the Switch 2 Edition; a Switch 2 program (the Edition's program 1, SDK 21) hears yes (PR #1639 upstream)
 HLE_FORCE("_ZN2nn2pl16IsRunningOnOunceEv", "running on Switch 2: as the loaded SDK was built", unsigned, h_pl_IsOunce, void) { return (unsigned)dm_sdk_ounce(); }
