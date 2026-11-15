@@ -22,9 +22,12 @@ romfs_marker	mov/EventMovie/Ending.webm
 zip_store	.bfstm:.cmpbin:.opus:.webm:.metallib
 
 # ---- Memory ----
-# the NPDM declares 16 MB of system resource (virtual address memory) and main never sets a heap: a 5 GB block with a 4.375 GB alias region, where the game maps its memory itself
-mem_reserve	0x140000000
-mem_alias	0x118000000
+# the NPDM declares 16 MB of system resource (virtual address memory) and main never sets a heap: the game takes its memory from three StandardAllocators over address regions,
+# nninitStartup's over 20 GB (main+0x86cf10), then nnMain's (main+0x661ba0) over 10 GB (a 3.17 GB limit) and 5 GB, after blocks of 2.64 GB and 2.83 GB from the first;
+# it spins forever (main+0x661e00) with 8.69 GB of memory or less. A 38 GB alias region holds all three as asked, after the 62 MB node area, with 0.94 GB for regions made later:
+# address space only, the 9 GB pool bounds what is mapped (README.md, Memory)
+mem_reserve	0x9a8000000
+mem_alias	0x980000000
 mem_stack	0x10000000
 # the sdk is built for the Switch 2 (spec: Ounce): its 9 GB pool
 app_pool	0x240000000

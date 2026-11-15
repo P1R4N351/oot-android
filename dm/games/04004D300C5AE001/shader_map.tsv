@@ -1,4 +1,4 @@
-# kind: evidence  04004D300C5AE001 shaders (provisional profile) (BNSH / BAHS in RomFS + main) → control section + code area keys (dm/gfx/tools/shader_split.py)
+# kind: evidence  Kirby and the Forgotten Land - Nintendo Switch 2 Edition shaders: the Star-Crossed World add-on's and program 0's (both in the RomFS it reads) (BNSH / BAHS in RomFS + main) → control section + code area keys (dm/gfx/tools/shader_split.py)
 # column 5 records where each key first appears; no PC shader pairing supplied
 package	index	stage	dm_ctl_sha16	source
 vs_gfx.bin	0	vertex	8e527b35495c6051	/aoc/romfs/gfx/Actor/Chara/Alligator/FigureModel.bfres.cmp#BNSH@0x64000#var0
@@ -73765,6 +73765,42 @@ ps_main.bin	32	pixel	7afe9cf543044e1f	main#BNSH@0x2bc6000#var39
 ps_main.bin	33	pixel	d842b21224c8768b	main#BNSH@0x2bc6000#var40
 ps_main.bin	34	pixel	42b97ded0dd74a9c	main#BNSH@0x2bc6000#var41
 vs_main.bin	18	vertex	641235caa2133bfa	main#BNSH@0x2bc6000#var41
+vs_other.bin	0	vertex	1e76dee4b97e0981	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c000
+ps_other.bin	0	pixel	e81f155b73d65811	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c0d8
+vs_other.bin	1	vertex	d3d13d05a65c1bc3	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c1b0
+ps_other.bin	1	pixel	32501137d39c8aa0	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c288
+vs_other.bin	2	vertex	358c9dbfeece41bd	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c360
+ps_other.bin	2	pixel	b65c7ccbac7593d4	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c438
+cs_other.bin	0	compute	91473c3bca678c8f	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c560
+cs_other.bin	1	compute	f04e71fefd214b8a	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c688
+cs_other.bin	2	compute	3a4099a2801690e1	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c7b0
+cs_other.bin	3	compute	a615e396e14a0b09	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15c8d8
+cs_other.bin	4	compute	0bc4d7b7610d27cf	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15ca00
+cs_other.bin	5	compute	9ee66b08bfa0634b	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15cb28
+cs_other.bin	6	compute	5e8b967256ac9e7d	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15cc50
+cs_other.bin	7	compute	29ef46d8089be8b6	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15cd78
+cs_other.bin	8	compute	9d9be52029530d09	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15cea0
+cs_other.bin	9	compute	ae8dbb865b77d11f	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15cfc8
+cs_other.bin	10	compute	cac10f231c0a8bf4	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15d0f0
+cs_other.bin	11	compute	02c8659b06ae167a	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15d218
+cs_other.bin	12	compute	23521e99cc9a1615	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15d340
+cs_other.bin	13	compute	03424c49e4da00e7	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15d468
+cs_other.bin	14	compute	cdd4ff22bf14677d	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15d590
+cs_other.bin	15	compute	e753e61c14a16c9b	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15d6b8
+cs_other.bin	16	compute	745560d37ffb8b5a	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15d7e0
+cs_other.bin	17	compute	4cdc2c2ff618b4a1	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15d908
+cs_other.bin	18	compute	79f59630bf467ef1	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15da30
+cs_other.bin	19	compute	b1d27e2f10440ad6	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15db58
+cs_other.bin	20	compute	3807ee44a14824bb	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15dc80
+cs_other.bin	21	compute	133dbc5d0ca8f346	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15dda8
+cs_other.bin	22	compute	d14957c0a3fd7875	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15ded0
+cs_other.bin	23	compute	8f112db3a9a0f4e7	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15dff8
+cs_other.bin	24	compute	4b1e1558feabd71d	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15e120
+cs_other.bin	25	compute	a39cb4097abc1895	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15e248
+cs_other.bin	26	compute	3a95a8a8e341b9f0	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15e370
+cs_other.bin	27	compute	1069883443428f68	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15e498
+cs_other.bin	28	compute	57d01f4e2bc0aacc	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15e5c0
+cs_other.bin	29	compute	339a774858e80edb	/aoc/romfs/ndsr/lower_left.ndsr#NDSR@0x15e6e8
 cs_ptcl.bin	0	compute	231c93947805532e	/aoc/romfs/ptcl/Actor/Chara/Alligator.ptcl.cmp#BNSH@0x116000#var0
 cs_ptcl.bin	1	compute	22647dd324b2586b	/aoc/romfs/ptcl/Actor/Chara/Alligator.ptcl.cmp#BNSH@0x116000#var1
 cs_ptcl.bin	2	compute	71ab3a2c3917af7d	/aoc/romfs/ptcl/Actor/Chara/Alligator.ptcl.cmp#BNSH@0x116000#var2
