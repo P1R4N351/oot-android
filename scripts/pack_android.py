@@ -249,24 +249,28 @@ def pack_nros(d):   # the NROs d/nro.tsv lists with files (a 'refused' row, an o
 
 def collect_nros(exe, romfs, work, in_process=False):
     """The NROs the game registers: {name: collected .nro} in <work>/android-nro/ (dm/tools/nro_collect.py, with the version's own ExeFS for a boot stub's NRO),
-    {} without NRRs. Reused while nro_key is unchanged (Super Smash Bros. Ultimate's scan takes minutes). in_process: in this Python, without a pool (the phone)"""
+    {} without NRRs. Reused while nro_key is unchanged (Super Smash Bros. Ultimate's scan takes minutes). in_process: in this Python, without a pool (the phone).
+    Written in place, its key file the marker (deleted first, written last, by a file's rename): a folder renamed under /storage/emulated goes through MediaProvider,
+    which may refuse it with EPERM (BananaNative issues #1 and #296; android/app Outputs.java)"""
     work = Path(work); coll, kf = work / 'android-nro', work / 'android-nro.key'
     nrrs = nrr_files(romfs)
     if not nrrs:
-        shutil.rmtree(coll, ignore_errors=True); kf.unlink(missing_ok=True); return {}
+        kf.unlink(missing_ok=True); shutil.rmtree(coll, ignore_errors=True); return {}
     key = nro_key(exe, romfs, nrrs)
-    if not ((coll / 'nro.tsv').is_file() and kf.is_file() and kf.read_text().strip() == key):
+    if collected_nros(work) is None or kf.read_text().strip() != key:
         work.mkdir(parents=True, exist_ok=True); kf.unlink(missing_ok=True)
-        tmp = work / 'android-nro.partial'; shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(work / 'android-nro.partial', ignore_errors=True)   # left by a version that renamed the folder into place
+        if coll.exists(): shutil.rmtree(coll)
+        coll.mkdir()
         stage(f'finding the NROs {len(nrrs)} NRR file{"s" if len(nrrs) != 1 else ""} register{"" if len(nrrs) != 1 else "s"}')
-        args, log = [str(romfs), str(tmp), '--exefs', str(exe)], work / 'nro_collect.log'
+        args, log = [str(romfs), str(coll), '--exefs', str(exe)], work / 'nro_collect.log'
         if in_process: rc = run_in_process(REPO / 'dm/tools/nro_collect.py', args, {'DM_NRO_COLLECT_J': '1'}, log)
         else:
             with open(log, 'w') as f: rc = subprocess.run([sys.executable, str(REPO / 'dm/tools/nro_collect.py'), *args], env=child_env(), stdout=f, stderr=subprocess.STDOUT).returncode
         if rc:
             tail = log.read_text(errors='replace').splitlines()[-20:]
             raise Error(f'nro_collect.py exit code {rc} (full output: {log}):\n' + '\n'.join(tail))
-        shutil.rmtree(coll, ignore_errors=True); os.replace(tmp, coll); write_lf(kf, key + '\n')
+        tmp = work / 'android-nro.key.tmp'; write_lf(tmp, key + '\n'); os.replace(tmp, kf)
     got = {n: coll / f'{n}.nro' for n in pack_nros(coll)}
     print(f'  NROs: {len(got)} the game loads at run time' + (f' ({", ".join(got)})' if len(got) <= 8 else ''), flush=True)
     return got
@@ -562,9 +566,10 @@ def selected_keys(profile_dir):
 
 
 def collected_nros(work):
-    """The folder of the NROs collect_nros collected into work, or None when it has none (shader_split.py reads a CRA archive's file table from them: DM_NRO_DIR)"""
-    d = work / 'android-nro'
-    return d if (d / 'nro.tsv').is_file() else None
+    """The folder of the NROs collect_nros collected into work, or None when it has none or its collection did not finish (no key file) (shader_split.py reads a CRA
+    archive's file table from them: DM_NRO_DIR)"""
+    d = Path(work) / 'android-nro'
+    return d if (d / 'nro.tsv').is_file() and (Path(work) / 'android-nro.key').is_file() else None
 
 
 def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: the version's (romfs, exefs) when they are not vdir's own (pack_dump.version_part); aoc: add-on RomFS roots to split too; nros: collected_nros
@@ -773,8 +778,8 @@ def main():
             place_nros(work / 'android-nro' if nros else None, out)
         if a.code_only: print(f'done: the modules in {out} (--code-only: pack.tsv and the shaders unchanged)'); return
         if a.keep_code:
-            coll = folder.parent / f'{app:016X}-work' / 'android-nro'   # the collected NROs the keys were made from, when this machine collected them
-            upgrade_keys(srcs | {n: coll / f'{n}.nro' for n in pack_nros(out) if (coll / f'{n}.nro').is_file()}, out, g)   # before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
+            coll = collected_nros(folder.parent / f'{app:016X}-work')   # the collected NROs the keys were made from, when this machine collected them
+            upgrade_keys(srcs | {n: coll / f'{n}.nro' for n in pack_nros(out) if coll and (coll / f'{n}.nro').is_file()}, out, g)   # before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
         shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
         # a program n > 0 splits program 0's RomFS (its conorig) and the add-ons with its own main: its own RomFS holds no shaders (Wonder's program 1: one text file)
         shaders = None if a.no_shaders else pack_shaders(a, g, work, out, vdir, (conorig, exe) if a.program else (romfs, exe), list(dlc.values()) if a.program else ())
