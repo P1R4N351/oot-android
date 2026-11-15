@@ -85,6 +85,7 @@ typedef struct {
     VkPhysicalDeviceProperties props; VkPhysicalDeviceMemoryProperties memp;
     int placed, placed_range, unmap_reserve, fd_alias, bda, uab, display_timing, has_android_surface;
     int mem_budget;                                 // VK_EXT_memory_budget: the texture cache's limit reads the image heap's budget and usage (vka_tex.c, vka_texlimit.h)
+    int cal_ts;                                     // VK_KHR / EXT_calibrated_timestamps: GPU timestamps can be put on the host clock (vka_exec.c DM_VK_TSCAL)
     void *perf_hint;                                // vkQueueSetPerfHintQCOM (VK_QCOM_queue_perf_hint), NULL without it: vka_gpu_floor
     // The draw path's device facts: push descriptors (and how many a set may hold), vertex input dynamic state, robustness2's null descriptors, 8-bit indices,
     // instance-rate divisors, logic operations, dual-source blending, geometry and tessellation stages, depth clamp, fill mode lines, wide lines

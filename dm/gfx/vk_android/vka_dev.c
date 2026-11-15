@@ -196,6 +196,10 @@ static int init_once(void) {
     if (x_fault) dext[ndext++] = VK_EXT_DEVICE_FAULT_EXTENSION_NAME;
     V.mem_budget = has_ext(de, nde, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);   // the image heap's budget, for the texture cache's limit (vka_tex.c img_limit_update)
     if (V.mem_budget) dext[ndext++] = VK_EXT_MEMORY_BUDGET_EXTENSION_NAME;
+    // GPU timestamps on the host clock, for DM_VK_TSCAL (vka_exec.c): where the device has calibrated timestamps
+    const char *x_cal = has_ext(de, nde, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) ? VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
+                      : has_ext(de, nde, VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) ? VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME : NULL;
+    if (x_cal) { dext[ndext++] = x_cal; V.cal_ts = 1; }
     free(de);
 
     // Every feature the device has, but robustness and capture-replay (they cost and nothing needs them); the shader side takes what it needs from the same device
@@ -411,6 +415,10 @@ out:
     if (pool) vk.vkDestroyCommandPool(V.dev, pool, NULL);
     return res;
 }
+// When the signal thread saw a fence of the replay's timeline done (its wait returned), by the value it then signals: for DM_VK_TSCAL (vka_exec.c), which sets the
+// time the driver took to report the GPU's end apart from the host's own hand-over to the completion thread
+static _Atomic uint64_t g_tls_ret_v[64], g_tls_ret_t[64];
+uint64_t vka_tls_ret(uint64_t v) { unsigned k = v % 64; return atomic_load(&g_tls_ret_v[k]) == v ? atomic_load(&g_tls_ret_t[k]) : 0; }
 static void *tls_main(void *arg) {
     (void)arg; pthread_setname_np(pthread_self(), "vk-tlsig"); vka_fp_host("vk-tlsig"); void vka_perf_thread(int nice); vka_perf_thread(-8);
     for (;;) {
@@ -419,6 +427,7 @@ static void *tls_main(void *arg) {
         VkFence f = (VkFence)e.fence; VkResult r;
         while ((r = vk.vkWaitForFences(V.dev, 1, &f, VK_TRUE, 500000000ull)) == VK_TIMEOUT && !vka_hung()) {}   // (a GPU that stops is found by the completion thread)
         if (r) { if (r != VK_TIMEOUT) VRED_ONCE("timeline signal thread: vkWaitForFences %d: the value is not signalled", r); continue; }   // (the fence is not reused)
+        if ((VkSemaphore)e.sem == V.tl) { unsigned k = e.v % 64; atomic_store(&g_tls_ret_t[k], now_ns()); atomic_store(&g_tls_ret_v[k], e.v); }
         pthread_mutex_lock(&g_tlsmu); int go = tls_take(&g_tls, e.sem, e.v); pthread_mutex_unlock(&g_tlsmu);
         if (go) { VkSemaphoreSignalInfo si = {VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, .semaphore = (VkSemaphore)e.sem, .value = e.v};
                   VkResult sr = vk.vkSignalSemaphore(V.dev, &si); if (sr) VRED_ONCE("timeline signal thread: vkSignalSemaphore of %llu: %d", (unsigned long long)e.v, sr); }

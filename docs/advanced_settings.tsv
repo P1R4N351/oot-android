@@ -691,7 +691,9 @@ DM_VK_TEX_STATS_TABLE	developer	Diagnostics			text			both
 DM_VK_TEX_TRACK	developer	Diagnostics			text			both						
 DM_VK_TL_HOST	developer	Graphics			text			both						
 DM_VK_TL_POLL	developer	Diagnostics			text			both						
+DM_VK_TSCAL	developer	Diagnostics			text			both						
 DM_VK_TS_LOG	developer	Diagnostics			text			both						
+DM_VK_TS_TICK	developer	Graphics			text			both						
 DM_VK_TU_UBWC_HINT	developer	Graphics			text			both						
 DM_VK_UBWC	developer	Graphics			text			both						
 DM_VK_UB_DEFER	developer	Graphics			text			both						
