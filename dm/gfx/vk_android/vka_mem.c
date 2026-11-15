@@ -436,6 +436,61 @@ static void prefault(uintptr_t lo, uintptr_t hi) {
     g_pf_ns += mono_ns() - t0; g_pf_bytes += hi - lo; g_pf_nlog++;
 }
 
+// The exported alias's GPU coherence, once at the first exported-alias placement (logged): vka_fd_probe checks only that the CPU sees the same bytes through the driver's
+// map and the host's alias. Here the GPU fills a 64 KiB exported buffer and the CPU reads it through an alias, then the CPU writes through the alias and the GPU copies
+// it into a host-visible buffer of the guest kind. A count under 16384 on either side means the alias does not see the GPU's writes (or the GPU the CPU's) without more:
+// Kirby and the Forgotten Land on the Adreno 740's system driver never builds its title background (954 pipelines and 11 compute on Turnip at the title, 140 and 0
+// there), as if a value the GPU writes and the game polls for never arrives (2026-11-13; open)
+static void fd_alias_gpu_probe(void) {
+    static int done; if (done) return; done = 1;
+    const size_t n = 65536, nw = n / 4; vka_fd_memory ex; VkResult r = vka_fd_create(&vk, V.pd, V.dev, &V.memp, n, V.bda, &ex);
+    if (r) { VLOG("exported alias GPU probe: no allocation (%d)", r); return; }
+    volatile uint32_t *al = mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_SHARED, ex.fd, 0);
+    VkBuffer sb = VK_NULL_HANDLE; VkDeviceMemory sm = VK_NULL_HANDLE; volatile uint32_t *sp = NULL; VkCommandPool cp = VK_NULL_HANDLE; VkCommandBuffer cb = VK_NULL_HANDLE; VkFence fe = VK_NULL_HANDLE;
+    int gpu_seen = -1, drv_seen = -1, cpu_seen = -1;
+    if (al == MAP_FAILED) { VLOG("exported alias GPU probe: alias mmap failed (errno %d)", errno); vka_fd_destroy(&vk, V.dev, &ex); return; }
+    VkBufferCreateInfo bi = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = n, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+    r = vk.vkCreateBuffer(V.dev, &bi, NULL, &sb);
+    VkMemoryRequirements mr = {0}; if (!r) vk.vkGetBufferMemoryRequirements(V.dev, sb, &mr);
+    uint32_t t = vka_mem_type(mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0);
+    VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = mr.size, .memoryTypeIndex = t};
+    if (!r && t == UINT32_MAX) r = VK_ERROR_FEATURE_NOT_PRESENT;
+    if (!r) r = vk.vkAllocateMemory(V.dev, &ai, NULL, &sm);
+    if (!r) r = vk.vkBindBufferMemory(V.dev, sb, sm, 0);
+    void *spv = NULL; if (!r) r = vk.vkMapMemory(V.dev, sm, 0, VK_WHOLE_SIZE, 0, &spv); sp = spv;
+    VkCommandPoolCreateInfo pi = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, .queueFamilyIndex = V.qf};
+    if (!r) r = vk.vkCreateCommandPool(V.dev, &pi, NULL, &cp);
+    VkCommandBufferAllocateInfo ca = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = cp, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1};
+    if (!r) r = vk.vkAllocateCommandBuffers(V.dev, &ca, &cb);
+    VkFenceCreateInfo fi = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    if (!r) r = vk.vkCreateFence(V.dev, &fi, NULL, &fe);
+    for (int pass = 0; pass < 2 && !r; pass++) {   // 0: the GPU fills, the CPU reads through the alias; 1: the CPU writes through the alias, the GPU copies
+        if (pass == 0) for (size_t i = 0; i < nw; i++) al[i] = 0;
+        else for (size_t i = 0; i < nw; i++) { al[i] = (uint32_t)i ^ 0x3c3c5a5au; sp[i] = 0; }
+        VkCommandBufferBeginInfo cbi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+        vk.vkResetCommandBuffer(cb, 0); vk.vkBeginCommandBuffer(cb, &cbi);
+        if (pass == 0) vk.vkCmdFillBuffer(cb, ex.buf, 0, n, 0xa5a5a5a5u);
+        else { VkBufferCopy c = {0, 0, n}; vk.vkCmdCopyBuffer(cb, ex.buf, sb, 1, &c); }
+        VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+        vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+        vk.vkEndCommandBuffer(cb);
+        VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cb};
+        vk.vkResetFences(V.dev, 1, &fe);
+        pthread_mutex_lock(&V.qmu); r = vk.vkQueueSubmit(V.q, 1, &si, fe); pthread_mutex_unlock(&V.qmu);
+        if (!r) r = vk.vkWaitForFences(V.dev, 1, &fe, VK_TRUE, 2000000000ull);
+        if (r) break;
+        if (pass == 0) { gpu_seen = drv_seen = 0; const volatile uint32_t *dm = ex.mapped; for (size_t i = 0; i < nw; i++) { gpu_seen += al[i] == 0xa5a5a5a5u; drv_seen += dm[i] == 0xa5a5a5a5u; } }
+        else { cpu_seen = 0; for (size_t i = 0; i < nw; i++) cpu_seen += sp[i] == ((uint32_t)i ^ 0x3c3c5a5au); }
+    }
+    if (r) VLOG("exported alias GPU probe: failed (%d)", r);
+    else if (gpu_seen == (int)nw && cpu_seen == (int)nw) VLOG("exported alias GPU probe: coherent both ways (the GPU's writes seen through the alias, the CPU's through the alias seen by the GPU; %zu words)", nw);
+    else VRED("exported alias GPU probe: NOT coherent: the GPU's writes seen through the alias in %d of %zu words (through the driver's own map %d), the CPU's writes through the alias seen by the GPU in %d",
+              gpu_seen, nw, drv_seen, cpu_seen);
+    if (fe) vk.vkDestroyFence(V.dev, fe, NULL);
+    if (sb) vk.vkDestroyBuffer(V.dev, sb, NULL);
+    if (sm) vk.vkFreeMemory(V.dev, sm, NULL);
+    munmap((void *)al, n); vka_fd_destroy(&vk, V.dev, &ex);   // (the pool and its command buffer stay: one of each for the run)
+}
 // Place [lo, hi) (no segment overlaps it; caller holds g_pl, and g_rw for writing only under DM_VK_MEM_LOCK_WHOLE). 1 = placed, 0 = failed with the range as it was; *grow = the size the driver wants when it is larger than the range
 // Where a placement's time goes (logged every 256 placements): buffer and allocation, the protections read, the copy, the maps, the prefault, the protections put back
 static uint64_t g_ph[6], g_ph_n;
@@ -444,6 +499,7 @@ static int place(uintptr_t lo, uintptr_t hi, VkDeviceSize *grow) {
     VkDeviceSize n = hi - lo; seg_t s = {lo, hi, .refs = 1}; VkResult r; uint64_t p0 = mono_ns(), p1, p2, p3, p4, p5;
     vka_fd_memory exported = {.fd = -1};
     if (V.fd_alias) {
+        fd_alias_gpu_probe();
         r = vka_fd_create(&vk, V.pd, V.dev, &V.memp, n, V.bda, &exported);
         if (r) { VRED("pool memory %#lx+%#llx: exported allocation %d", (unsigned long)lo, (unsigned long long)n, r); return 0; }
         s.buf = exported.buf; s.mem = exported.mem; s.fd_alias = 1;
@@ -563,7 +619,9 @@ static void detach(int i, segvec *v) {   // caller holds g_pl, and g_rw for writ
 // read-only: the completion thread writes events and counter reports into pools, and one that faults on this range would wait for the swap while the swap waits for it.
 // Memory the GPU is not known to be done with (the wait ran into the hang time, or a GPU hang was declared) is never freed: it stays allocated (leaked) behind the anonymous pages,
 // since a free under work the GPU still runs faults the GPU (freed anyway after 2 s before, on the way to a system restart on the phone)
+_Atomic uint32_t vka_seg_gen;   // bumped whenever a segment's buffer is destroyed: views made over segment buffers (vka_tbuf.c) are made again
 static void seg_free(const seg_t *s, int waited, uint64_t fence) {
+    atomic_fetch_add(&vka_seg_gen, 1);
     if (waited) { if (s->fd_alias) vk.vkUnmapMemory(V.dev, s->mem); vk.vkDestroyBuffer(V.dev, s->buf, NULL); vk.vkFreeMemory(V.dev, s->mem, NULL); return; }
     static _Atomic int nk; if (atomic_fetch_add(&nk, 1) < 8) VRED("giving back pool memory %#lx+%#zx: the GPU is not known to be done with it (fence %llu%s): its Vulkan memory is kept, not freed",
                                                                (unsigned long)s->lo, (size_t)(s->hi - s->lo), (unsigned long long)fence, vka_hung() ? ", GPU hang" : " not reached in the hang time");
@@ -1058,6 +1116,7 @@ static int join(int k0, int k1, seglist *l) {
     vk.vkUnmapMemory(V.dev, s.mem); unmap_note(p);
     // The old memory freed before the new is mapped over its range: the Adreno driver's vkFreeMemory takes the placed range down even after an unmap with
     // VK_MEMORY_UNMAP_RESERVE_BIT_EXT (unplace), so freed later it would take the new map down. The queue is idle: nothing on the GPU uses it
+    atomic_fetch_add(&vka_seg_gen, 1);   // (views over the old buffers are made again, vka_tbuf.c)
     for (int i = 0; i < cnt; i++) { unmap_placed(old[i].mem); vk.vkDestroyBuffer(V.dev, old[i].buf, NULL); vk.vkFreeMemory(V.dev, old[i].mem, NULL); }
     sw_hole_check(lo, n, 1, "joining pool memory");
     int ok = 0;

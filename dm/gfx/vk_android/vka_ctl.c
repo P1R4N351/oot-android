@@ -282,6 +282,23 @@ void vka_ctl_shot_done(VkFence fence) {   // present thread, after the present's
     pthread_detach(th);
 }
 
+// An RGB8 picture to a PNG, on the caller's thread (frame generation's DM_LSFG_DUMP); 1 = written
+int vka_png_rgb(const char *path, const uint8_t *rgb, int w, int h) {
+    size_t row = (size_t)w * 3 + 1, raw = row * (size_t)h; uLongf zn = compressBound((uLong)raw);
+    uint8_t *flt = malloc(raw), *z = malloc(zn); FILE *f = NULL; int ok = 0;
+    if (flt && z) {
+        for (int y = 0; y < h; y++) { flt[row * y] = 0; memcpy(flt + row * y + 1, rgb + (size_t)y * w * 3, (size_t)w * 3); }
+        if (compress2(z, &zn, flt, (uLong)raw, 1) == Z_OK && (f = fopen(path, "wb"))) {
+            static const uint8_t sig[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}; fwrite(sig, 1, 8, f);
+            uint8_t ih[13]; put32(ih, (uint32_t)w); put32(ih + 4, (uint32_t)h); ih[8] = 8; ih[9] = 2; ih[10] = ih[11] = ih[12] = 0;
+            chunk(f, "IHDR", ih, 13); chunk(f, "IDAT", z, (uint32_t)zn); chunk(f, "IEND", NULL, 0);
+            fclose(f); chmod(path, 0644); ok = 1;
+        }
+    }
+    free(flt); free(z); return ok;
+}
+const char *vka_ctl_dir(void) { ctl_dir(); return g_ctl_dir; }   // the folder of DM_CTL's file (the app's external files folder on Android)
+
 // ---------- Commands ----------
 int dm_gfx_ctl(const char *line) {   // the control thread (hle_hid.c ctl_main): 1 = a replay command, taken
     if (!strncmp(line, "capture", 7) && (!line[7] || line[7] == ' ')) {

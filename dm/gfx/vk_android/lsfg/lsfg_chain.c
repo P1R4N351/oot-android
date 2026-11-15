@@ -406,6 +406,13 @@ void lsfg_chain_free(lsfg_chain *c) {
 }
 
 VkImage lsfg_chain_input(lsfg_chain *c, uint64_t count) { return c->frames[count % 2]->img; }
+int lsfg_chain_debug_images(lsfg_chain *c, lsfg_dbg_img *out, int max) {
+    const limg *l[7] = {c->frames[0], c->frames[1], c->mip[0], c->gamma[0].out, c->gamma[MIPS - 1].out, c->delta[DELTA_N - 1].out1, c->delta[DELTA_N - 1].out2};
+    static const char *nm[7] = {"in0", "in1", "flow_mip0", "gamma_coarse", "gamma_fine", "delta_out1", "delta_out2"};
+    int n = 0;
+    for (int i = 0; i < 7 && n < max; i++) if (l[i]) out[n++] = (lsfg_dbg_img){l[i]->img, l[i]->ext, l[i]->fmt, nm[i]};
+    return n;
+}
 
 // LsfgChain::DispatchShared: mipmaps of the new frame, the 4 alpha stages at every level, beta
 void lsfg_chain_shared(lsfg_chain *c, VkCommandBuffer cb, uint64_t count) {

@@ -215,6 +215,7 @@ void vka_tex_alias_stats(char *b, size_t n) {
              by[0][0] / 1e6, cnt[0], by[0][1] / 1e6, by[1][0] / 1e6, cnt[1], by[1][1] / 1e6, by[2][0] / 1e6, cnt[2], by[2][1] / 1e6, gw / 1e6);
 }
 static _Atomic uint32_t g_tgen, *g_tver, *g_sver;   // the recording thread's view memo: see unref_locked
+static _Atomic uint8_t *g_tisbuf;                   // per texture ID: registered as a buffer texture (vka_tex_id_is_buffer)
 static smap_ent *map_get(uint64_t s) { return vksm_get(&g_smap, s); }
 static void map_put(uint64_t s, vka_img *im) { vksm_put(&g_smap, s, im); }   // (no memory for a new key: the texture has no entry, so its next lookup makes its image again; the old image goes when its refs do)
 static void map_del(uint64_t s) { if (vksm_del(&g_smap, s)) atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release); }   // a tombstone (never a valid serial)
@@ -737,6 +738,7 @@ typedef struct { uint64_t lo, hi, src, seq, fence; uint32_t kind, value; uint8_t
 static gw_t *g_gw; static int g_ngw, g_gwcap; static uint64_t g_gwseq = 1, g_gw_over, g_gw_late;
 static void gw_add(int kind, uint64_t dst, uint64_t n, uint64_t src, uint32_t value, const void *data) {
     if (!n) return;
+    vka_tbuf_wrote(dst, n);   // (images of buffer textures over it are copied again at their next use)
     pthread_mutex_lock(&g_tmu);
     if (g_ngw == g_gwcap) { g_gwcap = g_gwcap ? 2 * g_gwcap : 256; g_gw = realloc(g_gw, (size_t)g_gwcap * sizeof *g_gw); }
     if (kind == GW_OPAQUE)   // the same range again in this submission (a storage buffer bound by draw after draw): one entry, at the newest place
@@ -2457,7 +2459,12 @@ static void treg(int id, const tex_t *t, const view_t *v, int img) {
     dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id);
     if (!g_tver) g_tver = calloc(1 << 20, sizeof *g_tver);
     if (g_tver) atomic_fetch_add_explicit(&g_tver[id], 1, memory_order_release);
+    if (!g_tisbuf) g_tisbuf = calloc(1 << 20, 1);
+    if (g_tisbuf) atomic_store_explicit(&g_tisbuf[id], (v && v->set_target ? v->target : t->d.target) == NVN_TEXTURE_TARGET_BUFFER, memory_order_release);
     pthread_mutex_unlock(&g_tmu);
+}
+int vka_tex_id_is_buffer(int id) {   // (no lock: the draw path asks it for every texture binding)
+    return id > 0 && id < (1 << 20) && g_tisbuf && atomic_load_explicit(&g_tisbuf[id], memory_order_acquire);
 }
 void mtl_reg_tex(int id, const tex_t *t, const view_t *v) { treg(id, t, v, 0); }
 void mtl_reg_image(int id, const tex_t *t, const view_t *v) { treg(id, t, v, 1); }
@@ -2960,6 +2967,21 @@ int vka_tex_id_target(int id) {
     pthread_mutex_unlock(&g_tmu);
     return t;
 }
+// A buffer texture (NVN_TEXTURE_TARGET_BUFFER, as the texture or its view names it) of texture ID id: its storage's guest address, its element count and its NVN format (the
+// view's when it sets one). 0 = not a live buffer texture (vka_tbuf.c, which binds them: images are not made of them, img_create_)
+int vka_tex_id_buffer(int id, uint64_t *addr, uint32_t *elems, int *format) {
+    pthread_mutex_lock(&g_tmu);
+    int r = 0;
+    if (id > 0 && id < g_ntreg && g_treg[id].t.serial) {
+        const treg_ent *e = &g_treg[id];
+        int target = e->has_v && e->v.set_target ? e->v.target : e->t.d.target;
+        if (target == NVN_TEXTURE_TARGET_BUFFER && e->t.mem && !treg_dead(id, e)) {
+            *addr = (uint64_t)(uintptr_t)e->t.mem; *elems = e->t.d.width; *format = e->has_v && e->v.set_format ? e->v.format : e->t.d.format; r = 1;
+        }
+    }
+    pthread_mutex_unlock(&g_tmu);
+    return r;
+}
 int vka_tex_id_storage_pending(int id) {
     pthread_mutex_lock(&g_tmu);
     smap_ent *e = id > 0 && id < g_ntreg && g_treg[id].t.serial ? map_get(g_treg[id].t.serial) : NULL;
@@ -2969,7 +2991,7 @@ int vka_tex_id_storage_pending(int id) {
 }
 int vka_tex_id_pending(int id) {
     pthread_mutex_lock(&g_tmu);
-    int r = id > 0 && id < g_ntreg && g_treg[id].t.serial && !map_get(g_treg[id].t.serial);
+    int r = id > 0 && id < g_ntreg && g_treg[id].t.serial && (g_treg[id].t.d.target != NVN_TEXTURE_TARGET_BUFFER || !VKA_ENV("DM_VK_TBUF", 1)) && !map_get(g_treg[id].t.serial);   // (a buffer texture never gets an image here: vka_tbuf.c)
     pthread_mutex_unlock(&g_tmu);
     return r;
 }

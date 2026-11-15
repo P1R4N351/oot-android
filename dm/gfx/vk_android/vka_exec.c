@@ -325,6 +325,11 @@ static uint64_t sh_get(uint32_t qi, uint32_t use, PFN_vkGetQueryPoolResults get)
 }
 static void post_run(void *ops_, int n) {   // the completion thread, in submission order, before the fence reads as done
     pop *ops = ops_;
+    for (int i = 0; i < n; i++) if (ops[i].kind < 1 || ops[i].kind > 6) {   // (diagnostic: an op array that is not one, see vka_dev.c's checks of the post records)
+        static _Atomic int k; if (atomic_fetch_add(&k, 1) < 8) VRED("completion effects: op %d of %d has kind %d (address %#llx): not an op array (freed or overwritten); its effects are dropped (not freed)",
+                                                                   i, n, ops[i].kind, (unsigned long long)ops[i].addr);
+        return;
+    }
     uint64_t g = guest_ns(); if (!g) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); g = (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec; }
     uint64_t ticks = nvn_timestamp_from_ns(g);
     uint64_t gq[SEGQ], tmax = 0; int nq = 0;   // segment timestamps: each report's GPU time, the latest of them
@@ -688,6 +693,10 @@ uint64_t vka_rp_sub_commit(uint64_t reserved) { uint64_t t0 = now_ns(), f = sub_
 uint64_t vka_rp_sub_commit_sig(uint64_t reserved, uint64_t signal) { uint64_t t0 = now_ns(), f = sub_commit(reserved, 1, signal); g_t_commit += now_ns() - t0; return f; }
 static uint64_t sub_commit(uint64_t reserved, int has_sig, uint64_t signal) {
     uint64_t fence = reserved ? reserved : vka_fence_next(); g_cur_fence = 0;
+    {   // (diagnostic) g_post and g_carry have no lock: one thread commits
+        static _Atomic(void *) tp; void *me = __builtin_thread_pointer(), *was = NULL;
+        if (!atomic_compare_exchange_strong(&tp, &was, me) && was != me) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("submission commit on another thread than the first (fence %llu, signal %llu)", (unsigned long long)fence, (unsigned long long)signal); atomic_store(&tp, me); }
+    }
     if (!has_sig) signal = fence;
     if (g_rc_rec) { g_rc_subf[g_n_sub % 64].sub = g_n_sub; g_rc_subf[g_n_sub % 64].fence = fence; g_rc_rec = 0; }   // (rc_sub_done)
     vka_draw_peek_commit(fence);   // DM_VK_SB_PEEK: this submission's storage buffers, read again once it has completed
