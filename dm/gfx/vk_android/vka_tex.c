@@ -3234,10 +3234,13 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     static uint64_t seen, vseen, vw_seen, ve_seen; uint64_t now = nvn_dirty_now(), vnow = nvn_sparse_gen(), vw = dm_codec_video_writes(), ve = dm_codec_video_epoch();
     int vid_new = vw != vw_seen || ve != ve_seen;
     static int g_wbf_wait; static uint64_t g_wbf_up, g_wbf_waits; int g_wbf_on = VKA_ENV("DM_VK_WB_FOLLOW", 1) != 0; uint64_t done = vka_done();   // g_wbf_wait: a GPU-written linear texture waited for its copy-back in the last scan
-    if (now != seen || vnow != vseen || vid_new || g_wbf_wait) {
+    int full_scan = now != seen || vnow != vseen || vid_new;   // (else the scan runs only for the images that waited for a copy-back: vka_wbfollow.h wbf_visit)
+    if (full_scan || g_wbf_wait) {
         seen = now; vseen = vnow; vw_seen = vw; ve_seen = ve; g_wbf_wait = 0;
         for (int i = 0; i < g_nlive; i++) {
             vka_img *im = g_live[i];
+            if (!wbf_visit(full_scan, im->wbf_waiting)) continue;
+            im->wbf_waiting = 0;   // (set again below while it still waits)
             if (img_pool_dead(im)) continue;
             if (!im->is_video && im->mem && im->vep != ve) {
                 uint32_t vs = 0; im->vep = ve;
@@ -3278,7 +3281,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
             // Mario Tennis Fever clears its 8192x2048 R8 glyph cache on the GPU and rasterizes glyphs into it on the CPU; skipped, every text box was blank). While the copy-back
             // is queued or on the GPU the image waits, and the scan runs again at the next prepare even if the CPU writes nothing more (g_wbf_wait)
             if (!wbf_follows(im->gpu_owned, img_wb_kind(im) && g_wbf_on, im->wb_pending, im->wb_fence, done)) {
-                if (g_wbf_on && im->gpu_owned && img_wb_kind(im) && (im->wb_pending || done < im->wb_fence)) { g_wbf_wait = 1; g_wbf_waits++; }
+                if (g_wbf_on && im->gpu_owned && img_wb_kind(im) && (im->wb_pending || done < im->wb_fence)) { g_wbf_wait = 1; im->wbf_waiting = 1; g_wbf_waits++; }
                 continue;
             }
             int wbf = im->gpu_owned;   // (counted below once its pages were found written: DM_VK_WB_FOLLOW's line)

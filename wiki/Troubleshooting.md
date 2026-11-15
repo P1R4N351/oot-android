@@ -13,6 +13,8 @@ Each game start writes a log.
 - The game's ... button > **Storage** > **Share log**: that game's newest log.
 - Settings > **Share log**: the newest log of any game.
 
+A shared log lists the settings you changed from the defaults (the Advanced switches, and any lines of your own env.txt or Extra environment), so a helper sees them without asking. Folders and secrets are left out of that list. Nothing is sent unless you share.
+
 ## Common problems
 
 | What you see | What to try |
@@ -33,6 +35,17 @@ Each game start writes a log.
 | A frontend starts the game but Home opens instead | Something needs you (no pack, Prepare, shaders, All files access); fix it, start again ([Playing](Playing)). |
 
 These entries come from the project's symptom index; a fix may already be in your version, so update first.
+
+## Settings to try
+
+When a game stops the way a row below says, the notice "The game stopped unexpectedly" (and its **What it means** page) shows a button **Try:** with the setting's name. A tap sets that row for this game only; it applies at the next start, and **Undo** puts it back to **Auto**. The button shows only while the row is still **Auto** for the game, and once per setting and game. You can set the same rows by hand ([Settings: Advanced](Settings-Advanced)).
+
+<!-- fix-table:begin (dm/tools/advanced_fix.py) -->
+| What you see | Settings > Advanced > row | What it does |
+|---|---|---|
+| "The game stopped unexpectedly", likely cause: Android's low-memory killer ended the game: the phone ran out of memory | the game's ... button > Game settings > Advanced switches > Memory > **Soft textures**: On | Keeps large textures without their finest level: less memory, textures look a little softer. |
+| "The game stopped unexpectedly": Android closed it, the phone ran out of memory | the game's ... button > Game settings > Advanced switches > Memory > **Soft textures**: On | Keeps large textures without their finest level: less memory, textures look a little softer. |
+<!-- fix-table:end -->
 
 ## Opening an issue
 

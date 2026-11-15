@@ -13,6 +13,11 @@ static inline int wbf_follows(int gpu_owned, int linear_wb, int wb_pending, uint
     return linear_wb && !wb_pending && wb_fence && done >= wb_fence;
 }
 
+// Whether the prepare's scan visits a live image. A full scan (the dirty-page clock, the sparse page table or the video pools moved) visits every image. A scan that only runs
+// because a GPU-written linear texture waited for its copy-back at the last one (vka_img.wbf_waiting) visits just those: the CPU wrote nothing else, so walking the other
+// ~1,000 images was the whole cost of the wait (Mario Kart World: 20-34 ms a frame of texture prepare with the waits, 0.5-4 ms without)
+static inline int wbf_visit(int full_scan, int waiting) { return full_scan || waiting; }
+
 // The view a texture ID is asked for (vka_tex.c vka_tex_id_view's storage argument): VKA_VIEW_STORAGE a storage view, else sampled; VKA_VIEW_RO a storage view whose shader
 // only reads it. The host's own passes ask for VKA_VIEW_STORAGE alone: they write their output
 #define VKA_VIEW_STORAGE 1

@@ -1,8 +1,8 @@
 # Settings: Controls
 
-How you play: the on-screen controls, a controller, rumble, button mapping and motion aim. Global defaults are on **Settings > Game defaults**; per-game values are on the game page's **Game** tab (Controls section) or in the in-game panel's **Controls** tab ([The in-game panel](Side-Panel-In-Game)).
+How you play: the on-screen controls, a controller, rumble, button mapping and motion aim. Global defaults are on **Settings > Controls**; per-game values are on the game page's **Game** tab (Controls section) or in the in-game panel's **Controls** tab ([The in-game panel](Side-Panel-In-Game)).
 
-<!-- TODO screenshot: Settings page, Game defaults card (On-screen controls, Screen rotation, Rumble, Button mapping) -->
+<!-- TODO screenshot: Settings page, Controls card (On-screen controls, Rumble, Button mapping) -->
 
 ## On-screen controls
 

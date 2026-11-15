@@ -17,6 +17,12 @@ int main(void) {
     CHECK(wbf_follows(1, 1, 1, 10, 12) == 0, "re-uploaded while a newer copy-back is queued: the GPU's latest write would be lost");
     CHECK(wbf_follows(1, 1, 0, 0, 12) == 0, "re-uploaded though no copy-back ever ran (the storage never held the GPU's content)");
     CHECK(wbf_follows(1, 0, 0, 10, 12) == 0, "a block-linear texture the GPU wrote was re-uploaded from its storage");
+    // The scan that a copy-back wait asks for visits only the waiting images; a full scan visits all. Walking every live image each frame for the wait cost Mario Kart World
+    // 20-34 ms of texture prepare a frame (0.5-4 ms with the switch off)
+    CHECK(wbf_visit(1, 0) == 1, "a full scan skipped an image that was not waiting");
+    CHECK(wbf_visit(1, 1) == 1, "a full scan skipped a waiting image");
+    CHECK(wbf_visit(0, 1) == 1, "the wait-only scan skipped an image waiting for its copy-back (its CPU writes would never be uploaded)");
+    CHECK(wbf_visit(0, 0) == 0, "the wait-only scan walked an image that was not waiting (the cost of the wait)");
     // A shader image marks its texture GPU-written only when the shader writes it (the library's DMSH_VK_BF_RW): Mario Tennis Fever's text compute reads the glyph cache
     // as image 0 and writes image 1; marked written at the read, the cache was copied back whole over glyphs the CPU had just drawn into its storage (letters lost)
     enum { RW = 1, ATOMIC = 2 };

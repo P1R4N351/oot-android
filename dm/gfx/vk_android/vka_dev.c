@@ -10,6 +10,20 @@
 #include <time.h>
 #include "vka_fd_alias.h"
 #include "vka_tlsig.h"
+#include "vka_auto.h"
+_Static_assert(VKA_DRV_QCOM == VK_DRIVER_ID_QUALCOMM_PROPRIETARY && VKA_DRV_TURNIP == VK_DRIVER_ID_MESA_TURNIP, "vka_auto.h driver IDs");
+
+// One "[auto] KEY=value because driver_id=N (name)" line for each automatic default by driver this device takes (vka_auto.h), once per run at device creation; a switch
+// that is set (env.txt, the launcher, live control before this point) prints nothing: its value is the player's
+static void auto_log(const vka_auto_in *in, const char *name) {
+    vka_auto_rule r[16]; int n = vka_auto_rules(in, r, 16);
+    for (int i = 0; i < n; i++) {
+        char v[64], b[256];
+        if (vka_env_str(r[i].key, v, sizeof v)) continue;
+        vka_auto_line(b, sizeof b, &r[i], in->driver_id, name);
+        LOG("%s", b);
+    }
+}
 
 // One placed map of a 64 KiB host-visible allocation at an address reserved for it (vka_dev.c, unadvertised placed maps): 1 when the driver maps it exactly there and
 // the memory reads back what was written through it
@@ -296,11 +310,14 @@ static int init_once(void) {
     // characters as long spikes with the vertex input set per draw (vkCmdSetVertexInputEXT); 512.800 (Adreno 830), 512.863 and Turnip draw them correctly, and so
     // does 512.676 with the vertex input in the pipeline (the path of a device without the extension), which it gets here. DM_VK_VIN_DYN (restart only): 0 off, 1 on
     // wherever the device has it, unset as above
+    int vin_dyn_ext = V.vin_dyn;
     if (V.vin_dyn) {
         const char *e = getenv("DM_VK_VIN_DYN");
         if (e && *e) V.vin_dyn = strcmp(e, "0") != 0; else if (V.qcom_old) V.vin_dyn = 0;
         if (!V.vin_dyn) VLOG("vertex input dynamic state: off (%s; DM_VK_VIN_DYN=1: on), the vertex input goes into the pipeline", e && *e ? "DM_VK_VIN_DYN=0" : "Qualcomm driver before 512.800");
     }
+    auto_log(&(vka_auto_in){.driver_id = V.driver_id, .qcom_old = V.qcom_old, .mesh_ext = mesh_ext, .memu = V.memu, .vin_dyn_ext = vin_dyn_ext,
+                            .prof_one_lane = DM_GAME_NSUBGROUP_ONE_LANE, .prof_prepass_cut = DM_GAME_NMESH_PREPASS_CUT, .prof_oq_split = DM_GAME_OCCLUSION_SPLIT_PASS}, pdr.driverName);
     vka_enc_install();
     vka_gbar_install();   // on top of the encoder: sees every work command the replay records (vka_gbar.c)
     const VkPhysicalDeviceLimits *lim = &V.props.limits;

@@ -309,6 +309,16 @@ def nxDigest = tasks.register('nxDigestAssets', Sync) {
 android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/nxdigest/assets'))
 tasks.named('preBuild') { dependsOn nxDigest }
 
+// The Advanced pages' table (AdvancedTable.java): docs/advanced_settings.tsv (and env_switches.tsv, for the developer rows' meanings), copied at every build into the APK's assets/advanced/ (dm/tools/advanced_switches.py keeps it
+// in step with docs/env_switches.tsv)
+def nxAdvanced = tasks.register('nxAdvancedAssets', Sync) {
+    from(new File(repo, 'docs')) { include 'advanced_settings.tsv', 'env_switches.tsv' }
+    from(new File(repo, 'dm/tools')) { include 'advanced_fix.tsv' }   // the fix finder's table (FixFinder.java, dm/tools/advanced_fix.py)
+    into layout.buildDirectory.dir('generated/nxadvanced/assets/advanced')
+}
+android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/nxadvanced/assets'))
+tasks.named('preBuild') { dependsOn nxAdvanced }
+
 // The shared-font stand-in (GameFonts.java, dm/third_party/fonts): Noto Sans Regular, subset, with its licence, copied at every build into the APK's assets/fonts/
 def nxFontAssets = tasks.register('nxFontAssets', Sync) {
     from(new File(repo, 'dm/third_party/fonts')) { include 'NotoSans-Regular-subset.ttf', 'OFL.txt' }

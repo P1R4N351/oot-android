@@ -20,6 +20,7 @@
 - [Game settings](Settings-Game)
 - [Controls](Settings-Controls)
 - [Performance](Settings-Performance)
+- [Advanced](Settings-Advanced)
 - [Getting higher FPS](Getting-Higher-FPS)
 - [Heat and battery](Heat-and-Battery)
 
