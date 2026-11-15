@@ -103,7 +103,7 @@ The camera, HUD, movie and save picture sites (the UI, movie and matrix sites ar
 NX2navi patch list `patches-v111.txt` by Ivan0xFF (MIT) and to [`nx2/oot_wide.py`](https://github.com/NotRexed/Hookshot) of Hookshot by NotRexed (GPL-3.0). The Android file re-expresses
 them as host callbacks on rewriter gates and adds the vertical field-of-view correction for pictures narrower than 16:9. It lives under `dm/host/android/` so the Mac and iPhone builds do not include it.
 
-**The optional Donkey Kong Bananza camera and 2D layer aspect (`dm/host/android/dkb_wide.c`, with the three gates in `dm/games/040074A01BF12000/patches.py`) is GPL-3.0-or-later.**
+**The optional Donkey Kong Bananza camera and 2D layer aspect (`dm/host/android/dkb_wide.c`, with its gates in `dm/games/040074A01BF12000/patches.py`) is GPL-3.0-or-later.**
 The idea of changing the scene camera's aspect and of scaling the UI projection where it is copied into the draw info (two of their four sites, `main+0x45f9dc` and `main+0x803c94`, are the layout projection setups gated here) come from the `dkbwide` patch set of Lucas-blip-png's
 [dkb-pc-recomp](https://github.com/Lucas-blip-png/dkb-pc-recomp) (`recomp/patches-dkb458752.txt`, GPL-3.0). The Android file re-expresses them as host callbacks on rewriter gates, reads the camera's
 values where the game uses them, squeezes the UI into the middle of the unchanged 16:9 frame instead of widening it, and adds the vertical field-of-view correction for pictures narrower than 16:9.
