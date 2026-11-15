@@ -460,6 +460,21 @@ _UI_V24 = [
     (0x0055f45c, '00000000', '12090114', 'v24: b #0x5a18a4'),
 ]
 
+# v25: UI placed on a 3D position (the unit type / status icons in battle; any pane the game anchors to a world point). The engine's world-to-screen helper
+# (main+0xb81b4c..: the point through the camera, divided by w, then x * 960 + 960, y * 540 + 540 on a 1920x1080 canvas, normalised again for the layout) used the
+# 16:9 half-height, but the 4:3 layout is 1440 high and squeezed into the frame, so the icons sat 3/4 as far from the centre as their units (players' report on
+# 0.3.22). The y half-height is now 960 x the camera's height / width (the Screen shape cam word: 720 at 4:3, 540 at 16:9), the centre stays 540 (cave 0xb785e4).
+_UI_V25 = [
+    (0x00b81c00, '0201271e', '79daff17', 'v25: b 0xb785e4 (world-to-screen y: half-height from the shape)'),
+    (0x00b785e4, '00000000', '0201271e', 'v25: fmov s2, w8'),
+    (0x00b785e8, '00000000', '70d5ec1c', 'v25: ldr s16, #0xb52094'),
+    (0x00b785ec, '00000000', '088ea852', 'v25: mov w8, #0x44700000'),
+    (0x00b785f0, '00000000', '1101271e', 'v25: fmov s17, w8'),
+    (0x00b785f4, '00000000', '100a311e', 'v25: fmul s16, s16, s17'),
+    (0x00b785f8, '00000000', '0008101f', 'v25: fmadd s0, s0, s16, s2'),
+    (0x00b785fc, '00000000', '83250014', 'v25: b #0xb81c08'),
+]
+
 # Screen shape (Game settings › Aspect ratio › Screen shape): every value above that depends on the 4:3 shape is read from one of seven words instead of being part of an
 # instruction, so the host can lay the UI out for any shape from 1:1 to 16:9 by writing those words at load (game.tsv shape_table, loader.c shape_apply). The words hold the
 # 4:3 values, so the variant is the 4:3 mod as before when nothing writes them (4:3 itself, or a host without shape_apply). Each site's fmov / mov becomes an `ldr` of its
@@ -493,7 +508,7 @@ def _shape(cuts):
 
 
 _MAIN = 'db93b0125f4850601d61c3edde012f8e'
-VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24)}}
+VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24 + _UI_V25)}}
 
 BINDING = [
     {'what': "Fire Emblem Fortune's Weave native 4:3 variant (VARIANT_CUTS['43']: camera aspect and ui2d pane rules)", 'now': 'build', 'goal': 'unreviewed', 'purpose': 'rendering',
