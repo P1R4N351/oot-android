@@ -60,6 +60,7 @@ module_t *module_of(const void *p) {
 static void (*write_prepare)(void *, size_t);
 static int (*fault_hook)(void *, int, void *);
 void dm_fault_hook_register(int (*fn)(void *, int, void *)) { fault_hook = fn; }
+void dm_fault_explain_register(void (*fn)(void *)) { (void)fn; }
 void dm_guest_write_prep_register(void (*fn)(void *, size_t)) { write_prepare = fn; }
 static void memory_fault(int sig, siginfo_t *info, void *ctx) {
     if (fault_hook && fault_hook(info->si_addr, 1, ctx)) return;
