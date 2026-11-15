@@ -20,3 +20,7 @@ HANDOFF*.md
 ONDEVICE*.md
 STUTTER-TEST*.md
 *.internal.md
+
+# aarch64 Linux host (linux/README.md): build output and the SDL3 headers and library copied from the device
+linux/build/
+linux/sysroot/
