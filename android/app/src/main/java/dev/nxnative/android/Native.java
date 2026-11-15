@@ -149,6 +149,9 @@ final class Native {
     static native void decoupleSet(boolean on);
     /** Hold 60 fps while the game runs (games whose profile has fps_steps: Prefs.steps; hle_fpslock.c nxhost_fps_hold60_set) */
     static native void hold60Set(boolean on);
+    /** A cheat on or off while the game runs, by its key (Cheats.Entry.key: the name, "Name #2" for a duplicate's second entry), for a game started with its Cheats switch on
+     *  (hle_cheats.c nxhost_cheat_set, which also rewrites the folder's &lt;build&gt;.enabled): 1 now in that state, 0 no plain cheat, -1 no such key, -2 not in this host */
+    static native int cheatSet(String key, boolean on);
     /** Game resolution while the game runs, for a game with graphics_scale rows (Profile.resolutionLive): the graphics scale (0-2, -1 following the operation mode) and the operation mode
      *  (0 handheld, 1 console, -1 the profile's own); the host posts the console's change notifications and the game queries them again (hle_oe.c nxhost_graphics_mode_set). False when this host has no such call */
     static native boolean graphicsModeSet(int scale, int opmode);

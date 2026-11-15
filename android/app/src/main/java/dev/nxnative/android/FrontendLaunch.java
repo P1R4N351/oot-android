@@ -43,7 +43,7 @@ public final class FrontendLaunch extends Activity {
             return;
         }
         File game = new File(Frontend.normal(path));
-        if (Nup.wrongCase(game)) { fail(game.getName() + ": rename it so that its name ends in \".nup\" (lower case); the game and the tools read only that name."); return; }
+        if (Nup.wrongCase(game)) { fail(game.getName() + ": rename it so that its name ends in \".nup\" or \".nsp\" (lower case); the game and the tools read only that name."); return; }
         if (!game.exists()) { fail(game + " is not there (the frontend sent " + path + ")."); return; }
         if (!game.canRead()) { fail(game + " cannot be read. Check that All files access is on."); return; }
         new Thread(() -> {

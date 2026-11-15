@@ -96,7 +96,7 @@ static void hud(uint64_t dinfo) {
 // Wider than 16:9 nothing here runs (the rules are vertical only). DM_DKB_PANES=0 leaves the panes as authored (the layer in the middle 16:9, as before), =log lists every change.
 #define LAY_W 1920.0f
 #define LAY_H 1080.0f
-enum { P_LINK = 0x18, P_HEAD = 0x20, P_TX = 0x30, P_TY = 0x34, P_W = 0x50, P_H = 0x54, P_FLAGS = 0x58, P_NAME = 0xb0, P_DIRTY = 0x10, LAYOUT_ROOT = 0x18,
+enum { P_LINK = 0x18, P_HEAD = 0x20, P_TX = 0x30, P_TY = 0x34, P_W = 0x50, P_H = 0x54, P_FLAGS = 0x58, P_NAME = 0xb0, PANE_DIRTY = 0x10, LAYOUT_ROOT = 0x18,
        EDGE_LEAST = 120, EDGE_DEPTH = 48, EDGE_PANES = 8192, EDGE_MOVES = 512, EDGE_ROOTS = 256 };
 typedef struct { uint64_t parent, head_prev, first; float t[3], r[3], s[2], size[2]; uint8_t fl[4]; } pane_t;   // a pane from +0x18 to +0x5c
 _Static_assert(offsetof(pane_t, t) == P_TX - P_LINK && offsetof(pane_t, size) == P_W - P_LINK && offsetof(pane_t, fl) == P_FLAGS - P_LINK, "pane offsets");
@@ -243,7 +243,7 @@ static void layout_built(uint64_t layout) {
     if (stop || !nmv) goto out;
     for (unsigned i = 0; i < EDGE_ROOTS; i++) if (g_edge_done[i].root == root && g_edge_done[i].after == before) { done = 1; goto out; }
     for (unsigned i = 0; i < nmv; i++) {
-        uint8_t flags = mv[i].flags | P_DIRTY;
+        uint8_t flags = mv[i].flags | PANE_DIRTY;
         int wrote_y = !plat_mem_write(mv[i].pane + P_TY, &mv[i].to, sizeof mv[i].to);
         if (wrote_y && !plat_mem_write(mv[i].pane + P_FLAGS, &flags, sizeof flags)) continue;
         if (wrote_y) rollback_failed |= !!plat_mem_write(mv[i].pane + P_TY, &mv[i].from, sizeof mv[i].from);

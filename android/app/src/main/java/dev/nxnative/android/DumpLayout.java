@@ -22,9 +22,14 @@ final class DumpLayout {
         List<Long> out = new ArrayList<>();
         try {
             if (Nup.isNup(dump)) {
-                Nup n = Nup.open(dump);
-                for (Nup.Pkg p : n.packages)
-                    if ((p.kind == Nup.BASE || p.kind == Nup.UPDATE) && isFile(n, p, "exefs/main")) out.add(p.kind == Nup.BASE ? 0L : p.version);
+                List<Nup> all = new ArrayList<>();
+                all.add(Nup.open(dump));
+                all.addAll(Nup.companions(dump));   // other versions of an NSP game, each an NSP of its own
+                for (Nup n : all)
+                    for (Nup.Pkg p : n.packages) {
+                        long v = p.kind == Nup.BASE ? 0L : p.version;
+                        if ((p.kind == Nup.BASE || p.kind == Nup.UPDATE) && isFile(n, p, "exefs/main") && !out.contains(v)) out.add(v);
+                    }
             } else {
                 if (new File(root(new File(dump, "base")), "exefs/main").isFile()) out.add(0L);   // a one-version folder (exefs/ at its top) has no version number: not here
                 File[] ups = new File(dump, "updates").listFiles(File::isDirectory);
@@ -66,7 +71,10 @@ final class DumpLayout {
         java.util.Set<Long> supported = prof == null ? java.util.Set.of() : prof.buildMap().keySet();
         try {
             if (Nup.isNup(dump)) {
-                Nup n = Nup.open(dump);
+                List<Nup> all = new ArrayList<>();
+                all.add(Nup.open(dump));
+                all.addAll(Nup.companions(dump));   // the DLC and other versions beside an NSP game, each an NSP of its own
+                for (Nup n : all)
                 for (Nup.Pkg p : n.packages) {
                     if (p.kind == Nup.BASE) out.add(new Item("base", "Base game", p.exefsDir == Nup.NONE ? "no game code of its own" : null));
                     else if (p.kind == Nup.UPDATE)
@@ -196,7 +204,7 @@ final class DumpLayout {
      */
     static String path(File dump, long v, String sub) {
         boolean romfs = sub.equals("romfs") || sub.startsWith("romfs/");
-        if (Nup.isNup(dump)) return Nup.spec(dump, selector(dump, v, romfs), sub);
+        if (Nup.isNup(dump)) { String sel = selector(dump, v, romfs); return Nup.spec(Nup.holder(dump, sel), sel, sub); }
         File own = dir(dump, v), base = dir(dump, 0);
         if (v != 0 && own.isDirectory() && !has(own, romfs, sub) && has(base, romfs, sub)) return new File(base, sub).getPath();   // a version the dump does not have: its own path (missing)
         return new File(own, sub).getPath();
@@ -211,6 +219,7 @@ final class DumpLayout {
         String own = Nup.versionSelector(v);
         if (v == 0) return own;
         try {
+            nup = Nup.holder(nup, own);   // an update that is an NSP of its own (beside the game's)
             Nup n = Nup.open(nup);
             Nup.Pkg p = n.find(own), b = n.base();
             if (p != null && (romfs ? hasRomfs(n, p) : p.exefsDir != Nup.NONE)) return own;
@@ -230,8 +239,9 @@ final class DumpLayout {
     static boolean hasRomfs(File dump, long v) {
         try {
             if (Nup.isNup(dump)) {
-                Nup n = Nup.open(dump);
-                Nup.Pkg p = n.find(selector(dump, v, true));
+                String sel = selector(dump, v, true);
+                Nup n = Nup.open(Nup.holder(dump, sel));
+                Nup.Pkg p = n.find(sel);
                 return p != null && hasRomfs(n, p);
             }
             return nonEmpty(new File(path(dump, v, "romfs")));
@@ -250,8 +260,9 @@ final class DumpLayout {
     static boolean exists(File dump, long v, String sub) {
         if (!Nup.isNup(dump)) return new File(path(dump, v, sub)).isFile();
         try {
-            Nup n = Nup.open(dump);
-            Nup.Pkg p = n.find(selector(dump, v, sub.startsWith("romfs")));
+            String sel = selector(dump, v, sub.startsWith("romfs"));
+            Nup n = Nup.open(Nup.holder(dump, sel));
+            Nup.Pkg p = n.find(sel);
             return p != null && isFile(n, p, sub);
         } catch (IOException e) {
             return false;
@@ -308,7 +319,7 @@ final class DumpLayout {
     private static String find(Found f, File dump, boolean anyBuild) {
         String fn = dump.getName();
         boolean nup = Nup.isNup(dump);
-        if (Nup.wrongCase(dump)) return fn + ": rename it so that its name ends in \".nup\" (lower case); the tools and the game read only that name.";
+        if (Nup.wrongCase(dump)) return fn + ": rename it so that its name ends in \".nup\" or \".nsp\" (lower case); the tools and the game read only that name.";
         if (nup) {
             if (!Nup.picked(dump) && (!dump.isFile() || !dump.canRead())) return dump + " is not a file this app can read. Check that All files access is on.";
             try { Nup.open(dump); } catch (IOException e) { return fn + " cannot be used: " + e.getMessage(); }

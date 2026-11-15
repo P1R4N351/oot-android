@@ -117,6 +117,14 @@ final class Pack {
         return ShaderLibs.playable(dir, titleId, BuildConfig.NX_DMSH_VK_CHAIN, BuildConfig.NX_DMSH_VK_ABI, BuildConfig.NX_DMSH_VK_ABI_COMPAT);
     }
 
+    /**
+     * An optional shader update: this APK's shader library is missing, an older one plays (ShaderLibs.playable) and no delta manifest says how to update it in the background
+     * (deltaShaders &lt; 0), so nothing starts by itself: the card says an update is available and the game's page offers it. The game plays as before until the player asks
+     */
+    static boolean shaderUpdateAvailable(File dir, String titleId) {
+        return libraryProblem(dir, titleId) != null && playableLibrary(dir, titleId) != null && deltaShaders(dir, titleId) < 0;
+    }
+
     /** A library of another version made before versioned shader updates (no ABI): played with a warning when no playable one is there (ShaderLibs.legacy), null when none */
     static File legacyLibrary(File dir, String titleId) { return ShaderLibs.legacy(dir, titleId, BuildConfig.NX_DMSH_VK_CHAIN); }
 
@@ -228,7 +236,12 @@ final class Pack {
     static String titleIdOf(File game) throws IOException {
         if (Nup.isNup(game)) {
             try {
-                return Nup.open(game).programId();
+                Nup n = Nup.open(game);
+                if (n.base() == null && n.newest() == null && game.getName().endsWith(Nup.EXT_NSP))
+                    throw new Nsp.Refused(Nsp.DLC_ONLY, game.getName() + " has neither a base package nor an update");
+                return n.programId();
+            } catch (Nsp.Refused e) {
+                throw new Nsp.Refused(e.plain, game.getName() + " cannot be used: " + e.getMessage(), e);
             } catch (IOException e) {
                 throw new IOException(game.getName() + " cannot be used: " + e.getMessage(), e);
             }
@@ -308,21 +321,24 @@ final class Pack {
         if (program == 0 && !gv.equals(version)) {   // (a program pack's RomFS is its own program/<n> folder's, whatever program 0's versions are) the pack's build under another version of this dump: that version's RomFS (its own, else the base's), as Prepare would pack it
             long v = Long.parseLong(gv);
             if (!DumpLayout.hasRomfs(game, v)) return null;
-            return Nup.isNup(game) ? Nup.spec(game, DumpLayout.selector(game, v, true), "romfs") : DumpLayout.path(game, v, "romfs");
+            return DumpLayout.path(game, v, "romfs");
         }
         if (!Nup.isNup(game)) {
             File f = romfs(game);
             return f == null ? null : f.getPath();
         }
         String sel = romfsSelector();
-        Nup n = Nup.open(game);
+        File holder = Nup.holder(game, sel);   // the version may be an NSP of its own beside the game's
+        Nup n = Nup.open(holder);
         Nup.Pkg p = n.find(sel);
         if (p != null && p.romfsDir == Nup.NONE && sel.startsWith("update/")) {   // an update without a RomFS of its own: the base's (DumpLayout)
             sel = DumpLayout.selector(game, p.version, true);
+            holder = Nup.holder(game, sel);
+            n = Nup.open(holder);
             p = n.find(sel);
         }
         if (p == null || p.romfsDir == Nup.NONE) return null;
-        return Nup.spec(game, sel, "romfs");
+        return Nup.spec(holder, sel, "romfs");
     }
 
     /**
@@ -406,6 +422,9 @@ final class Pack {
                 continue;
             }
             File target = hasAddon(game, e.getKey()) ? game.getAbsoluteFile() : null;
+            if (target == null) {   // an NSP game's DLC are NSPs beside it: any of them that holds the add-on
+                for (Nup c : Nup.companions(game)) if (hasAddon(c.file, e.getKey())) { target = c.file.getAbsoluteFile(); break; }
+            }
             if (target == null) {
                 try {
                     Nup.Ref r = Nup.parse(e.getValue());
@@ -415,7 +434,7 @@ final class Pack {
                     // not a .nup name: only the game's own, which has not got it
                 }
             }
-            if (target != null) out.put(e.getKey() + ".nup", target.getPath());
+            if (target != null) out.put(e.getKey() + (target.getName().endsWith(Nup.EXT_NSP) ? Nup.EXT_NSP : Nup.EXT), target.getPath());
             else if (skipped != null) skipped.add("add-on " + e.getKey() + " (pack.tsv aoc row " + e.getValue() + ") is in neither " + game.getName() + " nor the .nup the row names: the game runs without it");
         }
         return out;

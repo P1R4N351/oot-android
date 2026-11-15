@@ -141,6 +141,16 @@ def nup_scan(path):
         if not 0 < (index := dlc_index(p.title_id, app)) <= 2000: raise Error(f'{path}: add-on {p.title_id:016X} is not a DLC of {app:016X}')
         if p.romfs == nup.NONE: raise Error(f'{path}: add-on {p.title_id:016X} has no RomFS')
         dlc[app + 0x1000 + index] = pkg(p, '/romfs')
+    if str(n.path).endswith('.nsp'):   # NSP Box writes each DLC, and each version of the game, as an NSP of its own: the ones beside the game's that are of it (found by their content, whatever they are called)
+        for f in sorted(Path(n.path).parent.glob('*.nsp')):
+            if str(f) == n.path: continue
+            try: m = nup.open_nup(f)
+            except (nup.Error, OSError): continue
+            for p in m.packages:
+                if p.kind == nup.ADDON and 0 < (index := dlc_index(p.title_id, app)) <= 2000 and p.romfs != nup.NONE:
+                    dlc.setdefault(app + 0x1000 + index, romfs.Path(f'{m.path}:{p.selector}/romfs'))
+                elif p.kind == nup.UPDATE and p.title_id == app and p.exefs != nup.NONE and p.romfs != nup.NONE:   # another version of the game, a snapshot of its own
+                    vers.setdefault(p.version, romfs.Path(f'{m.path}:{p.selector}'))
     return app, vers, dlc
 
 

@@ -170,10 +170,10 @@ $(B)/t_thread_leak: t_thread_leak.c ../thread.c ../dm.h $(GAME_H) | $(B)
 # zstd's decompressor for the NUP container tests (nup_image.h, built with DM_NUP_ZSTD as the Android host is; the Mac host is built without it)
 $(B)/zstddec.o: ../../third_party/zstd/zstddeclib.c | $(B)
 	$(CLANG) -O2 -w -c -o $@ $<
-$(B)/t_fs: t_fs.c t_fs_stub.c ../hle_fs.c ../save_sync.c ../save_sync.h ../hle_bigstack.c ../hle.h ../dm.h ../nup_image.h nup_fixture_zst.h $(B)/zstddec.o $(GAME_H) | $(B)
+$(B)/t_fs: t_fs.c t_fs_stub.c ../hle_fs.c ../save_sync.c ../save_sync.h ../hle_bigstack.c ../hle.h ../dm.h ../nup_image.h ../nsp_toc.h nup_fixture_zst.h $(B)/zstddec.o $(GAME_H) | $(B)
 	$(CLANG) -O1 -Wno-unused-function -DDM_NUP_ZSTD -I.. $(GINC) -o $@ t_fs.c t_fs_stub.c ../hle_bigstack.c ../save_sync.c $(B)/zstddec.o
 # Manual check of the NUP reader against a real dump (not in run): build/t_nup_dump <file>.nup:<selector> <RomFS folder>
-$(B)/t_nup_dump: t_nup_dump.c t_fs_stub.c ../hle_fs.c ../save_sync.c ../hle_bigstack.c ../nup_image.h ../romfs_image.h $(B)/zstddec.o $(GAME_H) | $(B)
+$(B)/t_nup_dump: t_nup_dump.c t_fs_stub.c ../hle_fs.c ../save_sync.c ../hle_bigstack.c ../nup_image.h ../nsp_toc.h ../romfs_image.h $(B)/zstddec.o $(GAME_H) | $(B)
 	$(CLANG) -O2 -Wno-unused-function -DDM_NUP_ZSTD -I.. $(GINC) -o $@ t_nup_dump.c t_fs_stub.c ../hle_bigstack.c ../save_sync.c $(B)/zstddec.o
 # Inject only the folder handle allocation; directory I/O remains real.
 $(B)/t_fs_directory: t_fs_directory.c t_fs_stub.c ../hle_fs.c ../romfs_image.h ../save_sync.c ../save_sync.h ../hle_bigstack.c ../hle.h ../dm.h $(GAME_H) | $(B)

@@ -545,6 +545,13 @@ JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_fpsLimitSet(JNIEnv *env,
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_decoupleSet(JNIEnv *env, jclass cls, jboolean on) { (void)env; (void)cls; if (nxhost_fps_decouple_set) nxhost_fps_decouple_set(on ? 1 : 0); }
 // Hold 60 fps, live from the in-game panel (Native.hold60Set)
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_hold60Set(JNIEnv *env, jclass cls, jboolean on) { (void)env; (void)cls; if (nxhost_fps_hold60_set) nxhost_fps_hold60_set(on ? 1 : 0); }
+// A cheat on or off by its key, live from the in-game panel's Cheats section (Native.cheatSet): 1 now in that state, 0 no plain cheat, -1 no such key, -2 not in this host
+#pragma weak nxhost_cheat_set
+int nxhost_cheat_set(const char *key, int on);   // hle_cheats.c dm_cheat_set
+JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_cheatSet(JNIEnv *env, jclass cls, jstring key, jboolean on) {
+    (void)cls; if (!nxhost_cheat_set) return -2;
+    char *k = jstr(env, key); int r = k ? nxhost_cheat_set(k, on ? 1 : 0) : -1; free(k); return r;
+}
 // Game resolution of a game that sizes its scenes by the graphics scale, live from the in-game panel (Native.graphicsModeSet): the host changes the scale and operation mode
 // and posts the console's notifications (300, 30 / 31), which the game answers by querying them again
 #pragma weak nxhost_graphics_mode_set

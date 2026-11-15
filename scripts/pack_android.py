@@ -12,6 +12,7 @@
 #   build_src.sha256, rewrite_<module>.log
 #   scene_res/<preset>/<RomFS path>, scene_res.tsv   for a profile with scene_scale_palette rows: the game's dynamic resolution palette rewritten, one RomFS overlay folder per
 #                scene_scale row and per res_preset row with a floor or fixed scene (dm/tools/scene_res.py), which the launcher's Resolution passes as DM_ROMFS_OVERLAY; made from the dump's own RomFS
+#   cheats/<build>.txt   the profile's Atmosphère-format cheat files (game.tsv cheats rows; place_cheats), for the launcher's Game settings › Cheats; not in the rewrite key
 # The RomFS is not in the pack (the app gives the host <game folder>/<romfs> as DM_ROMFS) and neither is anything else of the dump but the rewritten code.
 # The game may be a NUP file instead of a folder (android/NUP.md): its packages are read in place (pack_dump.scan, dm/tools/nup.py), the modules and the RomFS are
 # named `<name>.nup:update/<version>/...` (or `:base/...`), the DLC `<name>.nup:addon/<title ID>/romfs`, and pack.tsv's paths are relative to the folder holding the file.
@@ -397,7 +398,7 @@ def rewriter_src(src, out, m):
     """The file patch_nso.py reads for module m: src itself, or for a module in a NUP package (`game.nup:update/<v>/exefs/main`) a copy in the pack's
     .nup-src/<module>/ under the module's own name. The rewriter then reads a plain file, so its files (REWRITER, rewrite_key) are the same for a NUP
     file and a folder, and a pack made from either keeps the other's rewritten modules"""
-    if '.nup:' not in str(src): return src
+    if '.nup:' not in str(src) and '.nsp:' not in str(src): return src
     d = out / '.nup-src' / m; d.mkdir(parents=True, exist_ok=True)
     f = d / src.name; f.write_bytes(src.read_bytes()); return f
 
@@ -692,6 +693,23 @@ def commit():   # the packer's commit; DM_PACKER_COMMIT when the repository's to
     return r or os.environ.get('DM_PACKER_COMMIT') or 'unknown'
 
 
+def place_cheats(g, out):
+    """The profile's cheat files (game.tsv cheats rows, game.Game.cheats: Atmosphère-format, named <build>.txt) into <out>/cheats/, from where the launcher copies them into
+    its own cheats folder for the game when Game settings › Cheats is on (Cheats.java). Not in the rewrite key: they change no code, only what the host writes while the game
+    runs, so a new or changed cheat file needs a Prepare (this copy) but never makes a pack's code stale. A file of a row the profile no longer has is removed"""
+    try: files = g.cheats()
+    except ValueError as e: raise Error(str(e)) from None
+    d = out / 'cheats'
+    if files: d.mkdir(exist_ok=True)
+    for f in files:
+        tmp = d / (f.name + '.partial'); shutil.copyfile(f, tmp); os.replace(tmp, d / f.name)
+    if d.is_dir():
+        for old in d.iterdir():
+            if old.name not in {f.name for f in files}: old.unlink()
+        if not files: d.rmdir()
+    if files: print(f'cheats: {", ".join(f.name for f in files)} into {d}')
+
+
 def main():
     ap = argparse.ArgumentParser(description='Pack a dumped game for the Android launcher: its code modules rewritten with --target android, no RomFS')
     ap.add_argument('game', type=Path, help='the game folder (base/exefs, base/romfs or an update\'s romfs, updates/<version>/, dlc/), or a .nup file')
@@ -781,6 +799,7 @@ def main():
             coll = collected_nros(folder.parent / f'{app:016X}-work')   # the collected NROs the keys were made from, when this machine collected them
             upgrade_keys(srcs | {n: coll / f'{n}.nro' for n in pack_nros(out) if coll and (coll / f'{n}.nro').is_file()}, out, g)   # before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
         shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
+        place_cheats(g, out)
         # a program n > 0 splits program 0's RomFS (its conorig) and the add-ons with its own main: its own RomFS holds no shaders (Wonder's program 1: one text file)
         shaders = None if a.no_shaders else pack_shaders(a, g, work, out, vdir, (conorig, exe) if a.program else (romfs, exe), list(dlc.values()) if a.program else ())
         scenes = scene_overlays(g, romfs, out)

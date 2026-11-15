@@ -640,6 +640,29 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         } catch (RuntimeException e) { /* no answer: left as it was */ }
     }
 
+    // ---- Cheats (Game settings › Cheats, Cheats.java): with the switch on, the pack's profile cheat file and the player's imported ones merged into the game's cheats
+    // folder with the toggles as <build>.enabled, passed as DM_CHEATS; the in-game panel lists cheatList. Switch off: nothing passed, nothing listed ----
+    private List<Cheats.Entry> cheatList = java.util.Collections.emptyList();
+    private String cheatNote;   // the log line of the cheats this run started with (after the start, with the save's)
+    /** The cheats this run started with, for the in-game panel's Cheats section: empty while Game settings › Cheats is off (Cheats.panel) */
+    List<Cheats.Entry> cheats() { return cheatList; }
+
+    private void cheatsEnv(String id, Pack pack, File packDir, List<String> env) {
+        boolean has = Prefs.cheatsGame(id), on = Prefs.cheats(this, id);
+        if (!has || !on) return;
+        java.util.Set<String> builds = Cheats.builds16(String.join(" ", pack.builds));
+        String build = builds.isEmpty() ? null : builds.iterator().next();
+        if (build == null) { unknownNotes.add("[nxlaunch] Cheats: the pack names no main build; this start runs without cheats"); return; }
+        File folder = CheatsUi.folder(this, id), shipped = Cheats.packFile(packDir, build);
+        try {
+            List<Cheats.Entry> l = Cheats.install(shipped, folder, build, Prefs.cheatsOn(this, id));
+            if (l == null) { unknownNotes.add("[nxlaunch] Cheats: no cheat file for build " + build + (shipped == null ? " in the pack (Prepare again brings the game's own) and none imported" : "")); return; }
+            env.addAll(Cheats.env(true, true, folder));
+            cheatList = Cheats.panel(true, true, l);
+            cheatNote = "[nxlaunch] cheats: " + cheatList.size() + " cheats for build " + build + (shipped == null ? " (imported only: the pack has no profile cheat file)" : "") + ", " + Prefs.cheatsOn(this, id).size() + " on";
+        } catch (IOException e) { unknownNotes.add("[nxlaunch] Cheats: not set up (" + e.getMessage() + "); this start runs without cheats"); }
+    }
+
     private Map<String, String> rFacts;
     private List<Readiness.Check> rChecks;
 
@@ -690,6 +713,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             } catch (java.io.FileNotFoundException e) {   // an APK built without fontTools: the host's [YELLOW] line says so
             } catch (IOException e) { unknownNotes.add("[nxlaunch] the button-icon font is not placed (" + e.getMessage() + "): button icons in game text draw as '?'"); }
             String gpuNote = settingsEnv(id, env);
+            cheatsEnv(id, pack, packDir, env);
             // The 3D scene (Game settings › Resolution, ResPresets; Advanced › 3D scene, SceneRes): the chosen RomFS overlay in the pack, made by the pack step from the player's files,
             // or the chosen game arguments (scene_arg); a DM_ROMFS_OVERLAY or DM_GAME_ARGS_ADD line of the user's comes later and wins
             Profile sceneProf = Profile.of(id);
@@ -752,6 +776,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             Native.note("[nxlaunch] game: " + game + (nupFd >= 0 ? " (.nup used where it is, descriptor " + nupFd + ")" : Nup.isNup(game) ? " (.nup)" : " (folder)") + ", DM_ROMFS " + romfs
                     + ", pack " + packDir);
             Native.note("[nxlaunch] save: " + save + " (" + saveHow + ")" + (saveNote != null ? "; " + saveNote : ""));
+            if (cheatNote != null) Native.note(cheatNote);
             Native.note("nxnative " + BuildConfig.VERSION_NAME + " (" + BuildConfig.NX_COMMIT + "), host libnxhost_" + id + ".so; " + name + " " + id + " version " + pack.version);
             Native.note("device " + Build.MANUFACTURER + " " + Build.MODEL + ", Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + "), " + Build.SUPPORTED_ABIS[0]
                     + "; game " + game + "; pack " + packDir);

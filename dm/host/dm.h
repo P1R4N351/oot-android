@@ -186,6 +186,8 @@ const char *dm_cheat_why_at(int i);   // The disabled state's reason (" (unsuppo
 int dm_cheat_kind_at(int i);          // 0 a plain row (click toggles), 1 master (always on, no toggle), 2 disabled (broken or killed at run time), 3 a label (credits, a section marker)
 int dm_cheat_on_at(int i);
 void dm_cheat_toggle(int i);          // The click on a plain row: flips the cheat (an on / off pair as one switch) and rewrites <build ID>.enabled
+int dm_cheat_set(const char *key, int on);   // The same switch by key ("Name", "Name #2"; any case), taken only when the state differs: 1 now in that state, 0 no plain cheat, -1 no such key
+int nxhost_cheat_set(const char *key, int on);   // dm_cheat_set for the Android launcher's in-game panel (libnxlaunch's Native.cheatSet)
 void dm_cheats_reload(void);          // "Reload cheats": re-reads the file (the same path), so edits during play need no re-launch
 // What the panel shows beyond the menu (hle_cheats.c header: labels and sections, the meta file of scripts/cheat_anchor.py)
 enum { DM_CHEAT_LABEL = 1, DM_CHEAT_SECTION_START = 2, DM_CHEAT_SECTION_END = 4, DM_CHEAT_PAIR_ON = 8, DM_CHEAT_PAIR_OFF = 16,

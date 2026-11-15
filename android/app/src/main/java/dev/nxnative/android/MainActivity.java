@@ -50,6 +50,7 @@ public final class MainActivity extends Activity {
     private LinearLayout gameBox;   // the game cards (refresh)
     private View accessCard;
     private BananaBackgroundView bananas;   // the drifting bananas behind the screen
+    private TextView poppedText;   // Settings › About: "Bananas Popped: n" (null when Settings is not shown)
     private Ui.Setting overlayRow, resRow, capRow, upsRow, sharpRow, drsRow, lsfgRow, gpuRow, updateRow, timeRow;
     private boolean resumed, settingsPage;
     private Game settingsGame;   // the game whose settings page shows (GameSettings), else null
@@ -66,6 +67,11 @@ public final class MainActivity extends Activity {
         FrameLayout frame = new FrameLayout(this);
         bananas = new BananaBackgroundView(this);
         frame.addView(bananas, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        bananas.setOnPop(() -> {   // a popped banana: counted, a light tick, and Settings' counter if it shows
+            long n = Prefs.addBananaPopped(this);
+            bananas.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
+            if (poppedText != null) poppedText.setText(poppedLine(n));
+        });
         setContentView(frame);
         PadFocus.watch(getWindow());   // a controller: the focus frame (PadFocus)
         build();
@@ -163,10 +169,12 @@ public final class MainActivity extends Activity {
         while (frame.getChildCount() > 1) frame.removeViewAt(1);
         boolean wide = getResources().getConfiguration().screenWidthDp >= 600;
         LinearLayout content = Ui.page(this, frame, settingsGame != null && wide ? 1040 : 640);
+        poppedText = null;
         if (settingsGame != null) for (Game x : Game.load(this)) if (x.gameDir.equals(settingsGame.gameDir)) { settingsGame = x; break; }   // its folders as they are now (Folders, Import pack)
         if (settingsGame != null) { accessCard = null; gameBox = null; overlayRow = null; GameSettings.build(this, content, settingsGame, this::gameSettingsAgain, () -> page(false)); }
         else if (settingsPage) buildSettings(content);
         else buildHome(content);
+        bananaTaps(frame);
         if (settingsGame != null || settingsPage) frame.post(() -> {   // a controller (not touch mode): the focus starts on the page's selected tab, else its first row (Home: refresh puts it on the first tile)
             if (frame.isInTouchMode() || getCurrentFocus() != null && frame.hasFocus()) return;
             View v = PadFocus.first(PadFocus.focusables(frame));
@@ -174,9 +182,76 @@ public final class MainActivity extends Activity {
         });
     }
 
+    /**
+     * A tap on the page where nothing is (no button, no card, no text row with a background) pops the banana behind it (BananaBackgroundView.popAt). The page's
+     * ScrollView gets only the touches no child took, and this never takes one: scrolling goes on, and a drag is not a tap.
+     */
+    private void bananaTaps(FrameLayout frame) {
+        android.widget.ScrollView scroll = pageScroll();
+        if (scroll == null) return;
+        final float slop = android.view.ViewConfiguration.get(this).getScaledTouchSlop();
+        final float[] down = new float[3];   // x, y, whether a tap may still follow (1)
+        scroll.setOnTouchListener((v, e) -> {
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    down[0] = e.getX(); down[1] = e.getY(); down[2] = emptyAt(scroll, e.getX(), e.getY()) ? 1 : 0;
+                    break;
+                case android.view.MotionEvent.ACTION_MOVE:
+                    if (Math.abs(e.getX() - down[0]) > slop || Math.abs(e.getY() - down[1]) > slop) down[2] = 0;
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                    if (down[2] == 1 && e.getEventTime() - e.getDownTime() < android.view.ViewConfiguration.getLongPressTimeout()) bananas.popAt(e.getX(), e.getY());
+                    down[2] = 0;
+                    break;
+                default:
+                    down[2] = 0;
+            }
+            return false;
+        });
+    }
+
+    /** No view with a background (a card, a row, a button) is at this point of the scroll view: the bananas show there */
+    private static boolean emptyAt(ViewGroup root, float x, float y) {
+        for (int i = root.getChildCount() - 1; i >= 0; i--) {
+            View c = root.getChildAt(i);
+            float cx = x + root.getScrollX() - c.getLeft(), cy = y + root.getScrollY() - c.getTop();
+            if (cx < 0 || cy < 0 || cx >= c.getWidth() || cy >= c.getHeight() || c.getVisibility() != View.VISIBLE) continue;
+            if (c.getBackground() != null) return false;
+            if (c instanceof ViewGroup && !emptyAt((ViewGroup) c, cx, cy)) return false;
+        }
+        return true;
+    }
+
+    private String poppedLine(long n) { return "Bananas Popped: " + java.text.NumberFormat.getIntegerInstance().format(n); }
+
+    /** The player wiki (its pages are written and kept up to date on the project's site, so the app links to it and keeps no copy) */
+    static final String WIKI_URL = "https://git.eden-emu.dev/moceure/BananaNative/wiki";
+
+    /** Home's header buttons: the wiki, then Settings */
+    private View headerButtons() {
+        LinearLayout r = Ui.row(this);
+        r.setGravity(android.view.Gravity.TOP);   // the gear lines up with the book, whose label hangs below
+        LinearLayout wiki = new LinearLayout(this);   // the book with a small WIKI under it, so the button says what it opens
+        wiki.setOrientation(LinearLayout.VERTICAL);
+        wiki.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        wiki.addView(Ui.iconButton(this, R.drawable.ic_wiki, "Player wiki", Ui.Kind.TONAL, v -> openLink(WIKI_URL)));
+        TextView label = Ui.text(this, "WIKI", 10, R.color.bn_text_2, 700);
+        label.setPadding(0, Ui.dp(this, 2), 0, 0);
+        label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);   // the button already says "Player wiki"
+        label.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        label.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        wiki.addView(label, new LinearLayout.LayoutParams(Ui.dp(this, 44), ViewGroup.LayoutParams.WRAP_CONTENT));   // as wide as the book, so the text is centred under it
+        r.addView(wiki);
+        View gear = Ui.iconButton(this, R.drawable.ic_settings, "Settings", Ui.Kind.TONAL, v -> page(true));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44));   // the size iconButton gives it
+        lp.leftMargin = Ui.dp(this, 10);
+        r.addView(gear, lp);
+        return r;
+    }
+
     private void buildHome(LinearLayout content) {
         overlayRow = null;
-        content.addView(Ui.header(this, Ui.badge(this, 44), "Banana Native", Prefs.buildId(), Ui.iconButton(this, R.drawable.ic_settings, "Settings", Ui.Kind.TONAL, v -> page(true))));   // the build identifier under the title (Prefs.buildId, the part of the overlay's build tag after the app's name), so a screenshot of Home names its build; Settings › About has the full tag
+        content.addView(Ui.header(this, Ui.badge(this, 44), "Banana Native", Prefs.buildId(), headerButtons()));   // the build identifier under the title (Prefs.buildId, the part of the overlay's build tag after the app's name), so a screenshot of Home names its build; Settings › About has the full tag
         accessCard = accessCard();
         Ui.add(content, accessCard, 16);
         Ondevice.attach(this, content, content.getChildCount());   // a game being prepared and its progress (hidden when there is none)
@@ -217,6 +292,8 @@ public final class MainActivity extends Activity {
         LinearLayout upd = settingsCard(content);
         updateRow = new Ui.Setting(this, "🔄", "Check for updates", v -> Updater.checkNow(this)).chevron(this);
         upd.addView(updateRow.view);
+        upd.addView(new Ui.Setting(this, "📖", "Player wiki", v -> openLink(WIKI_URL)).chevron(this)
+                .value("Guides, what every setting does, a page for each game (opens the browser)").view);
 
         Ui.add(content, Ui.section(this, "Game defaults"), Ui.SECTION_GAP);
         LinearLayout play = settingsCard(content);
@@ -320,6 +397,8 @@ public final class MainActivity extends Activity {
         TextView tag = Ui.chip(this, Prefs.buildTag(this));   // which build this is (also the first line of every log)
         tag.setTextIsSelectable(true);
         about.addView(tag, Ui.wrap());
+        poppedText = Ui.small(this, poppedLine(Prefs.bananasPopped(this)));   // the background's bananas pop when tapped (BananaBackgroundView)
+        Ui.add(about, poppedText, 10);
         StringBuilder ids = new StringBuilder();   // the games this build includes, so a player can tell whether it has theirs (Profile.missing points here)
         for (Profile p : Profile.all()) ids.append("\n· ").append(p.name).append(" (").append(p.titleId).append(")");
         TextView t = Ui.small(this, "Games in this app:" + ids + "\n\nBased on nxnative by seedds. LSFG from Eden (GPL-3.0)." + (BuildConfig.NX_LSFG ? "" : " Built without LSFG."));
@@ -455,7 +534,7 @@ public final class MainActivity extends Activity {
             Job j = Ondevice.cardJob(this, g);
             if (j == null) {   // no update runs for this card: say why instead of "updating" with no count
                 String why = Ondevice.busy(this) ? "Ready · shader update waits for the other game's preparing"
-                        : Ondevice.deltaShaders(new File(g.packDir), g.titleId) < 0 ? "Ready · new shaders: \u22ef \u203a Prepare to update them" : "Ready · shader update starting";
+                        : Ondevice.deltaShaders(new File(g.packDir), g.titleId) < 0 ? "Ready · update" : "Ready · shader update starting";
                 Ui.status(e.getKey(), why, R.color.bn_leaf);
                 continue;
             }
@@ -518,7 +597,7 @@ public final class MainActivity extends Activity {
         TextView h = Ui.heading(this, "Add your game");
         h.setGravity(Gravity.CENTER);
         Ui.add(c, h, 12, Ui.wrap());
-        TextView t = Ui.small(this, "Pick your dump folder, the one with base/ (and updates/), or your game's .nup file.");
+        TextView t = Ui.small(this, "Pick your dump folder, the one with base/ (and updates/), or your game's .nup or .nsp file.");
         t.setGravity(Gravity.CENTER);
         Ui.add(c, t, 6, Ui.wrap());
         LinearLayout steps = Ui.row(this);
@@ -698,6 +777,7 @@ public final class MainActivity extends Activity {
                 // An APK update's new shaders: made in the background with no question when the pack's older library is one the delta manifest knows (Ondevice.autoUpdate)
                 if (problem != null && problem.shadersOnly && problem.prepare) Ondevice.autoUpdate(this, new File(g.gameDir), new File(g.packDir), g.titleId);
                 if (problem == null) Ui.status(st, "Ready", R.color.bn_leaf);
+                else if (problem.playable && Pack.deltaShaders(new File(g.packDir), g.titleId) < 0) Ui.status(st, "Ready · update", R.color.bn_accent);   // an optional shader update: the game's page offers it (GameSettings.shaderUpdateCard)
                 else if (problem.playable) { Ui.status(st, "Ready · updating shaders", R.color.bn_leaf); updating.put(st, g); updateTick(); }   // the count follows (updateTick)
                 else if (problem.legacy) Ui.status(st, "Ready · shaders need one update", R.color.bn_accent);
                 else Ui.status(st, problem.label, problem.prepare || problem.anyway ? R.color.bn_accent : R.color.bn_danger);
@@ -752,6 +832,9 @@ public final class MainActivity extends Activity {
 
     /** The game's Manage sheet, also from its progress card while it is being prepared (Ondevice) */
     void manageGame(Game g) { manage(g); }
+
+    /** The optional shader update from the game's page: Home, then Prepare (Ondevice asks first and says what it will make) */
+    void updateShaders(Game g) { page(false); Ondevice.prepare(this, new File(g.gameDir), true); }
 
     /** A game's page (a tap or long press on its tile; GameSettings): its settings, saves and storage under tabs, Play in its header */
     private void manage(Game g) { GameSettings.open(this, g); }
@@ -866,7 +949,7 @@ public final class MainActivity extends Activity {
     void addGame() {
         if (!Environment.isExternalStorageManager()) { addWithoutAccess(); return; }
         new PadFocus.Builder(this).setTitle("Add game: your dump is…")
-                .setItems(new String[] {"A folder (with base/, and updates/ if any)", "A .nup file"}, (d, w) -> {
+                .setItems(new String[] {"A folder (with base/, and updates/ if any)", "A .nup file, or an NSP Box .nsp file"}, (d, w) -> {
                     if (w == 0) pickFolder(PICK_GAME, "Pick your dump folder (with base/, and updates/ if any)");
                     else pickNup();
                 })
@@ -880,7 +963,7 @@ public final class MainActivity extends Activity {
      */
     private void addWithoutAccess() {
         new PadFocus.Builder(this).setTitle("Add game: your dump is…")
-                .setItems(new String[] {"A .nup file (used where it is)", "A dump folder (copied into the app: a folder needs All files access to be read where it is)",
+                .setItems(new String[] {"A .nup or .nsp file (used where it is)", "A dump folder (copied into the app: a folder needs All files access to be read where it is)",
                         "Allow All files access"}, (d, w) -> {
                     if (w == 0) pickNupHere();
                     else if (w == 1) { Toast.makeText(this, "Pick your dump folder (with base/, and updates/ if any)", Toast.LENGTH_LONG).show(); GameCopy.pickTree(this); }
@@ -891,7 +974,7 @@ public final class MainActivity extends Activity {
 
     /** The file picker for a .nup used where it is (PickedNup) */
     void pickNupHere() {
-        Toast.makeText(this, "Pick your game's .nup file", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Pick your game's .nup or .nsp file", Toast.LENGTH_LONG).show();
         startActivityForResult(PickedNup.pickIntent(), PICK_NUP_HERE);
     }
 
@@ -903,7 +986,7 @@ public final class MainActivity extends Activity {
      * dump folder with the folder picker (All files access). The picked file takes the card's place when it holds the same game (relinkTo)
      */
     void relink(Game g) {
-        boolean nup = g.gameDir.endsWith(Nup.EXT);
+        boolean nup = Nup.extOf(g.gameDir) != null;
         if (!nup && needAccess()) return;
         relinkFor = g;
         if (!nup) pickFolder(PICK_GAME, "Pick " + g.name + "'s dump folder again");
@@ -966,7 +1049,7 @@ public final class MainActivity extends Activity {
      * (Recent, Downloads) is used where it is (PickedNup), so the picker asks for a lasting read permission too
      */
     private void pickNup() {
-        Toast.makeText(this, "Pick your game's .nup file", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Pick your game's .nup or .nsp file", Toast.LENGTH_LONG).show();
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         i.putExtra(DocumentsContract.EXTRA_INITIAL_URI, Uri.parse("content://com.android.externalstorage.documents/document/primary%3A"));
@@ -982,6 +1065,7 @@ public final class MainActivity extends Activity {
         if (GameCopy.activityResult(this, request, data)) return;
         if (PackUi.documentResult(this, request, data.getData())) return;
         if (SaveUi.documentResult(this, request, data.getData())) return;
+        if (CheatsUi.documentResult(this, request, data.getData())) return;
         if (request == PICK_NUP_HERE) { nupHere(data.getData()); return; }
         if (request == PICK_NUP) {
             String p = PathUtil.documentToPath(data.getData());
@@ -1022,7 +1106,7 @@ public final class MainActivity extends Activity {
 
     /** A single .nup (NUP.md): its name and access checked here, the rest as every game (addAll) */
     private void nupPicked(File nup) {
-        if (Nup.wrongCase(nup)) { error(nup.getName() + ": rename it so that its name ends in \".nup\" (lower case); the game and the tools read only that name."); return; }
+        if (Nup.wrongCase(nup)) { error(nup.getName() + ": rename it so that its name ends in \".nup\" or \".nsp\" (lower case); the game and the tools read only that name."); return; }
         if (!Nup.picked(nup) && !nup.canRead()) { error(nup + " cannot be read. Check that All files access is on."); return; }
         addAll(List.of(nup), true);
     }
@@ -1031,6 +1115,7 @@ public final class MainActivity extends Activity {
     private static final class Pick {
         final File game;
         String id, name, error;   // error: why it cannot be added (unreadable, no profile in this APK), in a sentence
+        String plain;             // an NSP this app does not read (Nsp.Refused): what to tell the player; error is then the technical detail
         boolean unsupported;      // no profile in this APK
         boolean dump;             // a dump Prepare starts from (Pack.isDump)
         PackFind.Found pack;      // a pack that plays now or after the automatic shader update (Folders.find), null: none
@@ -1058,8 +1143,13 @@ public final class MainActivity extends Activity {
             for (File g : picked) {
                 Pick k = new Pick(g);
                 out.add(k);
-                if (Nup.wrongCase(g)) { k.error = g.getName() + ": rename it so that its name ends in \".nup\" (lower case)."; continue; }
-                try { k.id = Pack.playableIdOf(g); } catch (IOException e) { k.error = e.getMessage(); continue; }   // program 0, else a program n > 0 this APK runs (a Switch 2 Edition)
+                if (Nup.wrongCase(g)) { k.error = g.getName() + ": rename it so that its name ends in \".nup\" or \".nsp\" (lower case)."; continue; }
+                try { k.id = Pack.playableIdOf(g); } catch (IOException e) {   // playableIdOf: program 0, else a program n > 0 this APK runs (a Switch 2 Edition)
+                    k.error = e.getMessage();
+                    if (e instanceof Nsp.Refused) k.plain = ((Nsp.Refused) e).plain;
+                    android.util.Log.w("nxnative", "[RED] Add game: " + g.getName() + ": " + e);
+                    continue;
+                }
                 String why = Profile.missing(k.id, single ? null : g.getName());
                 if (why != null) { k.unsupported = true; k.error = why; continue; }
                 k.name = Profile.of(k.id).name;
@@ -1084,7 +1174,11 @@ public final class MainActivity extends Activity {
     private void added(List<Pick> picks, boolean single) {
         if (single) {
             Pick k = picks.get(0);
-            if (k.error != null) { error(k.error); return; }
+            if (k.error != null) {
+                if (k.plain != null) Ui.explain(this, "Cannot use this NSP", k.plain, k.error).setPositiveButton("OK", null).show();
+                else error(k.error);
+                return;
+            }
             askReplace(k.name, k.game, k.others, replace -> {
                 if (k.pack != null) { addWithPack(k.game, k.id, k.pack.dir, replace); return; }
                 if (replace != null) removeEntries(replace);   // the user chose this dump: the other's card goes now (nothing is deleted), this one's comes with its pack
@@ -1111,7 +1205,7 @@ public final class MainActivity extends Activity {
         List<String> ok = new ArrayList<>(), unsupported = new ArrayList<>(), prepare = new ArrayList<>(), noPack = new ArrayList<>(), failed = new ArrayList<>(), twice = new ArrayList<>();
         for (Pick k : picks) {
             if (k.unsupported) { unsupported.add(k.game.getName() + " (" + k.id + ")"); continue; }
-            if (k.error != null) { failed.add(k.error); continue; }
+            if (k.error != null) { failed.add(k.plain != null ? k.game.getName() + ": " + k.plain : k.error); continue; }
             if (k.pack != null) {
                 String err = add(k.game, k.id, k.pack.dir, null);
                 if (err == null) ok.add(k.pack.pack.name.isEmpty() ? k.name : k.pack.pack.name);

@@ -37,6 +37,10 @@ atomics in `AstOptimizer.cs`, of else-ifs for SPIR-V and of TMML's negative LOD,
 [LICENSE](../LICENSE)), with the TMML finding from yuzu #10234 (no yuzu code); the changes are listed in
 [dm/third_party/ryujinx/README.md](../dm/third_party/ryujinx/README.md). Thanks to them.
 
+The Legend of Zelda: Ocarina of Time's cheat file (`dm/games/0400486024DEC000/cheats/E0F3CCFAF50065AE.txt`) takes its list of game-data keys (which records hold the
+rupees, the ammunition and the tokens) from [NX2navi-Trainer](https://github.com/Miragui/NX2navi-Trainer) by Miragui (MIT); no code of it is used: the pointer chain,
+the record layout and the key function were found again in the game's code (the game note's "Cheats"). Thanks to them.
+
 The launcher's gate on adb control commands (`AdbControl.java`, Settings › ADB control in `MainActivity.java` and `Prefs.java`) is ported from
 [Anka Native](https://github.com/EddizEge/AnkaNative) 0.2.2 by EddizEge (MIT: "Copyright (c) 2026 seedds", "Copyright (c) 2026 EddizEge" and the MIT permission notice
 in [LICENSE](../LICENSE)). Thanks to them.

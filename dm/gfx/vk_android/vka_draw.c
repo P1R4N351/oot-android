@@ -3064,7 +3064,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         return;
     }
     vka_layout lay; if (!vka_layout_of(sh, 1, &lay)) SKIP("dispatch skipped: no pipeline layout");
-    VkPipeline p = vka_cs_pipeline(sh[5], &lay);
+    VkPipeline p = vka_cs_pipeline_frame(sh[5], &lay);   // (VK_NULL_HANDLE while being made in the background, DM_VK_CS_ASYNC: the dispatch skipped)
     if (vka_nan_on()) vka_tex_watch_dispatch(sh[5]->key);
     if (!p) { g_skipped++; g_skip_dev[VKS_PIPELINE]++; return; }
     d->b.dispatch[0] = (uint32_t)dp->x; d->b.dispatch[1] = (uint32_t)dp->y; d->b.dispatch[2] = (uint32_t)dp->z; d->b.nvn2 = (uint32_t)vka_nvn2();

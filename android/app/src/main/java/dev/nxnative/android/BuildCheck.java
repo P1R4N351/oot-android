@@ -116,7 +116,7 @@ final class BuildCheck {
         try { v = Long.parseLong(version); } catch (NumberFormatException e) { v = -1; }
         String sel = v < 0 ? "update/" + version : DumpLayout.selector(game, v, false), label = sel + "/exefs/" + m;
         try {
-            Nup n = Nup.open(game);
+            Nup n = Nup.open(Nup.holder(game, sel));
             Nup.Pkg p = n.find(sel);
             return new Mod(null, n, p == null ? null : n.lookup(p, "exefs/" + m), label, null);
         } catch (IOException e) {
