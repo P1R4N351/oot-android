@@ -323,6 +323,17 @@ void dm_pad_players(uint32_t mask) {
     }
     note_merged();
 }
+// The players the game reads (bit p: player p + 1's npad is supported; all of them in a one-player game, where further controllers feed player 1), for the front end's
+// pad_slot_fill. The front end's callback moves its controllers on players the game does not read to free ones it reads: when the supported npads change and when the
+// controller applet opens (on a Switch the applet is where controllers are assigned to players)
+uint32_t dm_pad_usable(void) {
+    if (one_player()) return (1u << DM_PLAYERS) - 1;
+    uint32_t m = 1; for (int p = 1; p < DM_PLAYERS; p++) if (atomic_load(&g_ids_supported) & id_bit((uint32_t)p)) m |= 1u << p;
+    return m;
+}
+static void (*_Atomic g_usable_fn)(void);
+void dm_pad_usable_callback(void (*fn)(void)) { atomic_store(&g_usable_fn, fn); }
+static void usable_changed(void) { void (*fn)(void) = atomic_load(&g_usable_fn); if (fn) fn(); }
 
 // DM_REC=<file>: player 1's physical input (keyboard / touch, its controller and the controllers merged into it, as fill reads them) written as DM_KEYS steps, so a run plays again
 // with DM_KEYS=@<file> from the same save and build: a bug report's path without the game's data, or a regress route recorded instead of written. DM_KEYS and DM_CTL have
@@ -510,6 +521,7 @@ HLE_FORCE("_ZN2nn3hid22SetSupportedNpadIdTypeEPKjm", "supported controller ids; 
     LOG("hid supported controller ids %#x (bit n: No n+1, bit 8 Handheld, bit 9 Other)", m);
     for (int p = 1; p < DM_PLAYERS; p++) if ((uint32_t)reported(p) != (was >> p & 1)) style_changed((uint32_t)p);
     note_merged();
+    usable_changed();   // controllers on players the game no longer reads move to free ones it reads
 }
 static uint32_t g_styles_supported = 0xffffffffu;
 HLE_FORCE("_ZN2nn3hid24SetSupportedNpadStyleSetENS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE", "supported controller styles; the host records them and picks the reported style from them", void, h_hid_SetStyles, uint32_t styles) {
@@ -535,6 +547,7 @@ HLE_FORCE("_ZN2nn3hid20StopLrAssignmentModeEv", "L/R assignment mode; ignored by
 // fewer players is an answer a Switch never gives: Mario Kart 8 Deluxe asks for two in 2P and opened the applet again every few frames on it (GitHub issue #550)
 #define RES_CTRL_CANCELED (202u | 3101u << 9)
 static Result ctrl_support(int32_t *info, const int8_t *arg) {
+    usable_changed();   // as the applet assigns them: a controller on a player the game does not read takes a free one it reads before the count
     int count = 0; for (int p = 0; p < DM_PLAYERS; p++) count += reported(p);
     int canceled = arg && arg[0] > count;
     if (arg) LOG("hid controller applet: %d to %d players wanted, %d connected%s", arg[0], arg[1], count, canceled ? ": too few, closed as the player would (canceled)" : "");

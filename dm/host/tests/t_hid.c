@@ -151,6 +151,59 @@ static void t_npads(void) {
     CHECK(info[0] == 2 && info[1] == NPAD_HANDHELD, "handheld: the applet selects the handheld controller");
 }
 
+// Controllers on players the game does not read move to free ones it reads (pad_slot_fill, dm_pad_usable and its callback; the Android front end's fill), in the order they press
+// a button, as a Switch's controller applet takes them. Orbitals (two players, {No1, No2}): an Xbox controller paired during play was device 12 on player 2, came back as device
+// 13 on player 3 before device 12 went, and the controller applet then counted one player for ever (2202-3101 at every co-op start)
+static pad_slots fs; static int fill_calls;
+static void test_fill(void) {   // the front end's callback, as input_android.c fill(NULL)
+    fill_calls++; int from, to;
+    while ((to = pad_slot_fill(&fs, dm_pad_usable(), NULL, &from)) >= 0) dm_pad_players(pad_slot_mask(&fs));
+}
+static void t_fill(void) {
+    pad_slots s; memset(&s, 0, sizeof s); int from;
+    static char a, b, c, d, e;
+    CHECK(pad_slot_take(&s, &a, "Odin Controller") == 0 && pad_slot_take(&s, &b, "Xbox Wireless Controller") == 1, "players 1 and 2");
+    CHECK(pad_slot_take(&s, &c, "Xbox Wireless Controller") == 2 && pad_slot_free(&s, &b) == 1, "the controller back as a new device on player 3, then the old device goes");
+    CHECK(pad_slot_fill(&s, 0x7, NULL, &from) == -1 && from == -1, "a game that reads player 3: nothing moves");
+    CHECK(pad_slot_fill(&s, 0x3, &a, &from) == -1, "only a controller on a player the game does not read moves");
+    pad_slot_press(&s, &c, 5);
+    CHECK(pad_slot_fill(&s, 0x3, &c, &from) == 1 && from == 2 && pad_slot_of(&s, &c) == 1 && pad_slot_mask(&s) == 0x3, "a game for two: player 3's controller presses and is player 2");
+    CHECK(!strcmp(s.last[1], "Xbox Wireless Controller") && !s.last[2][0] && s.pressed[1] == 5 && !s.pressed[2], "its name and press time go with it");
+    CHECK(pad_slot_fill(&s, 0x3, NULL, &from) == -1, "nothing more to move");
+    CHECK(pad_slot_take(&s, &d, "Pro Controller") == 2 && pad_slot_fill(&s, 0x3, NULL, &from) == -1 && pad_slot_of(&s, &d) == 2, "no free player the game reads: it stays unused");
+
+    // Three controllers for two players: whoever presses gets the free player, not the lowest slot
+    CHECK(pad_slot_take(&s, &e, "8BitDo") == 3 && pad_slot_free(&s, &c) == 1, "players 3 and 4 unused, player 2 freed");
+    pad_slot_press(&s, &d, 10); pad_slot_press(&s, &e, 20);
+    CHECK(pad_slot_fill(&s, 0x3, &e, &from) == 1 && from == 3 && pad_slot_of(&s, &e) == 1 && pad_slot_of(&s, &d) == 2, "player 4 presses: it is player 2, player 3 stays unused");
+    CHECK(pad_slot_free(&s, &e) == 1 && pad_slot_take(&s, &e, "8BitDo") == 1, "it reconnects: its player kept");
+    CHECK(pad_slot_free(&s, &e) == 1 && pad_slot_take(&s, &c, "DualSense") == 3, "another controller connects past the kept player");
+    pad_slot_press(&s, &c, 30);
+    CHECK(pad_slot_fill(&s, 0x3, NULL, &from) == 1 && from == 3 && pad_slot_of(&s, &c) == 1, "the applet: the one that pressed last moves first");
+    memset(&s, 0, sizeof s);
+    pad_slot_take(&s, &a, "a"); pad_slot_take(&s, &b, "b"); pad_slot_take(&s, &c, "c"); pad_slot_free(&s, &a);
+    CHECK(pad_slot_fill(&s, 0x1, NULL, &from) == 0 && from == 1, "none pressed: the lowest slot moves");
+
+    // Through hle_hid.c: the supported npads and the controller applet call the front end's callback before the applet counts
+    g_mode = 1; memset(&fs, 0, sizeof fs); fill_calls = 0;
+    ids((const uint32_t[]){0, 1, 2, 3, 4, 5, 6, 7, NPAD_HANDHELD}, 9);
+    dm_pad_usable_callback(test_fill);
+    pad_slot_take(&fs, &a, "Odin Controller"); pad_slot_take(&fs, &b, "Xbox Wireless Controller"); pad_slot_take(&fs, &c, "Xbox Wireless Controller");
+    pad_slot_free(&fs, &b); dm_pad_players(pad_slot_mask(&fs));
+    CHECK(dm_pad_usable() == 0xff, "every npad supported: every player read");
+    ids((const uint32_t[]){0, 1}, 2);
+    CHECK(dm_pad_usable() == 0x3 && fill_calls == 1, "a game for two reads players 1 and 2; the front end is told");
+    CHECK(pad_slot_of(&fs, &c) == 1 && h_hid_GetStyle(&(uint32_t){1}) == STYLE_FULLKEY, "the controller on player 3 is player 2 now");
+    pad_slot_free(&fs, &c);
+    CHECK(pad_slot_take(&fs, &d, "Pro Controller") == 2, "another controller passes player 2, kept for the one that went");
+    dm_pad_players(pad_slot_mask(&fs));   // a front end that did not fill at once
+    int32_t info[2]; int8_t arg[8] = {2, 2};
+    CHECK(h_hid_ShowCtrl(info, arg) == RES_OK && info[0] == 2 && fill_calls == 2 && pad_slot_of(&fs, &d) == 1, "the controller applet assigns the unused controller first: two players, OK");
+    ids((const uint32_t[]){0, NPAD_HANDHELD}, 2);
+    CHECK(dm_pad_usable() == 0xff, "a one-player game: nothing to move (further controllers feed player 1)");
+    dm_pad_usable_callback(NULL); dm_pad_players(1); memset(&fs, 0, sizeof fs);
+}
+
 static dm_haptic_state vibration[DM_PLAYERS];
 static int vibration_calls;
 static void vibration_sink(dm_haptic_state s) { vibration[s.player] = s; vibration_calls++; }
@@ -513,6 +566,7 @@ int main(void) {
     t_motion_live();
     t_motion_hid();
     t_rec();
+    t_fill();
     printf("hid players: %d checks, %d failed\n", checks, fails);
     return fails != 0;
 }

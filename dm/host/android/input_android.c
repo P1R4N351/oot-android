@@ -60,6 +60,22 @@ static const nxin_map *pad_map(void) {   // under g_mu
     }
     return g_map_on ? &g_map : NULL;
 }
+// Controllers on players the game does not read move to free players it reads (pad_slot_fill), with their state, in the order they press a button, as a Switch's controller
+// applet takes them: one moves on its own press (nxhost_input_key), and from hle_hid.c, when the supported npads change or the controller applet opens, the ones that pressed
+// last move first. A disconnect moves no one: the freed player stays kept for its controller until another one presses. The launcher sees the new player through
+// nxhost_input_device_player (its rumble follows: GameActivity.padPlayers)
+static void fill(const void *only) {   // under g_mu
+    uint32_t usable = dm_pad_usable(); int from, to;
+    while ((to = pad_slot_fill(&g_slots, usable, only, &from)) >= 0) {
+        g_pad[to] = g_pad[from]; g_labelled[to] = g_labelled[from]; g_pm_cal[to] = g_pm_cal[from]; g_pm_log[to] = g_pm_log[from];
+        memset(&g_pad[from], 0, sizeof g_pad[from]); g_labelled[from] = 0; pad_motion_cal_reset(&g_pm_cal[from]); g_pm_log[from] = 0;
+        dm_pad_set_player(from, 0, 0, 0, 0, 0); dm_motion_clear(from);
+        dm_pad_players(pad_slot_mask(&g_slots)); publish_pad(to);
+        LOG("input: device %d (%s) moves from player %d to player %d: the game reads no player %d", (int)((intptr_t)g_slots.owner[to] - 0x100000000ll),
+            g_slots.last[to][0] ? g_slots.last[to] : "unnamed", from + 1, to + 1, from + 1);
+    }
+}
+static void on_usable(void) { pthread_mutex_lock(&g_mu); fill(NULL); pthread_mutex_unlock(&g_mu); }
 static int take(int device, const char *name, int labelled) {   // under g_mu
     int had = pad_slot_of(&g_slots, owner(device)) >= 0;
     int p = pad_slot_take(&g_slots, owner(device), name);
@@ -69,6 +85,7 @@ static int take(int device, const char *name, int labelled) {   // under g_mu
         g_labelled[p] = e ? atoi(e) : labelled; memset(&g_pad[p], 0, sizeof g_pad[p]); g_pad[p].map = pad_map();   // 1: all four face buttons by label; 2: A and B by label, X and Y by position
         dm_pad_players(pad_slot_mask(&g_slots));
         LOG("input: device %d (%s) is player %d%s", device, name && *name ? name : "unnamed", p + 1, g_labelled[p] == 1 ? ", face buttons by label" : g_labelled[p] == 2 ? ", A and B by label, X and Y by position" : "");
+        static int registered; if (!registered) { registered = 1; dm_pad_usable_callback(on_usable); }
     }
     return p;
 }
@@ -105,6 +122,10 @@ bool nxhost_input_key(int device, int keycode, bool down) {
     if (!nxin_key_button(keycode, 0) && !(m && src >= 0 && (m->set & (1u << src)))) { pthread_mutex_unlock(&g_mu); return false; }   // BUTTON_C / Z only when mapped
     if (g_held) { pthread_mutex_unlock(&g_mu); return true; }
     int p = take(device, NULL, 0);
+    if (p >= 0 && down) {   // a press: on a player the game does not read, the controller takes a free one it reads (its press goes on to the game there)
+        pad_slot_press(&g_slots, owner(device), now_ns());
+        if (!(dm_pad_usable() >> p & 1)) { fill(owner(device)); p = pad_slot_of(&g_slots, owner(device)); }
+    }
     if (p >= 0 && nxin_pad_key(&g_pad[p], keycode, down, g_labelled[p])) publish_pad(p);
     pthread_mutex_unlock(&g_mu);
     return true;

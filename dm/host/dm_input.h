@@ -25,6 +25,8 @@ uint64_t dm_cheats_keys(void);
 void dm_pad_set(uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry);
 void dm_pad_set_player(int player, uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry);   // player 0..DM_PLAYERS-1 (player 1..8)
 void dm_pad_players(uint32_t mask);   // bit p: player p + 1 has a controller; player 1 always counts as connected (the keyboard, the touch gamepad, DM_KEYS)
+uint32_t dm_pad_usable(void);   // bit p: the game reads player p + 1 (its npad is supported; every player in a one-player game), for pad_slot_fill
+void dm_pad_usable_callback(void (*fn)(void));   // the front end's: called on a guest thread when the supported npads change and when the controller applet opens
 // Live controller motion (hle_hid.c, motion_fusion.h): player 0..DM_PLAYERS-1's gyro and accelerometer as GameController reports them, acceleration in G (gravity direction,
 // (0, 0, -1) face up) and rotation rate in rad/s, in Apple's controller frame. While samples keep coming the player's six-axis sensor follows the controller; dm_motion_clear stops it
 void dm_motion_set(int player, const float acc[3], const float rot[3]);
