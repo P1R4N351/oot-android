@@ -4,6 +4,7 @@
 #include "../front.h"
 #include "../hle_haptics.h"
 #include "../pad_slots.h"
+#include "../pad_join.h"
 #include "input_android.h"
 #include "pad_motion.h"
 #include <android/looper.h>
@@ -29,7 +30,12 @@ static pad_motion_cal g_pm_cal[DM_PLAYERS];   // each controller's rest offset o
 static int g_pm_log[DM_PLAYERS];
 static int g_held;   // the text input box is up: pad and touch events are dropped (android_text_input)
 static uint64_t g_since[DM_PLAYERS];   // when each player's controller connected (now_ns), for pad_slot_back
-// The connected devices' names and labels: a controller the game let go (DisconnectNpad) has no player until its next press, which connects it again as it was
+// The controller applet's join screen (android_controller_support), under g_mu: while g_joining the pad keys go to g_join, and the guest thread waits on g_join_cv
+static pad_join g_join; static int g_joining;
+static pthread_cond_t g_join_cv = PTHREAD_COND_INITIALIZER;
+static const char g_handheld_tag;
+#define HANDHELD ((const void *)&g_handheld_tag)   // the on-screen controls as the console's handheld controller: player 1's when no controller holds it
+// The connected devices' names and labels: a controller the game let go (DisconnectNpad) or the join screen left out has no player until its next press, which connects it again as it was
 static struct { int device, labelled; char name[64]; } g_known[32];
 static void known_set(int device, const char *name, int labelled) {   // under g_mu
     int k = -1; for (int i = 0; i < 32; i++) if (g_known[i].name[0] && g_known[i].device == device) k = i;
@@ -119,7 +125,7 @@ static void on_assign(int op, int a, int b) {
 static int take(int device, const char *name, int labelled) {   // under g_mu
     int had = pad_slot_of(&g_slots, owner(device)) >= 0, k = known_of(device);
     if (name && !had) known_set(device, name, labelled);
-    else if (!name && !had && k >= 0) { name = g_known[k].name; labelled = g_known[k].labelled; }   // connected again after the game let it go
+    else if (!name && !had && k >= 0) { name = g_known[k].name; labelled = g_known[k].labelled; }   // connected again after the game or the join screen let it go
     int p = pad_slot_take(&g_slots, owner(device), name);
     if (p < 0) { if (!had) LOG("[RED] input: device %d (%s): every player is taken", device, name ? name : "?"); return -1; }
     if (!had) {
@@ -150,6 +156,7 @@ void nxhost_input_device_removed(int device) {
                 (int)((intptr_t)g_slots.owner[p] - 0x100000000ll), g_slots.last[p], q + 1, p + 1, device);
         }
     }
+    if (g_joining) { pad_join_gone(&g_join, owner(device)); pthread_cond_broadcast(&g_join_cv); }
     int k = known_of(device); if (k >= 0) g_known[k].name[0] = 0;
     pthread_mutex_unlock(&g_mu);
 }
@@ -171,6 +178,18 @@ bool nxhost_input_key(int device, int keycode, bool down) {
     pthread_mutex_lock(&g_mu);
     const nxin_map *m = pad_map(); int src = nxin_src_of_key(keycode);
     if (!nxin_key_button(keycode, 0) && !(m && src >= 0 && (m->set & (1u << src)))) { pthread_mutex_unlock(&g_mu); return false; }   // BUTTON_C / Z only when mapped
+    if (g_joining) {   // the join screen: L, R, A and B as the game's buttons (Button mapping, labels) go to it, nothing to the game
+        int q = pad_slot_of(&g_slots, owner(device)); if (q < 0) q = take(device, NULL, 0);
+        nxin_pad probe = {0}; probe.map = m;
+        uint64_t b = nxin_pad_button(&probe, keycode, q >= 0 ? g_labelled[q] : 0);
+        if (b == DM_BTN_L || b == DM_BTN_R || b == DM_BTN_A || b == DM_BTN_B) {
+            int p = pad_join_key(&g_join, owner(device), b, down);
+            int k = known_of(device);
+            if (p >= 0) LOG("controller applet: device %d (%s) joins as player %d", device, k >= 0 ? g_known[k].name : "unnamed", p + 1);
+            if (g_join.done) pthread_cond_broadcast(&g_join_cv);
+        }
+        pthread_mutex_unlock(&g_mu); return true;
+    }
     if (g_held) { pthread_mutex_unlock(&g_mu); return true; }
     int p = take(device, NULL, 0);
     if (p >= 0 && down) {   // a press: on a player the game does not read, the controller takes a free one it reads (its press goes on to the game there)
@@ -186,7 +205,7 @@ bool nxhost_input_axes(int device, const int *axes, const float *values, int n) 
     if (!nxin_pad_axes(&probe, axes, values, n)) return false;
     pthread_mutex_lock(&g_mu);
     if (g_held) { pthread_mutex_unlock(&g_mu); return true; }
-    // A known controller without a player (the game let it go) connects again on a button press, as on a console, not on a stick
+    // A known controller without a player (the game or the join screen let it go) connects again on a button press, as on a console, not on a stick
     int p = pad_slot_of(&g_slots, owner(device)) < 0 && known_of(device) >= 0 ? -1 : take(device, NULL, 0);
     if (p >= 0) { nxin_pad_axes(&g_pad[p], axes, values, n); publish_pad(p); }
     pthread_mutex_unlock(&g_mu);
@@ -279,6 +298,96 @@ int android_user_select(const char *const *names, const int *offered, int n, int
     int r = fn(atomic_load(&g_us_ctx), names, offered, n, def);
     input_hold(0);
     return r;
+}
+
+// ---- Controller applet: the join screen (pad_join.h), drawn by the launcher (CtrlScreen.java), fed here by the pad keys (nxhost_input_key) and the screen's buttons ----
+static nxhost_ctrl_fn _Atomic g_ctrl_fn; static void *_Atomic g_ctrl_ctx;
+void nxhost_ctrl_callback(nxhost_ctrl_fn fn, void *ctx) {
+    atomic_store(&g_ctrl_ctx, ctx); atomic_store(&g_ctrl_fn, fn);
+    LOG("input: the controller applet goes to the launcher's join screen%s", fn ? "" : " (none: it answers at once)");
+}
+static int device_of(const void *o) { return o == HANDHELD ? -2 : o ? (int)((intptr_t)o - 0x100000000ll) : -1; }
+static const char *name_of(const void *o) {   // under g_mu
+    if (o == HANDHELD) return "On-screen controls";
+    int k = known_of(device_of(o)); if (k >= 0) return g_known[k].name;
+    int q = pad_slot_of(&g_slots, o); return q >= 0 && g_slots.last[q][0] ? g_slots.last[q] : "Controller";
+}
+// The joined controllers become the players (the on-screen controls on player 1 leave its slot empty: they feed player 1 as before); the others are not connected until they
+// press again. Their buttons start released (the input was held), motion calibrations go with them
+static void join_apply(void) {   // under g_mu
+    pad_slots ns; memset(&ns, 0, sizeof ns);
+    int lab[DM_PLAYERS] = {0}, plog[DM_PLAYERS] = {0}; pad_motion_cal cal[DM_PLAYERS]; uint64_t since[DM_PLAYERS] = {0};
+    for (int p = 0; p < DM_PLAYERS; p++) {
+        pad_motion_cal_reset(&cal[p]);
+        const void *o = g_join.player[p]; int q = o && o != HANDHELD ? pad_slot_of(&g_slots, o) : -1;
+        if (q < 0) continue;
+        ns.owner[p] = o; memcpy(ns.last[p], g_slots.last[q], sizeof ns.last[p]); ns.pressed[p] = g_slots.pressed[q];
+        lab[p] = g_labelled[q]; cal[p] = g_pm_cal[q]; plog[p] = g_pm_log[q]; since[p] = g_since[q];
+    }
+    for (int q = 0; q < DM_PLAYERS; q++) if (g_slots.owner[q] && pad_slot_of(&ns, g_slots.owner[q]) < 0)
+        LOG("controller applet: device %d (%s) did not join: not connected until it presses a button", device_of(g_slots.owner[q]), name_of(g_slots.owner[q]));
+    g_slots = ns;
+    for (int p = 0; p < DM_PLAYERS; p++) {
+        g_labelled[p] = lab[p]; g_pm_cal[p] = cal[p]; g_pm_log[p] = plog[p]; g_since[p] = since[p];
+        memset(&g_pad[p], 0, sizeof g_pad[p]); g_pad[p].map = pad_map(); publish_pad(p); dm_motion_clear(p);
+        if (g_join.player[p]) LOG("controller applet: player %d is device %d (%s)", p + 1, device_of(g_join.player[p]), name_of(g_join.player[p]));
+    }
+    dm_pad_players(pad_slot_mask(&g_slots));
+}
+int android_controller_support(const void *arg, int *count) {
+    nxhost_ctrl_fn fn = atomic_load(&g_ctrl_fn);
+    if (!fn || !arg) return -2;
+    input_hold(1);
+    pthread_mutex_lock(&g_mu);
+    const void *held[DM_PLAYERS]; for (int p = 0; p < DM_PLAYERS; p++) held[p] = g_slots.owner[p];
+    if (!held[0]) held[0] = HANDHELD;   // no controller on player 1: the on-screen controls are its controller, as a console's handheld one
+    pad_join_start(&g_join, (const ctrl_arg *)arg, held, dm_pad_usable()); g_joining = 1;
+    LOG("controller applet: the join screen opens for %d to %d players%s, %d already joined", g_join.min, g_join.max, g_join.a.take_over ? "" : " (no take over)", pad_join_count(&g_join));
+    pthread_mutex_unlock(&g_mu);
+    fn(atomic_load(&g_ctrl_ctx), 1);
+    pthread_mutex_lock(&g_mu);
+    while (!g_join.done) pthread_cond_wait(&g_join_cv, &g_mu);
+    int ok = g_join.done == 1;
+    if (ok) { join_apply(); if (count) *count = pad_join_count(&g_join); }
+    g_joining = 0;
+    pthread_mutex_unlock(&g_mu);
+    fn(atomic_load(&g_ctrl_ctx), 0);
+    input_hold(0);
+    return ok;
+}
+static void tabless(char *d, size_t n, const char *s) {   // a field of the state text: no tabs or line breaks
+    size_t i = 0; for (; s && s[i] && i + 1 < n; i++) d[i] = s[i] == '\t' || s[i] == '\n' || s[i] == '\r' ? ' ' : s[i];
+    if (n) d[i < n ? i : n - 1] = 0;
+}
+int nxhost_ctrl_state(char *buf, int n) {
+    if (!buf || n <= 0) return 0;
+    pthread_mutex_lock(&g_mu);
+    int len;
+    if (!g_joining) len = snprintf(buf, (size_t)n, "closed\n");
+    else {
+        len = snprintf(buf, (size_t)n, "open\t%d\t%d\t%d\t%d\t%d\n", g_join.min, g_join.max, g_join.a.single, pad_join_can_end(&g_join),
+                       !g_join.player[0] && pad_join_of(&g_join, HANDHELD) < 0);
+        for (int p = 0; p < g_join.max && len < n; p++) {
+            const void *o = g_join.player[p]; char name[64], text[0x81], col[12] = "-";
+            tabless(name, sizeof name, o ? name_of(o) : ""); tabless(text, sizeof text, g_join.a.text_on ? g_join.a.text[p] : "");
+            if (g_join.a.color_on) snprintf(col, sizeof col, "%02x%02x%02x%02x", g_join.a.color[p][0], g_join.a.color[p][1], g_join.a.color[p][2], g_join.a.color[p][3]);
+            len += snprintf(buf + len, (size_t)(n - len), "%d\t%d\t%s\t%s\t%s\n", p + 1, device_of(o), name, col, text);
+        }
+    }
+    pthread_mutex_unlock(&g_mu);
+    return len < n ? len : n - 1;
+}
+void nxhost_ctrl_button(int what) {
+    pthread_mutex_lock(&g_mu);
+    if (g_joining) {
+        if (what == NXHOST_CTRL_CANCEL) pad_join_cancel(&g_join);
+        else if (what == NXHOST_CTRL_OK) pad_join_finish(&g_join);
+        else if (what == NXHOST_CTRL_JOIN_TOUCH && !g_join.player[0] && pad_join_of(&g_join, HANDHELD) < 0) {
+            g_join.player[0] = HANDHELD; g_join.provisional = 0; LOG("controller applet: the on-screen controls join as player 1");
+        }
+        pthread_cond_broadcast(&g_join_cv);
+    }
+    pthread_mutex_unlock(&g_mu);
 }
 
 // ---- Motion: ASensorManager on a looper thread of its own ----

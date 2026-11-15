@@ -15,6 +15,7 @@
 #include <time.h>
 #include <math.h>
 #include "motion_fusion.h"
+#include "pad_join.h"
 
 enum { NPAD_NO1 = 0, NPAD_HANDHELD = 0x20 };
 enum { STYLE_FULLKEY = 1u << 0, STYLE_HANDHELD = 1u << 1, STYLE_JOYDUAL = 1u << 2, STYLE_JOYLEFT = 1u << 3, STYLE_JOYRIGHT = 1u << 4 };
@@ -558,13 +559,25 @@ HLE_FORCE("_ZN2nn3hid18SwapNpadAssignmentERKjS2_", "swap the controllers of two 
 // L/R assignment mode: Joy-Con pairs re-pair by L + R (and a single Joy-Con by SL + SR); the host has no Joy-Con, so it only notes it
 HLE_FORCE("_ZN2nn3hid21StartLrAssignmentModeEv", "L/R assignment mode (Joy-Con pairing by L + R); the host has no Joy-Con and only logs it", void, h_hid_LrStart, void) { LOG("hid: the game starts L/R assignment mode"); }
 HLE_FORCE("_ZN2nn3hid20StopLrAssignmentModeEv", "L/R assignment mode (Joy-Con pairing by L + R); the host has no Joy-Con and only logs it", void, h_hid_LrStop, void) { LOG("hid: the game stops L/R assignment mode"); }
-// Controller applet (system UI): report the connected players right away, with player 1's controller selected. ControllerSupportResultInfo = { int playerCount; uint32_t selectedId; };
-// ControllerSupportArg starts with { int8 playerCountMin, playerCountMax }: the count is capped at the maximum. Fewer players than the minimum: on a Switch the applet stays open
-// until enough controllers connect or the player closes it, and the SDK's ShowControllerSupportCore (Mario Kart 8 Deluxe 4.0.0 sdk+0x24eeb0) turns the applet's result into
-// 0 success, 2 → 2202-3102, anything else → ResultControllerSupportCanceled (2202-3101). The host has nothing to wait for, so it answers as the player closing it. An OK with
-// fewer players is an answer a Switch never gives: Mario Kart 8 Deluxe asks for two in 2P and opened the applet again every few frames on it (GitHub issue #550)
+// Controller applet (system UI). ControllerSupportResultInfo = { int playerCount; uint32_t selectedId; }; ControllerSupportArg (pad_join.h) starts with { int8 playerCountMin,
+// playerCountMax }. The SDK's ShowControllerSupportCore (Mario Kart 8 Deluxe 4.0.0 sdk+0x24eeb0) turns the applet's result into 0 success, 2 → 2202-3102, anything else →
+// ResultControllerSupportCanceled (2202-3101).
+// With a front end that has a join screen (Android's launcher, front_controller_support), the applet is that screen, as on a console: the controllers join by L + R, A ends it
+// and B or Back cancels it, and the game's thread waits meanwhile; the joined controllers are then its players, player 1's npad selected.
+// Without one (the Mac, iOS), it answers at once with the connected players, player 1's controller selected, the count capped at the maximum. Fewer players than the
+// minimum: the host has nothing to wait for, so it answers as the player closing it. An OK with fewer players is an answer a Switch never gives: Mario Kart 8 Deluxe asks for two
+// in 2P and opened the applet again every few frames on it (GitHub issue #550)
 #define RES_CTRL_CANCELED (202u | 3101u << 9)
+__attribute__((weak)) int front_controller_support(const void *arg, int *count) { (void)arg; (void)count; return -2; }
 static Result ctrl_support(int32_t *info, const int8_t *arg) {
+    ctrl_arg a; ctrl_arg_parse(&a, (const uint8_t *)arg);
+    int joined = 0, r = front_controller_support(&a, &joined);
+    if (r != -2) {
+        LOG("hid controller applet: %d to %d players wanted%s%s: %s, %d player%s", a.min, a.single ? 1 : a.max, a.single ? ", single mode" : "", a.take_over ? "" : ", no take over",
+            r == 1 ? "OK" : "canceled", joined, joined == 1 ? "" : "s");
+        if (info) { info[0] = r == 1 ? joined : 0; info[1] = (int32_t)connected_id(); }
+        return r == 1 ? RES_OK : RES_CTRL_CANCELED;
+    }
     usable_changed();   // as the applet assigns them: a controller on a player the game does not read takes a free one it reads before the count
     int count = 0; for (int p = 0; p < DM_PLAYERS; p++) count += reported(p);
     int canceled = arg && arg[0] > count;
