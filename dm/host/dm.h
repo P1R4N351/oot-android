@@ -82,6 +82,7 @@ typedef struct {
 extern module_t *g_mod;         // allocated once from the NSO list and NRO manifest; module addresses stay stable
 extern int g_nmod;
 // main's build ID (empty if none): code with fixed addresses in a game's module runs only on the build they were found in
+void dm_graphics_size(int *w, int *h);   // hle_oe.c: DM_GRAPHICS_SIZE or the in-game panel's, 0x0 = the game's own (a game's size gate reads it)
 static inline const char *dm_main_build(void) { for (int i = 0; i < g_nmod; i++) if (!strcmp(g_mod[i].name, "main")) return g_mod[i].build_id; return ""; }
 // Four thread-local slots: K18 = the Switch's x18, KTLS = tpidr_el0, KTLR = tpidrro_el0 (ThreadLocalRegion), KGATE = host gate entry (dm_slot_get / dm_slot_set, plat.h);
 // where each lies is written into the key page by the loader
@@ -116,7 +117,8 @@ enum { OBS_UE_MALLOC = 21,                                       // Unreal's FMa
        OBS_OOT_WIDE = 31,                                               // Ocarina of Time (main v131072): 3D camera projections about to be read (register in the parameter bits 0-4) and the 2D layer sites (kind in bits 5 up: HUD, movie, save picture) (android/oot_wide.c)
        OBS_DKB_WIDE = 32,                                               // Donkey Kong Bananza (main v458752): the scene camera's updater about to be read (register in the parameter bits 0-4) and the UI projection copies (kind in bits 5 up) (android/dkb_wide.c)
        OBS_MKW_WIDE = 33,                                               // Mario Kart World (main 1.8.0): camera aspect stores (register in the parameter bits 0-4) and the 2D layer's projection reads (kind in bits 5 up) (android/mkw_wide.c)
-       OBS_MAX = 34 };   // 28-30 are Pokopia's camera gates on its own branch (android/pkp_aspect.c)
+       OBS_MTF_SIZE = 34,                                               // Mario Tennis Fever (nro0 1.1.1): its scenes' size just computed from the graphics scale (android/mtf_size.c)
+       OBS_MAX = 35 };   // 28-30 are Pokopia's camera gates on its own branch (android/pkp_aspect.c)
 // A gate number's bits from 8 up are a parameter for its callback (OBS_REGION_GOT: the register that holds the address). Callbacks read the registers; a write to x0–x29 takes
 // effect when the gate returns (entry.S restores them from the frame), which OBS_STDALLOC_INIT and OBS_UE_REGION do
 void gate_obs_set(int id, void (*fn)(uint64_t *regs, int param));
