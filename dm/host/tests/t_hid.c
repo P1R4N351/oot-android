@@ -184,6 +184,30 @@ static void t_fill(void) {
     pad_slot_take(&s, &a, "a"); pad_slot_take(&s, &b, "b"); pad_slot_take(&s, &c, "c"); pad_slot_free(&s, &a);
     CHECK(pad_slot_fill(&s, 0x1, NULL, &from) == 0 && from == 1, "none pressed: the lowest slot moves");
 
+    // pad_slot_back: the same controller listed again as a new device before the old one went (Super Mario Bros. Wonder's log: device 18 on player 2, device 19 on player 3,
+    // device 18 removed; Wonder reads players 1-4, so player 3 was read and nothing else moved it, and the game asked for three players)
+    static char x18, x19, other; uint64_t since[DM_PLAYERS] = {0};
+    memset(&s, 0, sizeof s);
+    pad_slot_take(&s, &a, "Odin Controller"); since[0] = 1;
+    pad_slot_take(&s, &x18, "Xbox Wireless Controller"); since[1] = 100;
+    CHECK(pad_slot_take(&s, &x19, "Xbox Wireless Controller") == 2, "the new device takes player 3");
+    since[2] = 150;
+    CHECK(pad_slot_free(&s, &x18) == 1 && pad_slot_back(&s, 1, since, 200, 3000) == 2 && pad_slot_of(&s, &x19) == 1 && !s.owner[2] && since[1] == 150,
+          "the old device goes: the new one takes player 2 back");
+    CHECK(!s.last[2][0] && !strcmp(s.last[1], "Xbox Wireless Controller"), "its name goes with it");
+    pad_slot_take(&s, &other, "Xbox Wireless Controller"); since[2] = 300;
+    CHECK(pad_slot_free(&s, &x19) == 1 && pad_slot_back(&s, 1, since, 5000, 3000) == -1 && pad_slot_of(&s, &other) == 2, "one that connected long before stays: another controller of that model");
+    pad_slot_take(&s, &x19, "8BitDo"); since[1] = 6000;
+    CHECK(pad_slot_free(&s, &a) == 0 && pad_slot_back(&s, 0, since, 6100, 3000) == -1, "another name never takes it");
+
+    // pad_slot_swap: the game's SwapNpadAssignment (Super Mario Bros. Wonder: the controller that presses L + R at its title is swapped onto player 1)
+    memset(&s, 0, sizeof s);
+    pad_slot_take(&s, &a, "Odin Controller"); pad_slot_take(&s, &x19, "Xbox Wireless Controller"); pad_slot_press(&s, &x19, 9);
+    pad_slot_swap(&s, 0, 1);
+    CHECK(pad_slot_of(&s, &x19) == 0 && pad_slot_of(&s, &a) == 1 && !strcmp(s.last[0], "Xbox Wireless Controller") && s.pressed[0] == 9 && !s.pressed[1], "the two trade players, names and presses");
+    pad_slot_swap(&s, 1, 3);
+    CHECK(pad_slot_of(&s, &a) == 3 && !s.owner[1] && !strcmp(s.last[1], ""), "a swap with an empty player moves the controller there");
+
     // Through hle_hid.c: the supported npads and the controller applet call the front end's callback before the applet counts
     g_mode = 1; memset(&fs, 0, sizeof fs); fill_calls = 0;
     ids((const uint32_t[]){0, 1, 2, 3, 4, 5, 6, 7, NPAD_HANDHELD}, 9);
@@ -202,6 +226,25 @@ static void t_fill(void) {
     ids((const uint32_t[]){0, NPAD_HANDHELD}, 2);
     CHECK(dm_pad_usable() == 0xff, "a one-player game: nothing to move (further controllers feed player 1)");
     dm_pad_usable_callback(NULL); dm_pad_players(1); memset(&fs, 0, sizeof fs);
+}
+
+// SwapNpadAssignment and DisconnectNpad reach the front end with players (player 1 on the connected npad: No1 docked, Handheld in handheld mode)
+static int assign_op = -1, assign_a = -1, assign_b = -1, assign_calls;
+static void test_assign(int op, int a, int b) { assign_op = op; assign_a = a; assign_b = b; assign_calls++; }
+static void t_assign(void) {
+    dm_pad_assign_callback(test_assign); g_mode = 1;
+    h_hid_Swap(&(uint32_t){0}, &(uint32_t){1});
+    CHECK(assign_calls == 1 && assign_op == DM_PAD_SWAP && assign_a == 0 && assign_b == 1, "docked: No1 and No2 are players 1 and 2");
+    h_hid_Disconnect(&(uint32_t){2});
+    CHECK(assign_calls == 2 && assign_op == DM_PAD_DISCONNECT && assign_a == 2, "DisconnectNpad(No3): player 3");
+    g_mode = 0;
+    h_hid_Swap(&(uint32_t){NPAD_HANDHELD}, &(uint32_t){1});
+    CHECK(assign_calls == 3 && assign_a == 0 && assign_b == 1, "handheld: Handheld is player 1");
+    h_hid_Swap(&(uint32_t){0}, &(uint32_t){1});
+    CHECK(assign_calls == 3, "handheld: No1 has no player, nothing to swap");
+    h_hid_Swap(&(uint32_t){1}, &(uint32_t){1});
+    CHECK(assign_calls == 3, "an npad with itself: nothing");
+    dm_pad_assign_callback(NULL); g_mode = 1;
 }
 
 static dm_haptic_state vibration[DM_PLAYERS];
@@ -567,6 +610,7 @@ int main(void) {
     t_motion_hid();
     t_rec();
     t_fill();
+    t_assign();
     printf("hid players: %d checks, %d failed\n", checks, fails);
     return fails != 0;
 }

@@ -532,14 +532,32 @@ HLE_FORCE("_ZN2nn3hid13GetNpadStatesEPNS0_17NpadHandheldStateEiRKj", "handheld c
 HLE_FORCE("_ZN2nn3hid13GetNpadStatesEPNS0_16NpadJoyDualStateEiRKj", "dual Joy-Con states (not connected on the host)", int, h_hid_StatesJoyDual, NpadState *s, int n, const uint32_t *id) { return states(s, n, *id, STYLE_JOYDUAL); }
 HLE_FORCE("_ZN2nn3hid13GetNpadStatesEPNS0_16NpadJoyLeftStateEiRKj", "left Joy-Con states (not connected on the host)", int, h_hid_StatesJoyLeft, NpadState *s, int n, const uint32_t *id) { return states(s, n, *id, STYLE_JOYLEFT); }
 HLE_FORCE("_ZN2nn3hid13GetNpadStatesEPNS0_17NpadJoyRightStateEiRKj", "right Joy-Con states (not connected on the host)", int, h_hid_StatesJoyRight, NpadState *s, int n, const uint32_t *id) { return states(s, n, *id, STYLE_JOYRIGHT); }
-HLE_FORCE("_ZN2nn3hid14DisconnectNpadERKj", "disconnect a controller; ignored by the host", void, h_hid_Disconnect, const uint32_t *id) { (void)id; }
+// Assignments the game makes (SwapNpadAssignment, DisconnectNpad) change which controller is on which npad, so they go to the front end, which holds the controllers
+// (dm_pad_assign_callback; android's input_android.c). A game that lets whichever controller presses at its title be player 1 swaps that controller onto player 1's npad:
+// Super Mario Bros. Wonder does on L + R at its title, and with the swap ignored the game took the Xbox controller for player 1 while the host fed player 1 from the Odin
+// controller, so neither drove what the game expected. The player of an npad: player 1 on the connected one (Handheld in handheld mode, else No1), player n on No n
+static void (*_Atomic g_assign_fn)(int op, int a, int b);
+void dm_pad_assign_callback(void (*fn)(int op, int a, int b)) { atomic_store(&g_assign_fn, fn); }
+static int player_of_npad(uint32_t id) { return id == connected_id() ? 0 : id > 0 && id < DM_PLAYERS ? (int)id : -1; }
+HLE_FORCE("_ZN2nn3hid14DisconnectNpadERKj", "disconnect a controller: the front end lets its controller go until it presses again", void, h_hid_Disconnect, const uint32_t *id) {
+    int p = id ? player_of_npad(*id) : -1;
+    LOG("hid: the game disconnects npad %#x (player %d)", id ? *id : 0, p + 1);
+    void (*fn)(int, int, int) = atomic_load(&g_assign_fn);
+    if (p >= 0 && fn) { fn(DM_PAD_DISCONNECT, p, 0); style_changed(id ? *id : 0); }
+}
 static uint32_t g_hold_type;
 HLE_FORCE("_ZN2nn3hid18SetNpadJoyHoldTypeENS0_15NpadJoyHoldTypeE", "Joy-Con hold orientation; the host only records it", void, h_hid_HoldType, int t) { g_hold_type = (uint32_t)t; }
 HLE_FORCE("_ZN2nn3hid20GetNpadJoyAssignmentERKj", "Joy-Con assignment: dual", int, h_hid_GetJoyAssign, const uint32_t *id) { (void)id; return 0; }
 HLE_FORCE("_ZN2nn3hid30SetNpadJoyAssignmentModeSingleERKj", "Joy-Con single assignment; ignored by the host", void, h_hid_JoySingle, const uint32_t *id) { (void)id; }
-HLE_FORCE("_ZN2nn3hid18SwapNpadAssignmentERKjS2_", "swap controller ids; ignored by the host", void, h_hid_Swap, const uint32_t *a, const uint32_t *b) { (void)a; (void)b; }
-HLE_FORCE("_ZN2nn3hid21StartLrAssignmentModeEv", "L/R assignment mode; ignored by the host", void, h_hid_LrStart, void) {}
-HLE_FORCE("_ZN2nn3hid20StopLrAssignmentModeEv", "L/R assignment mode; ignored by the host", void, h_hid_LrStop, void) {}
+HLE_FORCE("_ZN2nn3hid18SwapNpadAssignmentERKjS2_", "swap the controllers of two npads: the front end's players trade controllers", void, h_hid_Swap, const uint32_t *a, const uint32_t *b) {
+    int pa = a ? player_of_npad(*a) : -1, pb = b ? player_of_npad(*b) : -1;
+    LOG("hid: the game swaps npads %#x and %#x (players %d and %d)", a ? *a : 0, b ? *b : 0, pa + 1, pb + 1);
+    void (*fn)(int, int, int) = atomic_load(&g_assign_fn);
+    if (pa >= 0 && pb >= 0 && pa != pb && fn) { fn(DM_PAD_SWAP, pa, pb); style_changed(*a); style_changed(*b); }
+}
+// L/R assignment mode: Joy-Con pairs re-pair by L + R (and a single Joy-Con by SL + SR); the host has no Joy-Con, so it only notes it
+HLE_FORCE("_ZN2nn3hid21StartLrAssignmentModeEv", "L/R assignment mode (Joy-Con pairing by L + R); the host has no Joy-Con and only logs it", void, h_hid_LrStart, void) { LOG("hid: the game starts L/R assignment mode"); }
+HLE_FORCE("_ZN2nn3hid20StopLrAssignmentModeEv", "L/R assignment mode (Joy-Con pairing by L + R); the host has no Joy-Con and only logs it", void, h_hid_LrStop, void) { LOG("hid: the game stops L/R assignment mode"); }
 // Controller applet (system UI): report the connected players right away, with player 1's controller selected. ControllerSupportResultInfo = { int playerCount; uint32_t selectedId; };
 // ControllerSupportArg starts with { int8 playerCountMin, playerCountMax }: the count is capped at the maximum. Fewer players than the minimum: on a Switch the applet stays open
 // until enough controllers connect or the player closes it, and the SDK's ShowControllerSupportCore (Mario Kart 8 Deluxe 4.0.0 sdk+0x24eeb0) turns the applet's result into

@@ -28,6 +28,16 @@ static uint64_t g_shake_btn;
 static pad_motion_cal g_pm_cal[DM_PLAYERS];   // each controller's rest offset of the gyro (pad_motion.h), under g_mu
 static int g_pm_log[DM_PLAYERS];
 static int g_held;   // the text input box is up: pad and touch events are dropped (android_text_input)
+static uint64_t g_since[DM_PLAYERS];   // when each player's controller connected (now_ns), for pad_slot_back
+// The connected devices' names and labels: a controller the game let go (DisconnectNpad) has no player until its next press, which connects it again as it was
+static struct { int device, labelled; char name[64]; } g_known[32];
+static void known_set(int device, const char *name, int labelled) {   // under g_mu
+    int k = -1; for (int i = 0; i < 32; i++) if (g_known[i].name[0] && g_known[i].device == device) k = i;
+    for (int i = 0; k < 0 && i < 32; i++) if (!g_known[i].name[0]) k = i;
+    if (k < 0) return;
+    g_known[k].device = device; g_known[k].labelled = labelled; snprintf(g_known[k].name, sizeof g_known[k].name, "%s", name && *name ? name : "unnamed");
+}
+static int known_of(int device) { for (int i = 0; i < 32; i++) if (g_known[i].name[0] && g_known[i].device == device) return i; return -1; }
 
 static void touch_once(void) { if (!g_touch_init) { nxin_touch_init(&g_touch); g_touch_init = 1; } }
 static const void *owner(int device) { return (const void *)(intptr_t)((int64_t)device + 0x100000000ll); }   // never NULL, even for device 0
@@ -64,28 +74,61 @@ static const nxin_map *pad_map(void) {   // under g_mu
 // applet takes them: one moves on its own press (nxhost_input_key), and from hle_hid.c, when the supported npads change or the controller applet opens, the ones that pressed
 // last move first. A disconnect moves no one: the freed player stays kept for its controller until another one presses. The launcher sees the new player through
 // nxhost_input_device_player (its rumble follows: GameActivity.padPlayers)
+static void move_state(int from, int to) {   // under g_mu: a controller's state follows it from player from to player to (pad_slots has moved it already)
+    g_pad[to] = g_pad[from]; g_labelled[to] = g_labelled[from]; g_pm_cal[to] = g_pm_cal[from]; g_pm_log[to] = g_pm_log[from]; g_since[to] = g_since[from];
+    memset(&g_pad[from], 0, sizeof g_pad[from]); g_labelled[from] = 0; pad_motion_cal_reset(&g_pm_cal[from]); g_pm_log[from] = 0;
+    dm_pad_set_player(from, 0, 0, 0, 0, 0); dm_motion_clear(from);
+    dm_pad_players(pad_slot_mask(&g_slots)); publish_pad(to);
+}
 static void fill(const void *only) {   // under g_mu
     uint32_t usable = dm_pad_usable(); int from, to;
     while ((to = pad_slot_fill(&g_slots, usable, only, &from)) >= 0) {
-        g_pad[to] = g_pad[from]; g_labelled[to] = g_labelled[from]; g_pm_cal[to] = g_pm_cal[from]; g_pm_log[to] = g_pm_log[from];
-        memset(&g_pad[from], 0, sizeof g_pad[from]); g_labelled[from] = 0; pad_motion_cal_reset(&g_pm_cal[from]); g_pm_log[from] = 0;
-        dm_pad_set_player(from, 0, 0, 0, 0, 0); dm_motion_clear(from);
-        dm_pad_players(pad_slot_mask(&g_slots)); publish_pad(to);
+        move_state(from, to);
         LOG("input: device %d (%s) moves from player %d to player %d: the game reads no player %d", (int)((intptr_t)g_slots.owner[to] - 0x100000000ll),
             g_slots.last[to][0] ? g_slots.last[to] : "unnamed", from + 1, to + 1, from + 1);
     }
 }
 static void on_usable(void) { pthread_mutex_lock(&g_mu); fill(NULL); pthread_mutex_unlock(&g_mu); }
+// The game's own assignments (hle_hid.c): SwapNpadAssignment trades two players' controllers with their state (a game that makes the controller pressing at its title player 1
+// swaps it there); DisconnectNpad lets a player's controller go: it has no player until its next press, which connects it again (take, pad_slot_take: its kept player first)
+static void on_assign(int op, int a, int b) {
+    pthread_mutex_lock(&g_mu);
+    if (op == DM_PAD_SWAP && a >= 0 && b >= 0 && a < DM_PLAYERS && b < DM_PLAYERS && a != b) {
+        pad_slot_swap(&g_slots, a, b);
+        nxin_pad tp = g_pad[a]; g_pad[a] = g_pad[b]; g_pad[b] = tp;
+        int tl = g_labelled[a]; g_labelled[a] = g_labelled[b]; g_labelled[b] = tl;
+        pad_motion_cal tc = g_pm_cal[a]; g_pm_cal[a] = g_pm_cal[b]; g_pm_cal[b] = tc;
+        int tg = g_pm_log[a]; g_pm_log[a] = g_pm_log[b]; g_pm_log[b] = tg;
+        uint64_t ts = g_since[a]; g_since[a] = g_since[b]; g_since[b] = ts;
+        dm_motion_clear(a); dm_motion_clear(b);
+        dm_pad_players(pad_slot_mask(&g_slots));
+        if (g_slots.owner[a]) publish_pad(a); else dm_pad_set_player(a, 0, 0, 0, 0, 0);
+        if (g_slots.owner[b]) publish_pad(b); else dm_pad_set_player(b, 0, 0, 0, 0, 0);
+        LOG("input: the game swaps players %d and %d: player %d is device %d (%s), player %d is device %d (%s)", a + 1, b + 1,
+            a + 1, g_slots.owner[a] ? (int)((intptr_t)g_slots.owner[a] - 0x100000000ll) : -1, g_slots.owner[a] ? g_slots.last[a] : "none",
+            b + 1, g_slots.owner[b] ? (int)((intptr_t)g_slots.owner[b] - 0x100000000ll) : -1, g_slots.owner[b] ? g_slots.last[b] : "none");
+    } else if (op == DM_PAD_DISCONNECT && a >= 0 && a < DM_PLAYERS && g_slots.owner[a]) {
+        int device = (int)((intptr_t)g_slots.owner[a] - 0x100000000ll);
+        pad_slot_free(&g_slots, g_slots.owner[a]);
+        memset(&g_pad[a], 0, sizeof g_pad[a]); dm_pad_set_player(a, 0, 0, 0, 0, 0);
+        dm_pad_players(pad_slot_mask(&g_slots)); dm_motion_clear(a); pad_motion_cal_reset(&g_pm_cal[a]); g_pm_log[a] = 0;
+        LOG("input: the game disconnects player %d: device %d (%s) has no player until it presses a button", a + 1, device, g_slots.last[a]);
+    }
+    pthread_mutex_unlock(&g_mu);
+}
 static int take(int device, const char *name, int labelled) {   // under g_mu
-    int had = pad_slot_of(&g_slots, owner(device)) >= 0;
+    int had = pad_slot_of(&g_slots, owner(device)) >= 0, k = known_of(device);
+    if (name && !had) known_set(device, name, labelled);
+    else if (!name && !had && k >= 0) { name = g_known[k].name; labelled = g_known[k].labelled; }   // connected again after the game let it go
     int p = pad_slot_take(&g_slots, owner(device), name);
     if (p < 0) { if (!had) LOG("[RED] input: device %d (%s): every player is taken", device, name ? name : "?"); return -1; }
     if (!had) {
         const char *e = getenv("DM_PAD_LABELLED");
         g_labelled[p] = e ? atoi(e) : labelled; memset(&g_pad[p], 0, sizeof g_pad[p]); g_pad[p].map = pad_map();   // 1: all four face buttons by label; 2: A and B by label, X and Y by position
+        g_since[p] = now_ns();
         dm_pad_players(pad_slot_mask(&g_slots));
         LOG("input: device %d (%s) is player %d%s", device, name && *name ? name : "unnamed", p + 1, g_labelled[p] == 1 ? ", face buttons by label" : g_labelled[p] == 2 ? ", A and B by label, X and Y by position" : "");
-        static int registered; if (!registered) { registered = 1; dm_pad_usable_callback(on_usable); }
+        static int registered; if (!registered) { registered = 1; dm_pad_usable_callback(on_usable); dm_pad_assign_callback(on_assign); }
     }
     return p;
 }
@@ -99,7 +142,15 @@ void nxhost_input_device_removed(int device) {
         memset(&g_pad[p], 0, sizeof g_pad[p]); dm_pad_set_player(p, 0, 0, 0, 0, 0);
         dm_pad_players(pad_slot_mask(&g_slots)); dm_motion_clear(p); pad_motion_cal_reset(&g_pm_cal[p]); g_pm_log[p] = 0;
         LOG("input: device %d (player %d) removed", device, p + 1);
+        // The same controller listed again as a new device a moment before this one went (Bluetooth): it takes this player back (pad_slot_back)
+        int q = pad_slot_back(&g_slots, p, g_since, now_ns(), 3000000000ull);
+        if (q >= 0) {
+            move_state(q, p);
+            LOG("input: device %d (%s) moves from player %d to player %d: the same controller, listed again as a new device before device %d went",
+                (int)((intptr_t)g_slots.owner[p] - 0x100000000ll), g_slots.last[p], q + 1, p + 1, device);
+        }
     }
+    int k = known_of(device); if (k >= 0) g_known[k].name[0] = 0;
     pthread_mutex_unlock(&g_mu);
 }
 int nxhost_input_device_first(int device, const char *name) {
@@ -135,7 +186,8 @@ bool nxhost_input_axes(int device, const int *axes, const float *values, int n) 
     if (!nxin_pad_axes(&probe, axes, values, n)) return false;
     pthread_mutex_lock(&g_mu);
     if (g_held) { pthread_mutex_unlock(&g_mu); return true; }
-    int p = take(device, NULL, 0);
+    // A known controller without a player (the game let it go) connects again on a button press, as on a console, not on a stick
+    int p = pad_slot_of(&g_slots, owner(device)) < 0 && known_of(device) >= 0 ? -1 : take(device, NULL, 0);
     if (p >= 0) { nxin_pad_axes(&g_pad[p], axes, values, n); publish_pad(p); }
     pthread_mutex_unlock(&g_mu);
     return true;

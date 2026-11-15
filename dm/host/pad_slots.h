@@ -63,6 +63,25 @@ static int pad_slot_fill(pad_slots *s, uint32_t usable, const void *only, int *f
     if (from) *from = src;
     return to;
 }
+// pad_slot_back: the slot p a controller just left (pad_slot_free) goes to the controller with the same name on a higher slot that connected less than window ago (since[q]:
+// when slot q's holder connected, on the caller's clock), as the same controller come back. Android lists a Bluetooth controller again as a new device while the old one is still
+// there (an Xbox controller: device 18 on player 2, device 19 on player 3, then device 18 went), and Android's descriptor does not tell them apart: a controller without a
+// unique id gets a new one while the old device is listed. Returns the slot it came from, -1 when none; its name and press time go with it, slot p's since is its
+static int pad_slot_back(pad_slots *s, int p, uint64_t *since, uint64_t now, uint64_t window) {
+    if (p < 0 || p >= DM_PLAYERS || s->owner[p] || !s->last[p][0]) return -1;
+    int q = -1;
+    for (int i = p + 1; q < 0 && i < DM_PLAYERS; i++) if (s->owner[i] && !strcmp(s->last[i], s->last[p]) && now - since[i] < window) q = i;
+    if (q < 0) return -1;
+    s->owner[p] = s->owner[q]; s->pressed[p] = s->pressed[q]; since[p] = since[q];
+    s->owner[q] = NULL; s->last[q][0] = 0; s->pressed[q] = 0;
+    return q;
+}
+static void pad_slot_swap(pad_slots *s, int a, int b) {   // the holders of slots a and b trade places (either may be empty), with their names and press times
+    if (a < 0 || b < 0 || a >= DM_PLAYERS || b >= DM_PLAYERS || a == b) return;
+    const void *o = s->owner[a]; char l[64]; memcpy(l, s->last[a], sizeof l); uint64_t t = s->pressed[a];
+    s->owner[a] = s->owner[b]; memcpy(s->last[a], s->last[b], sizeof l); s->pressed[a] = s->pressed[b];
+    s->owner[b] = o; memcpy(s->last[b], l, sizeof l); s->pressed[b] = t;
+}
 static uint32_t pad_slot_mask(const pad_slots *s) {   // bit p: slot p is held
     uint32_t m = 0; for (int i = 0; i < DM_PLAYERS; i++) if (s->owner[i]) m |= 1u << i;
     return m;
