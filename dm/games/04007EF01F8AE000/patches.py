@@ -422,6 +422,8 @@ _UI_V22 = [
 # Complete, class mastered and ability learned), the dialogue choices (Common_Choice: MenuItemList 1920x1080), the dialogue history (Common_TalkLog:
 # the 1500x1080 Viewport scissor and its L_ScrollBar). Names starting with L_EquipL, MenuItem, Viewport, L_Scroll and the name N_Pos now skip the
 # stretch and keep the other rules (caves 0x5760a4, 0x5b4d04, 0x566484, 0x55fd44, 0x55f444: 7 words each, chained after v23's L_Info check).
+# v26: also L_UnitIn* (Common_UnitInfoScout's L_UnitInfo 3400x1625: Character Info when recruiting, stretched tall; v17 already keeps its children in place),
+# cave 0x55a9a4 after the L_Scroll check.
 _UI_V24 = [
     (0x005760a4, '00000000', '8ae98bd2', 'v24: L_EquipL not stretched'),
     (0x005760a8, '00000000', 'aa28aef2', 'v24: movk x10, #0x7145, lsl #16'),
@@ -457,7 +459,14 @@ _UI_V24 = [
     (0x0055f450, '00000000', '8a8dedf2', 'v24: movk x10, #0x6c6c, lsl #48'),
     (0x0055f454, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
     (0x0055f458, '00000000', 'a0321854', 'v24: b.eq #0x58faac'),
-    (0x0055f45c, '00000000', '12090114', 'v24: b #0x5a18a4'),
+    (0x0055f45c, '00000000', '52edff17', 'v26: b 0x55a9a4 (L_UnitIn check; v24 had b 0x5a18a4)'),
+    (0x0055a9a4, '00000000', '8ae98bd2', 'v26: L_UnitIn* (Character Info) not stretched'),
+    (0x0055a9a8, '00000000', 'aacaadf2', 'v26: movk x10, #0x6e55, lsl #16'),
+    (0x0055a9ac, '00000000', '2a8dcef2', 'v26: movk x10, #0x7469, lsl #32'),
+    (0x0055a9b0, '00000000', '2ac9edf2', 'v26: movk x10, #0x6e49, lsl #48'),
+    (0x0055a9b4, '00000000', '7f010aeb', 'v26: cmp x11, x10'),
+    (0x0055a9b8, '00000000', 'a0871a54', 'v26: b.eq #0x58faac'),
+    (0x0055a9bc, '00000000', 'ba1b0114', 'v26: b #0x5a18a4'),
 ]
 
 # v25: UI placed on a 3D position (the unit type / status icons in battle; any pane the game anchors to a world point). The engine's world-to-screen helper
