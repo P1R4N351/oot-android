@@ -228,6 +228,8 @@ static void t_fill(void) {
     dm_pad_usable_callback(NULL); dm_pad_players(1); memset(&fs, 0, sizeof fs);
 }
 
+// The controller applet's join screen (pad_join.h): the argument as the SDK lays it out (SetDefault, SetExplainText), and the console's rules: L + R joins, A on a joined
+// controller ends it once enough joined, B cancels, take over and left justify, a controller that goes away
 // SwapNpadAssignment and DisconnectNpad reach the front end with players (player 1 on the connected npad: No1 docked, Handheld in handheld mode)
 static int assign_op = -1, assign_a = -1, assign_b = -1, assign_calls;
 static void test_assign(int op, int a, int b) { assign_op = op; assign_a = a; assign_b = b; assign_calls++; }
@@ -245,6 +247,65 @@ static void t_assign(void) {
     h_hid_Swap(&(uint32_t){1}, &(uint32_t){1});
     CHECK(assign_calls == 3, "an npad with itself: nothing");
     dm_pad_assign_callback(NULL); g_mode = 1;
+}
+static void t_join(void) {
+    ctrl_arg a; uint8_t b[CTRL_ARG_SIZE]; memset(b, 0, sizeof b);
+    ctrl_arg_parse(&a, NULL);
+    CHECK(a.min == 0 && a.max == 4 && a.take_over && a.left_justify && a.permit_dual && !a.single && !a.color_on && !a.text_on, "no argument: SetDefault's values");
+    b[0] = 2; b[1] = 2; b[2] = 1; b[3] = 1; b[6] = 1; b[7 + 4] = 0x12; b[7 + 4 + 3] = 0xff; b[0x27] = 1;
+    memcpy(b + 0x28 + 1 * 0x81, "Omura", 5); memset(b + 0x28 + 7 * 0x81, 'x', 0x81);
+    ctrl_arg_parse(&a, b);
+    CHECK(a.min == 2 && a.max == 2 && a.color_on && a.color[1][0] == 0x12 && a.color[1][3] == 0xff && a.text_on, "Orbitals' Play Local: two players, colours and texts on");
+    CHECK(!strcmp(a.text[1], "Omura") && !a.text[0][0] && strlen(a.text[7]) == 0x80, "texts at 0x28 + player * 0x81, cut to 0x80 bytes");
+
+    static char odin, xbox, pro;
+    const void *held[DM_PLAYERS] = {&odin, NULL, &xbox};   // the Xbox controller on player 3, which the game does not read
+    pad_join j; pad_join_start(&j, &a, held, 0x3);
+    CHECK(j.player[0] == &odin && !j.player[1] && pad_join_count(&j) == 1 && j.provisional, "take over: player 1's controller starts on it provisionally, the one on a player the game does not read does not");
+    CHECK(pad_join_key(&j, &odin, DM_BTN_A, 1) == -1 && !j.done, "A with one of two: nothing");
+    CHECK(pad_join_key(&j, &xbox, DM_BTN_L, 1) == -1 && pad_join_key(&j, &xbox, DM_BTN_A, 1) == -1 && !j.done, "L alone does not join; A of a controller not joined does nothing");
+    CHECK(pad_join_key(&j, &xbox, DM_BTN_R, 1) == 0 && j.player[0] == &xbox && !j.player[1] && !j.provisional, "the first L + R: that controller is player 1, the taken-over ones are cleared");
+    CHECK(pad_join_key(&j, &pro, DM_BTN_B, 1) == -1 && pad_join_key(&j, &odin, DM_BTN_B, 1) == -1 && !j.done, "B from a controller that is not player 1 does nothing");
+    pad_join_key(&j, &odin, DM_BTN_L, 1);
+    CHECK(pad_join_key(&j, &odin, DM_BTN_R, 1) == 1 && j.player[1] == &odin, "the next L + R is player 2");
+    CHECK(pad_join_key(&j, &pro, DM_BTN_R, 1) == -1 && pad_join_key(&j, &pro, DM_BTN_L, 1) == -1 && pad_join_count(&j) == 2, "a third controller: every player taken");
+    pad_join_key(&j, &xbox, DM_BTN_L, 0); pad_join_key(&j, &xbox, DM_BTN_R, 0); pad_join_key(&j, &xbox, DM_BTN_L, 1);
+    CHECK(pad_join_key(&j, &xbox, DM_BTN_R, 1) == -1 && j.player[0] == &xbox, "L + R again on a joined controller: nothing");
+    CHECK(pad_join_key(&j, &odin, DM_BTN_A, 1) == -1 && j.done == 1, "A on a joined controller with two of two: OK");
+    CHECK(pad_join_key(&j, &xbox, DM_BTN_B, 1) == -1 && j.done == 1, "nothing changes once it ended");
+
+    const void *two[DM_PLAYERS] = {&odin, &xbox};
+    pad_join_start(&j, &a, two, 0x3);
+    CHECK(pad_join_count(&j) == 2 && pad_join_key(&j, &odin, DM_BTN_A, 1) == -1 && j.done == 1, "nobody presses L + R: A keeps the taken-over players");
+    pad_join_start(&j, &a, two, 0x3);
+    pad_join_key(&j, &xbox, DM_BTN_B, 1);
+    CHECK(!j.done, "B from player 2 does not cancel");
+    pad_join_key(&j, &odin, DM_BTN_B, 1);
+    CHECK(j.done == -1, "B from player 1 cancels");
+
+    b[2] = 0; b[1] = 4; b[0] = 1; ctrl_arg_parse(&a, b);   // no take over: everyone joins again
+    pad_join_start(&j, &a, held, 0xff);
+    CHECK(pad_join_count(&j) == 0, "no take over: nobody starts joined");
+    pad_join_key(&j, &xbox, DM_BTN_R, 1); pad_join_key(&j, &xbox, DM_BTN_L, 1);
+    pad_join_key(&j, &odin, DM_BTN_L, 1); pad_join_key(&j, &odin, DM_BTN_R, 1);
+    CHECK(j.player[0] == &xbox && j.player[1] == &odin, "players in the order they press L + R");
+    pad_join_gone(&j, &xbox);
+    CHECK(j.player[0] == &odin && !j.player[1], "left justify: player 1 went, player 2 moves up");
+    pad_join_finish(&j);
+    CHECK(j.done == 1, "the screen's OK with one of 1..4");
+
+    b[3] = 0; b[2] = 1; ctrl_arg_parse(&a, b);   // take over without left justify: they keep their numbers
+    const void *gap[DM_PLAYERS] = {NULL, NULL, &xbox};
+    pad_join_start(&j, &a, gap, 0xff);
+    CHECK(j.player[2] == &xbox && !j.player[0], "without left justify a controller keeps its number");
+    pad_join_finish(&j);
+    CHECK(j.done == 1, "OK with one player");
+    pad_join_start(&j, &a, NULL, 0xff); pad_join_finish(&j);
+    CHECK(!j.done, "OK needs at least one player");
+
+    b[5] = 1; ctrl_arg_parse(&a, b);   // single mode: one player
+    pad_join_start(&j, &a, held, 0xff);
+    CHECK(j.max == 1 && j.player[0] == &odin && !j.player[1], "single mode: one player");
 }
 
 static dm_haptic_state vibration[DM_PLAYERS];
@@ -610,6 +671,7 @@ int main(void) {
     t_motion_hid();
     t_rec();
     t_fill();
+    t_join();
     t_assign();
     printf("hid players: %d checks, %d failed\n", checks, fails);
     return fails != 0;

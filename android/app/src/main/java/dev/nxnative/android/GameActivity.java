@@ -183,6 +183,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         setContentView(root);
         immersive();
         TextInput.screen(this);
+        CtrlScreen.screen(this);   // the controller applet's join screen shows on this screen (again, when the game was waiting on it as the screen was recreated)
         UserPicker.screen(this);   // the user selector shows on this screen, as the input box   // the keyboard applet's input box shows on this screen (again, when the game was waiting on it as the screen was recreated)
         // The host starts once per process. A screen created again while it runs (Android recreated the activity: "Don't keep activities", a font or language
         // change while in the background) takes its window over; a screen restored into a new process (Android ended the old one while it was in the background)
@@ -931,6 +932,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     @Override protected void onDestroy() {
         TextInput.gone(this);
         UserPicker.gone(this);
+        CtrlScreen.gone(this);
         ui.removeCallbacksAndMessages(null);
         if (rumble != null) rumble.stopAll();
         if (padMotion != null) { padMotion.release(); padMotion = null; }
@@ -1384,7 +1386,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
 
-    /** Back (the phone's button or its edge swipe) opens and closes the in-game panel, which has Stop */
+    /** Back (the phone's button or its edge swipe) opens and closes the in-game panel, which has Stop; while the controller applet's join screen shows, it cancels that */
     @SuppressWarnings("deprecation")
-    @Override public void onBackPressed() { if (panel != null) panel.toggle(); else end(); }
+    @Override public void onBackPressed() { if (panel != null && !panel.isOpen() && CtrlScreen.back()) return; if (panel != null) panel.toggle(); else end(); }
+
+    // For CtrlScreen: the view tree it goes into (under the in-game panel), and whether a gamepad is connected (then the on-screen controls are hidden and cannot join)
+    FrameLayout rootView() { return rootView; }
+    View panelView() { return panel; }
+    boolean gamepadConnected() { return !pads.isEmpty(); }
 }
