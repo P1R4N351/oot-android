@@ -543,6 +543,11 @@ def map_keys(path):
     with open(path) as f: return {c[3] for c in (l.rstrip('\n').split('\t') for l in f) if len(c) > 4 and c[0].endswith('.bin')}
 
 
+def table_lines(path):
+    """A table's lines less its comment lines ('#'), as shader_split.py's targeted scan compares them"""
+    with open(path, encoding='utf-8') as f: return [l for l in f.read().splitlines() if not l.startswith('#')]
+
+
 def selected_keys(profile_dir):
     """The shaders the phone's shaders step builds for a profile with a selected set (shader_seen.tsv): its keys that the map has, sorted, each once, as
     ShaderLibs.selection reads them (the map's column 4 of every row but comments and the header); None without a shader_seen.tsv (the whole map). vk_android_build.py
@@ -583,7 +588,7 @@ def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: th
             raise Error(f'the dump\'s shaders lack {len(hard)} of the {len(want)} in the profile\'s shader_map.tsv (e.g. {", ".join(hard[:3])}): the dump is of another version '
                         f'or incomplete, and the profile\'s shader library cannot be built from it (the split is in {tmp})')
         for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv'):
-            if (g.dir / f).is_file() and (g.dir / f).read_bytes() != (tmp / f).read_bytes():
+            if (g.dir / f).is_file() and table_lines(g.dir / f) != table_lines(tmp / f):   # the comment lines name the game and the split's wording at the time
                 print(f'shaders: the dump\'s {f} differs from the profile\'s ({len(have - want)} shaders more); the library is the profile\'s, its shaders found in the package by key')
     shutil.rmtree(pkg, ignore_errors=True); (tmp / 'pkg').rename(pkg)
     absent = sorted(want - have) if (g.dir / 'shader_map.tsv').is_file() else []   # the keys only another registered build has (shader_optional.tsv): listed for a library build to leave out
