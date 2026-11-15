@@ -19,7 +19,7 @@ import nacp  # noqa: E402
 
 STUB = '''package dev.nxnative.android;
 public final class BuildConfig {
-    public static final String NX_PROFILES = "";
+    public static final String NX_PROFILES = "040015100B514001\\tSuper Mario Bros. Wonder - Nintendo Switch 2 Edition\\t0\\tabcdef012345\\t327680 main=aa";
     public static final String NX_DMSH_VK_CHAIN = "c0ffee000001", NX_DMSH_VK_ABI = "abc123abc123", NX_DMSH_VK_ABI_COMPAT = "";
 }
 '''
@@ -47,8 +47,14 @@ def control(d, titles, version, icons=(), compressed=False):
     return d
 
 
-def program(d):
-    (d / 'exefs').mkdir(parents=True); (d / 'exefs/main.npdm').write_bytes(b'META'); (d / 'romfs').mkdir()
+def npdm(tid):   # a main.npdm: META with its ACI0 at 0x80, the program ID at ACI0+0x10 (Pack.programId)
+    d = bytearray(0x100); d[:4] = b'META'; struct.pack_into('<II', d, 0x70, 0x80, 0x20); d[0x80:0x84] = b'ACI0'; struct.pack_into('<Q', d, 0x90, tid)
+    return bytes(d)
+
+
+def program(d, tid=None):
+    (d / 'exefs').mkdir(parents=True); (d / 'exefs/main.npdm').write_bytes(b'META' if tid is None else npdm(tid)); (d / 'romfs').mkdir()
+    if tid is not None: (d / 'exefs/main').write_bytes(b'NSO0' + bytes(0x100))
 
 
 class NacpPy(unittest.TestCase):
@@ -110,6 +116,25 @@ class DumpMetaJvm(unittest.TestCase):
         y = self.tmp / 'p-yoink'; program(y / 'base'); program(y / 'switch2/base'); program(y / 'switch2/updates/131072')
         self.assertEqual(self.java('program', y, 1), 'switch2/updates/131072')
         self.assertEqual(self.java('program', y, 2), '-')
+
+    # The APK of v0.3.24: Super Mario Bros. Wonder - Nintendo Switch 2 Edition's profile (program 1, 040015100B514001), not the game's (010015100B514000)
+    def test_edition_card_without_the_game(self):
+        """A dump with program 1: its card is program 1 (no refusal for the game's ID, no edition switch); Prepare says what it said before for the game"""
+        d = self.tmp / 'w-edition'; program(d / 'base/program/0', 0x010015100B514000); program(d / 'updates/327680/program/0', 0x010015100B514000)
+        program(d / 'updates/327680/program/1', 0x040015100B514001)
+        self.assertEqual(self.java('playable', d), '040015100B514001')
+        self.assertEqual(self.java('find', d), 'This app version does not include this game (010015100B514000). Install a build that includes it.')
+
+    def test_switch1_only_dump(self):
+        """A dump of the Switch game alone: its card stays the game's, and the sentence says the dump lacks the Edition this app runs"""
+        d = self.tmp / 'w-switch1'; program(d / 'base/program/0', 0x010015100B514000); program(d / 'updates/327680/program/0', 0x010015100B514000)
+        self.assertEqual(self.java('playable', d), '010015100B514000')
+        why = self.java('missing', '010015100B514000')
+        self.assertTrue(why.startswith('This dump has only the Switch game (010015100B514000).'), why)
+        self.assertIn('Super Mario Bros. Wonder - Nintendo Switch 2 Edition (040015100B514001), program 1', why)
+        self.assertEqual(self.java('find', d), why)   # Prepare says the same
+        self.assertTrue(self.java('missing', '0100000000010000').startswith('This app version does not include this game'))   # another game: as before
+        self.assertEqual(self.java('missing', '040015100B514001'), 'null')
 
 
 if __name__ == '__main__':

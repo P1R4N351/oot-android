@@ -326,7 +326,12 @@ final class DumpLayout {
             return e.getMessage();
         }
         Profile prof = Profile.of(f.titleId);
-        if (prof == null) return Profile.missing(f.titleId, null);
+        if (prof == null) {
+            // a dump whose program n > 0 this APK runs (Pack.playableIdOf) holds that program: Profile.missing's sentence for a Switch 1-only dump does not apply
+            String other;
+            try { other = Pack.playableIdOf(dump); } catch (IOException e) { other = f.titleId; }
+            return other.equals(f.titleId) ? Profile.missing(f.titleId, null) : Profile.notIncluded(f.titleId, null);
+        }
         Map<Long, Map<String, String>> builds = prof.buildMap();
         for (int i = have.size() - 1; i >= 0 && f.version < 0; i--) {
             long v = have.get(i);

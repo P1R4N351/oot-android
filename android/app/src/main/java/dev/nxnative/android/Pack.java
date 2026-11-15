@@ -238,6 +238,23 @@ final class Pack {
         return programId(npdm);
     }
 
+    /**
+     * The title a game's card is for: the dump's own (program 0, titleIdOf) when this APK runs it, else the first program n &gt; 0 of the dump this APK runs (a
+     * Switch 2 Edition's program 1 beside a game the APK does not have: DumpLayout.programDir, its main.npdm's ID matching the profile), else the dump's own, so
+     * Profile.missing says what is wrong (a Switch 1-only dump of a game whose Edition this APK runs: the dump lacks program 1). A card of program n plays it
+     * with its own pack and the application's save (pack.tsv's application row), and has no edition switch (Edition.offered)
+     */
+    static String playableIdOf(File game) throws IOException {
+        String id = titleIdOf(game);
+        if (Profile.of(id) != null) return id;
+        for (Profile p : Profile.otherPrograms(id)) {
+            File d = DumpLayout.programDir(game, Profile.program(p.titleId));
+            File npdm = d == null ? null : new File(d, "exefs/main.npdm");
+            if (npdm != null && npdm.isFile() && programId(npdm).equals(p.titleId)) return p.titleId;
+        }
+        return id;
+    }
+
     private static long le32(byte[] b, int o) {
         return (b[o] & 0xffL) | (b[o + 1] & 0xffL) << 8 | (b[o + 2] & 0xffL) << 16 | (b[o + 3] & 0xffL) << 24;
     }
