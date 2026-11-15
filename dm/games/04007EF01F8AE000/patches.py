@@ -409,11 +409,55 @@ _UI_V22 = [
     (0x005d7dec, '00000000', 'caeccdf2', 'v23: movk x10, #0x6f66, lsl #32'),
     (0x005d7df0, '00000000', '7f010aeb', 'v23: cmp x11, x10'),
     (0x005d7df4, '00000000', 'a0dcff54', 'v23: b.eq 0x5d7988'),
-    (0x005d7df8, '00000000', 'ab26ff17', 'v23: b 0x5a18a4 (others: overlay as before)'),
+    (0x005d7df8, '00000000', 'ab78fe17', 'v24: b 0x5760a4 name checks (L_EquipL, N_Pos, MenuItem, Viewport, L_Scroll), then the v12 L_List check at 0x5a18a4; v23 had b 0x5a18a4'),
     (0x005d7988, '00000000', '8a66a852', 'v23: mov w10, #0x43340000 (180.0)'),
     (0x005d798c, '00000000', '5301271e', 'v23: fmov s19, w10'),
     (0x005d7990, '00000000', '4228331e', 'v23: fadd s2, s2, s19 (L_Info: 180 up, not stretched)'),
     (0x005d7994, '00000000', 'b8dafe17', 'v23: b 0x58e474 (no further rule)'),
+]
+
+# v24: big panels that are not full-screen layers (found from the romfs layouts, Layout/*.arc, after players' reports on 0.3.22): v10's overlay rule
+# (>= 1896x960 or >= 1080 tall under an anchored parent) stretched them 4/3 tall: the item lists (Common_SendUnitItem / Equip_*: L_EquipList*,
+# 1770x1132 under the sliding Left anchor: the gift list's top went off screen), the result telops (Common_TlpResult: N_Pos 500x1200, holding Quest
+# Complete, class mastered and ability learned), the dialogue choices (Common_Choice: MenuItemList 1920x1080), the dialogue history (Common_TalkLog:
+# the 1500x1080 Viewport scissor and its L_ScrollBar). Names starting with L_EquipL, MenuItem, Viewport, L_Scroll and the name N_Pos now skip the
+# stretch and keep the other rules (caves 0x5760a4, 0x5b4d04, 0x566484, 0x55fd44, 0x55f444: 7 words each, chained after v23's L_Info check).
+_UI_V24 = [
+    (0x005760a4, '00000000', '8ae98bd2', 'v24: L_EquipL not stretched'),
+    (0x005760a8, '00000000', 'aa28aef2', 'v24: movk x10, #0x7145, lsl #16'),
+    (0x005760ac, '00000000', 'aa2ecdf2', 'v24: movk x10, #0x6975, lsl #32'),
+    (0x005760b0, '00000000', '0a8ee9f2', 'v24: movk x10, #0x4c70, lsl #48'),
+    (0x005760b4, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x005760b8, '00000000', 'a0cf0c54', 'v24: b.eq #0x58faac'),
+    (0x005760bc, '00000000', '12fb0014', 'v24: b #0x5b4d04'),
+    (0x005b4d04, '00000000', 'cae98bd2', 'v24: N_Pos not stretched'),
+    (0x005b4d08, '00000000', '0aeaadf2', 'v24: movk x10, #0x6f50, lsl #16'),
+    (0x005b4d0c, '00000000', '6a0ec0f2', 'v24: movk x10, #0x73, lsl #32'),
+    (0x005b4d10, '00000000', '0a00e0f2', 'v24: movk x10, #0x0, lsl #48'),
+    (0x005b4d14, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x005b4d18, '00000000', 'a06ced54', 'v24: b.eq #0x58faac'),
+    (0x005b4d1c, '00000000', 'dac5fe17', 'v24: b #0x566484'),
+    (0x00566484, '00000000', 'aaa98cd2', 'v24: MenuItem not stretched'),
+    (0x00566488, '00000000', 'caadaef2', 'v24: movk x10, #0x756e, lsl #16'),
+    (0x0056648c, '00000000', '2a89cef2', 'v24: movk x10, #0x7449, lsl #32'),
+    (0x00566490, '00000000', 'aaacedf2', 'v24: movk x10, #0x6d65, lsl #48'),
+    (0x00566494, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x00566498, '00000000', 'a0b01454', 'v24: b.eq #0x58faac'),
+    (0x0056649c, '00000000', '2ae6ff17', 'v24: b #0x55fd44'),
+    (0x0055fd44, '00000000', 'ca2a8dd2', 'v24: Viewport not stretched'),
+    (0x0055fd48, '00000000', 'aaecaef2', 'v24: movk x10, #0x7765, lsl #16'),
+    (0x0055fd4c, '00000000', '0aeecdf2', 'v24: movk x10, #0x6f70, lsl #32'),
+    (0x0055fd50, '00000000', '4a8eeef2', 'v24: movk x10, #0x7472, lsl #48'),
+    (0x0055fd54, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x0055fd58, '00000000', 'a0ea1754', 'v24: b.eq #0x58faac'),
+    (0x0055fd5c, '00000000', 'bafdff17', 'v24: b #0x55f444'),
+    (0x0055f444, '00000000', '8ae98bd2', 'v24: L_Scroll not stretched'),
+    (0x0055f448, '00000000', '6a6aacf2', 'v24: movk x10, #0x6353, lsl #16'),
+    (0x0055f44c, '00000000', '4aeecdf2', 'v24: movk x10, #0x6f72, lsl #32'),
+    (0x0055f450, '00000000', '8a8dedf2', 'v24: movk x10, #0x6c6c, lsl #48'),
+    (0x0055f454, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x0055f458, '00000000', 'a0321854', 'v24: b.eq #0x58faac'),
+    (0x0055f45c, '00000000', '12090114', 'v24: b #0x5a18a4'),
 ]
 
 # Screen shape (Game settings › Aspect ratio › Screen shape): every value above that depends on the 4:3 shape is read from one of seven words instead of being part of an
@@ -449,7 +493,7 @@ def _shape(cuts):
 
 
 _MAIN = 'db93b0125f4850601d61c3edde012f8e'
-VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22)}}
+VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24)}}
 
 BINDING = [
     {'what': "Fire Emblem Fortune's Weave native 4:3 variant (VARIANT_CUTS['43']: camera aspect and ui2d pane rules)", 'now': 'build', 'goal': 'unreviewed', 'purpose': 'rendering',
