@@ -337,6 +337,15 @@ static int map_source_busy(uint64_t addr, uint64_t size) { // g_map_lock held; n
         if (addr < g_map[i].src + g_map[i].size && g_map[i].src < addr + size) return 1;
     return 0;
 }
+// Diagnostic (hle_uemalloc.c, DM_UE_FREE_CHECK): [addr, addr+size) overlaps the source of a live MapMemory (a moved thread stack); its source's base and size in *s, *n
+int dm_map_source_overlap(uint64_t addr, uint64_t size, uint64_t *s, uint64_t *n) {
+    pthread_mutex_lock(&g_map_lock);
+    int r = 0;
+    for (int i = 0; i < g_nmap && !r; ++i)
+        if (g_map[i].state == 0x0B && addr < g_map[i].src + g_map[i].size && g_map[i].src < addr + size) { *s = g_map[i].src; *n = g_map[i].size; r = 1; }
+    pthread_mutex_unlock(&g_map_lock);
+    return r;
+}
 // Loader text/patch seals use 16 KiB boundaries, independently of host page size.
 static void module_readonly_run(uint64_t off, uint64_t start, uint64_t end,
                                 uint64_t *lo, uint64_t *hi, uint64_t *perm) {
@@ -602,9 +611,15 @@ uint64_t svc_dispatch(int num, uint64_t *regs, uint64_t orig_addr) {
         uint32_t result = map_arguments(dst, src, size);
         if (result) { regs[0] = result; return 0; }
         pthread_mutex_lock(&g_map_lock);
-        if (map_find(dst, size) || map_source_busy(src, size) || !map_source_backed(src, size)) result = 0xD401;
-        else if (g_nmap == MAX_MAP) result = 0xCE01;
-        if (result) { pthread_mutex_unlock(&g_map_lock); regs[0] = result; LOG("[RED] MapMemory refused (%#x): %#llx <- %#llx +%#llx", result, (unsigned long long)dst, (unsigned long long)src, (unsigned long long)size); return 0; }
+        char why[200] = "";
+        if (map_find(dst, size)) { result = 0xD401; snprintf(why, sizeof why, "the destination is mapped already"); }
+        else if (map_source_busy(src, size)) { result = 0xD401; snprintf(why, sizeof why, "the source is mapped elsewhere"); }
+        else if (!map_source_backed(src, size)) {
+            result = 0xD401; void dm_ue_heap_why(uint64_t a, uint64_t n, char *buf, size_t len);   // hle_uemalloc.c
+            char h[160]; dm_ue_heap_why(src, size, h, sizeof h); snprintf(why, sizeof why, "the source is not backed memory: %s", h);
+        }
+        else if (g_nmap == MAX_MAP) { result = 0xCE01; snprintf(why, sizeof why, "%d mappings already", MAX_MAP); }
+        if (result) { pthread_mutex_unlock(&g_map_lock); regs[0] = result; LOG("[RED] MapMemory refused (%#x): %#llx <- %#llx +%#llx: %s", result, (unsigned long long)dst, (unsigned long long)src, (unsigned long long)size, why); return 0; }
         // Apple pages are 16K, Horizon pages 4K: the accessible region is extended to a 16K boundary (the extra pages opened are unused pages of the same region, semantics unaffected)
         uint64_t mask = (size_t)getpagesize() - 1;
         uint64_t lo = dst & ~mask, hi = (dst + size + mask) & ~mask;
@@ -613,7 +628,7 @@ uint64_t svc_dispatch(int num, uint64_t *regs, uint64_t orig_addr) {
         memcpy((void *)dst, (void *)src, size);   // move semantics: the source region is not accessed while mapped (Horizon makes it inaccessible)
         map_add(dst, size, src, 0x0B /*MappedMemory*/);
         pthread_mutex_unlock(&g_map_lock);
-        if (g_flag.svc) LOG("MapMemory %#llx <- %#llx +%#llx", dst, src, size);
+        { static _Atomic int nl; if (g_flag.svc || atomic_fetch_add(&nl, 1) < 256) LOG("MapMemory %#llx <- %#llx +%#llx", dst, src, size); }
         regs[0] = 0; return 0;
     }
     case 0x05: {  // UnmapMemory(dst, src, size): contents are moved back to the source region; a 16K page may be shared with an adjacent mapping, permissions are not revoked
@@ -628,6 +643,7 @@ uint64_t svc_dispatch(int num, uint64_t *regs, uint64_t orig_addr) {
         memcpy((void *)src, (void *)dst, size);
         map_del(k - 1);
         pthread_mutex_unlock(&g_map_lock);
+        { static _Atomic int nl; if (g_flag.svc || atomic_fetch_add(&nl, 1) < 256) LOG("UnmapMemory %#llx -> %#llx +%#llx (contents copied back)", dst, src, size); }
         regs[0] = 0; return 0;
     }
     case 0x06: {  // QueryMemory(MemoryInfo* out, PageInfo* pout, addr) → x1 = pageinfo

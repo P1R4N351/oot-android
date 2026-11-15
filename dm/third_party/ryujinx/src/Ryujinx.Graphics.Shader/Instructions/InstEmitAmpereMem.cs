@@ -467,23 +467,20 @@ namespace Ryujinx.Graphics.Shader.Instructions
 
         // SUATOM Rd, [Ra], Rb (0x593): an atomic on an image through a handle, laid out as SUST's (handle 40..59, dimension 61..64) and as ATOMG's (operation
         // 87..91, size 73..76, Pu 81..83). Donkey Kong Bananza's append compute shaders take a counter with it (SUATOM.ADD.U32 on a 1D image, the old value
-        // shuffled to the warp) before their SUST. Another handle bank or a predicate result is not met in a game: refused.
+        // shuffled to the warp) before their SUST. A predicate result is not met in a game: refused. nxnative: the handle may be in another bank, as SULD's and
+        // SUST's (ATexHandle): Orbitals' compute shaders (Unreal Engine 5.6) take theirs from the game's first uniform buffer, c3 (1,006 shaders). After upstream
+        // nxnative, which passes the bank on the same way.
         public static void ASuatom(EmitterContext context)
         {
             AmpereOp x = new(context.CurrOp);
             (int handle, int cbufSlot) = ATexHandle(context, x);
-
-            if (cbufSlot != TextureOperation.DefaultCbufSlot)
-            {
-                throw AFail(context, $"SUATOM handle in bank {cbufSlot}");
-            }
 
             if (x.Bits(81, 84) != 7)
             {
                 throw AFail(context, "SUATOM with a predicate result");
             }
 
-            EmitSuatom(context, (SuDim)x.Bits(61, 64), 0, (SuatomOp)x.Bits(87, 91), (SuatomSize)x.Bits(73, 76), handle, x.Ra, x.Rb, 0, x.Rd, false, isBindless: false, compareAndSwap: false);
+            EmitSuatom(context, (SuDim)x.Bits(61, 64), 0, (SuatomOp)x.Bits(87, 91), (SuatomSize)x.Bits(73, 76), handle, x.Ra, x.Rb, 0, x.Rd, false, isBindless: false, compareAndSwap: false, cbufSlot: cbufSlot);
         }
 
         // SURED [Ra], Rb (0x59f): SUATOM without a result, the reduction form (NAK encodes its bindless twin, 0x3a0, with the operation at 87..90 and no
@@ -492,12 +489,7 @@ namespace Ryujinx.Graphics.Shader.Instructions
         public static void ASured(EmitterContext context)
         {
             AmpereOp x = new(context.CurrOp);
-            (int handle, int cbufSlot) = ATexHandle(context, x);
-
-            if (cbufSlot != TextureOperation.DefaultCbufSlot)
-            {
-                throw AFail(context, $"SURED handle in bank {cbufSlot}");
-            }
+            (int handle, int cbufSlot) = ATexHandle(context, x);   // nxnative: any bank, as SUATOM's (Orbitals: 28 shaders with c3)
 
             // Sizes 0..5 are Maxwell's (U32, S32, U64, F32, F16x2, S64); NAK has F64 at 6, where Maxwell's enum has its descriptor-sized forms: refused
             if (x.Bits(73, 76) >= 6)
@@ -507,7 +499,7 @@ namespace Ryujinx.Graphics.Shader.Instructions
 
             // 81..83: NAK's 0x3a0 has a fault predicate there; the game's one SURED holds 0 (P0), and its next instruction is EXIT, so whether 0x59f writes it is not
             // known: nothing is written
-            EmitSured(context, (SuDim)x.Bits(61, 64), 0, (RedOp)x.Bits(87, 90), (SuatomSize)x.Bits(73, 76), handle, x.Ra, x.Rb, 0, x.Bit(72), isBindless: false);
+            EmitSured(context, (SuDim)x.Bits(61, 64), 0, (RedOp)x.Bits(87, 90), (SuatomSize)x.Bits(73, 76), handle, x.Ra, x.Rb, 0, x.Bit(72), isBindless: false, cbufSlot: cbufSlot);
         }
 
         // BAR.SYNC: the workgroup barrier

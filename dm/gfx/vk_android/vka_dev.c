@@ -522,6 +522,11 @@ uint64_t vka_fence_next(void) { pthread_mutex_lock(&g_fmu); uint64_t f = ++g_fen
 void vka_fence_post(uint64_t fence, void *ops, int n, void (*run)(void *, int)) {
     pthread_mutex_lock(&g_fmu);
     while (g_post[fence % POST_RING].fence && g_post[fence % POST_RING].fence != fence) pthread_cond_wait(&g_fcv, &g_fmu);   // that slot's earlier fence has not completed yet
+    {   // (diagnostic) a second record for one fence replaces the first; a record for a fence already done never runs
+        static _Atomic int k; post_rec *o = &g_post[fence % POST_RING];
+        if (o->fence == fence && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu: a second set of completion effects (%d ops) replaces the first (%d ops, %p)", (unsigned long long)fence, n, o->n, o->ops);
+        else if (fence <= g_done && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu: completion effects (%d ops) posted after the fence was done (done %llu): they never run", (unsigned long long)fence, n, (unsigned long long)g_done);
+    }
     g_post[fence % POST_RING] = (post_rec){fence, ops, n, run};
     if (fence > g_submitted) g_submitted = fence;
     pthread_cond_broadcast(&g_scv); pthread_mutex_unlock(&g_fmu);
@@ -529,6 +534,11 @@ void vka_fence_post(uint64_t fence, void *ops, int n, void (*run)(void *, int)) 
 void vka_fence_cpu(uint64_t fence, void *ops, int n, void (*run)(void *, int)) {
     if (run) run(ops, n); else free(ops);
     pthread_mutex_lock(&g_fmu);
+    {   // (diagnostic) done jumps past fences whose GPU work and effects may still be pending: their effects then never run, or run beside these
+        static _Atomic int k; uint64_t pend = 0;
+        for (uint64_t f = g_done + 1; f < fence && f <= g_submitted; f++) if (g_post[f % POST_RING].fence == f) pend++;
+        if (pend && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu done on the CPU while %llu earlier fences' effects are pending (done %llu, submitted %llu)", (unsigned long long)fence, (unsigned long long)pend, (unsigned long long)g_done, (unsigned long long)g_submitted);
+    }
     if (fence > g_submitted) g_submitted = fence;
     if (fence > g_done) __atomic_store_n(&g_done, fence, __ATOMIC_RELEASE);
     pthread_cond_broadcast(&g_fcv); pthread_mutex_unlock(&g_fmu);
@@ -803,7 +813,12 @@ static void *completion_main(void *arg) {
         if (v > sub) v = sub;
         for (uint64_t f = done + 1; f <= v; f++) {
             post_rec *p = &g_post[f % POST_RING];
-            if (p->fence == f) { if (p->run) p->run(p->ops, p->n); else free(p->ops); }
+            if (p->fence == f) {
+                static void *last_ops; static _Atomic int k;   // (diagnostic) the same op array run twice: freed by its first run
+                if (p->ops && p->ops == last_ops && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu: its completion effects' ops %p are those of the record run just before", (unsigned long long)f, p->ops);
+                last_ops = p->ops;
+                if (p->run) p->run(p->ops, p->n); else free(p->ops);
+            }
         }
         pthread_mutex_lock(&g_fmu);
         for (uint64_t f = done + 1; f <= v; f++) if (g_post[f % POST_RING].fence == f) g_post[f % POST_RING].fence = 0;

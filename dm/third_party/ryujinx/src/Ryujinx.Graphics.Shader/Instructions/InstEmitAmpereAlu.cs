@@ -1370,14 +1370,24 @@ namespace Ryujinx.Graphics.Shader.Instructions
 
         // 0x925 Rd (78..80 = 1, no predicate result): 1 for a covered pixel, 0 for a helper invocation. No table at hand names it (PIXLD.COVERED, perhaps). What it reads comes from the two shaders
         // that use it, Star Fox's quad efficiency views 46040940ce0fd49b and 826168691af2e211, which add it up over the quad through SHFL and FSWZADD: one takes sum - 1 as the index of a
-        // 4-entry palette, so a shaded pixel's sum is at least 1; the other draws 0.03125 + 0.15625 sum in red. Any other form stays refused
+        // 4-entry palette, so a shaded pixel's sum is at least 1; the other draws 0.03125 + 0.15625 sum in red.
+        // nxnative (after upstream nxnative): form 3 is the index of the sample the fragment runs for (Maxwell's PIXLD.MY_INDEX, numbered 5 there): PRAGMATA's pixel shaders
+        // read it first and index the driver's sample position table with it, as GLSLC's Maxwell code does with MY_INDEX (InstEmitMove.Pixld); Orbitals has 7 such shaders.
+        // Any other form stays refused
         public static void APixelCovered(EmitterContext context)
         {
             AmpereOp x = new(context.CurrOp);
+            int form = x.Bits(78, 81);
 
-            if (x.Bits(78, 81) != 1 || x.Bits(81, 84) != 7 || x.Bits(24, 32) != 0 || x.Bits(32, 48) != 0 || context.TranslatorContext.Definitions.Stage != ShaderStage.Fragment)
+            if ((form != 1 && form != 3) || x.Bits(81, 84) != 7 || x.Bits(24, 32) != 0 || x.Bits(32, 48) != 0 || context.TranslatorContext.Definitions.Stage != ShaderStage.Fragment)
             {
-                throw AFail(context, $"0x925 form {x.Bits(78, 81)} outside a covered pixel's read in a pixel shader");
+                throw AFail(context, $"0x925 form {form} outside a covered pixel's or sample index read in a pixel shader");
+            }
+
+            if (form == 3)
+            {
+                ASet(context, x, context.Load(StorageKind.Input, IoVariable.SampleId), false);
+                return;
             }
 
             Operand helper = context.Load(StorageKind.Input, IoVariable.HelperInvocation);

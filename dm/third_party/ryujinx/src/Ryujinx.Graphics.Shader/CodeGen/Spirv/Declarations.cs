@@ -116,7 +116,11 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                 }
 
                 StorageClass memoryStorage = SharedStorageClass(storage, memory);
-                SpvInstruction type = context.GetType(memory.Type, memory.ArrayLength);
+                // nxnative: an array type of its own. The generator reuses an identical type, so a memory of 8 words took the support buffer's uint[8], which carries
+                // ArrayStride 16, and Workgroup / Private memory may have no explicit layout (Vulkan's VUID-StandaloneSpirv-None-10684: Orbitals, 24 compute shaders)
+                SpvInstruction type = (memory.Type & AggregateType.Array) != 0 && memory.ArrayLength > 0
+                    ? context.TypeArray(context.GetType(memory.Type & ~AggregateType.Array), context.Constant(context.TypeU32(), memory.ArrayLength), forceIdAllocation: true)
+                    : context.GetType(memory.Type, memory.ArrayLength);
                 SpvInstruction pointerType = context.TypePointer(memoryStorage, type);
                 SpvInstruction variable = context.Variable(pointerType, memoryStorage, memory.ZeroInit ? context.ConstantNull(type) : null);
 
