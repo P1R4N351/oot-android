@@ -12,7 +12,8 @@ import java.util.Map;
  * updates/&lt;v&gt;/program/1/ in the console's layout, DumpLayout.programDir) plays either program from one card. The card keeps the application's title ID; the
  * switch (per application, the game page) picks program 1, which has its own profile, host (libnxhost_&lt;its ID&gt;.so) and pack (pack_android.py --program 1),
  * while the save stays the application's, as on the console (GameActivity save_id). Program 1 is offered only when this APK has its profile. A .nup holds
- * program 0 only, so its card has no switch.
+ * program 0 only, so its card has no switch. A dump whose game this APK does not run but whose program 1 it does gets a card of program 1 itself
+ * (Pack.playableIdOf), which has no switch either: there is nothing to switch to.
  */
 final class Edition {
     private Edition() {}
@@ -32,18 +33,21 @@ final class Edition {
         return id.isEmpty() ? null : id;
     }
 
-    /** Whether the card can switch: its dump has program 1 and this APK has program 1's profile */
+    /** Whether the card can switch: it is the game's own card (program 0), its dump has program 1 and this APK has program 1's profile */
     static boolean offered(Game g) {
         String p1 = program1(new File(g.gameDir));
-        return p1 != null && Profile.of(p1) != null;
+        return p1 != null && Profile.of(p1) != null && !p1.equals(g.titleId);
     }
+
+    /** Whether the card is program 1 itself (Pack.playableIdOf: the APK runs the Edition and not the game) */
+    static boolean isProgram1(Game g) { return g.titleId.equals(program1(new File(g.gameDir))); }
 
     /**
      * Program 1's control folder when the card's switch is on and the dump has one (program 1's icon, version and publisher on the Home tile and the game page,
      * GameMeta.loadControl), else null: the card shows the game's own
      */
     static File control(Context c, Game g) {
-        if (!on(c, g.titleId) || !offered(g)) return null;
+        if (!isProgram1(g) && (!on(c, g.titleId) || !offered(g))) return null;
         File d = DumpLayout.programDir(new File(g.gameDir), 1), ctl = d == null ? null : new File(d, "control");
         return ctl != null && new File(ctl, "control.nacp").isFile() ? ctl : null;
     }

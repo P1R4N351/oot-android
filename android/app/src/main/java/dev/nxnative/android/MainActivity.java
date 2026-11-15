@@ -379,7 +379,7 @@ public final class MainActivity extends Activity {
         if (game == null) return;
         File dir = new File(game);   // a game folder or a .nup (NUP.md)
         String id;
-        try { id = Pack.titleIdOf(dir); } catch (IOException e) { error(e.getMessage()); return; }
+        try { id = Pack.playableIdOf(dir); } catch (IOException e) { error(e.getMessage()); return; }   // (a Switch 2 Edition this APK runs beside a game it does not)
         String p = i.getStringExtra("pack");
         File pack = p != null ? new File(p) : Folders.packFor(this, dir, id);
         if (pack == null) { error("No pack found for " + id + " next to " + game + "."); return; }
@@ -915,7 +915,7 @@ public final class MainActivity extends Activity {
     private void relinkTo(Game g, File game) {
         new Thread(() -> {
             String id = null, err;
-            try { id = Pack.titleIdOf(game); err = GameFile.relinkProblem(g.titleId, g.name, id, game.getName()); } catch (IOException e) { err = e.getMessage(); }
+            try { id = Pack.playableIdOf(game); err = GameFile.relinkProblem(g.titleId, g.name, id, game.getName()); } catch (IOException e) { err = e.getMessage(); }
             if (err == null) {
                 synchronized (Game.class) {
                     List<Game> list = Game.load(this);
@@ -1059,7 +1059,7 @@ public final class MainActivity extends Activity {
                 Pick k = new Pick(g);
                 out.add(k);
                 if (Nup.wrongCase(g)) { k.error = g.getName() + ": rename it so that its name ends in \".nup\" (lower case)."; continue; }
-                try { k.id = Pack.titleIdOf(g); } catch (IOException e) { k.error = e.getMessage(); continue; }
+                try { k.id = Pack.playableIdOf(g); } catch (IOException e) { k.error = e.getMessage(); continue; }   // program 0, else a program n > 0 this APK runs (a Switch 2 Edition)
                 String why = Profile.missing(k.id, single ? null : g.getName());
                 if (why != null) { k.unsupported = true; k.error = why; continue; }
                 k.name = Profile.of(k.id).name;

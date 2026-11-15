@@ -538,7 +538,44 @@ final class Profile {
      */
     static String missing(String titleId, String name) {
         if (of(titleId) != null) return null;
+        Profile other = otherPrograms(titleId).isEmpty() ? null : otherPrograms(titleId).get(0);
+        if (other != null)   // a dump of the game alone, whose other program (a Switch 2 Edition) this APK runs: say what the dump lacks (Pack.playableIdOf)
+            return "This dump has only the Switch game (" + titleId + "). This app version runs its " + other.name + " (" + other.titleId + "), program " + program(other.titleId)
+                    + " of the game, which this dump does not hold. Dump the game again with its Nintendo Switch 2 Edition upgrade, so that the dump holds program "
+                    + program(other.titleId) + " too, then add that dump.";
+        return notIncluded(titleId, name);
+    }
+
+    /** missing's sentence for a title this APK has no profile of, whatever else it has (a dump that holds the other program says only this: DumpLayout.find) */
+    static String notIncluded(String titleId, String name) {
         return "This app version does not include " + (name == null || name.isEmpty() || name.equals(titleId) ? "this game" : name) + " (" + titleId + "). Install a build that includes it.";
+    }
+
+    /** A title ID without its platform byte (01 Switch, 04 Switch 2): scripts/pack_dump.py TITLE_NUMBER */
+    static final long TITLE_NUMBER = 0x00FFFFFFFFFFFFFFL;
+
+    /** The program index of a program ID: its low byte (0 for the game itself, 1 for a Switch 2 Edition's program beside it) */
+    static int program(String titleId) {
+        try { return (int) (Long.parseUnsignedLong(titleId, 16) & 0xFF); } catch (NumberFormatException e) { return 0; }
+    }
+
+    /**
+     * This APK's profiles of other programs of titleId's application, lowest program first: program n &gt; 0's ID is the application's with n in its low byte, under
+     * its own platform byte (Super Mario Bros. Wonder - Nintendo Switch 2 Edition, 040015100B514001, is program 1 of 010015100B514000). Empty for none, and for a
+     * title ID that is not a game's own program 0
+     */
+    static List<Profile> otherPrograms(String titleId) {
+        List<Profile> out = new ArrayList<>();
+        long app;
+        try { app = Long.parseUnsignedLong(titleId, 16); } catch (NumberFormatException e) { return out; }
+        if ((app & 0xFF) != 0) return out;
+        for (Profile p : all()) {
+            long id;
+            try { id = Long.parseUnsignedLong(p.titleId, 16); } catch (NumberFormatException e) { continue; }
+            if ((id & 0xFF) != 0 && (id & TITLE_NUMBER & ~0xFFL) == (app & TITLE_NUMBER)) out.add(p);
+        }
+        out.sort((x, y) -> Integer.compare(program(x.titleId), program(y.titleId)));
+        return out;
     }
 
     /** A version of a dump in words: 0 is the base game itself (no update installed; Mario Kart World 1.8.0's supported build), any other an update */
