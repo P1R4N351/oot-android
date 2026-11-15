@@ -93,6 +93,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `game` | Pokopia camera aspect hooks in main v2.0.1 | rendering | blocked: future game builds require exact offset and original-word validation | checked: main 76a489f3bd3642fa5e18bd83d32c98ba (Fold 7 observation, 2026-11-11) | 1 | [Pokemon Pokopia](../../dm/games/0400A3A01EE4C000/README.md) | camera layout/offsets are specific to this exact game build |
 | `build` → `game` | scene size: the scenes drawn below the smallest size the graphics scales give (Game settings > Resolution, Phone 540p) | rendering | blocked: one build on hand; the join could be found by function fingerprint (the 4/5 and 2/3 multiplies after GetCurrentGraphicsScale) | judgement | 1 | [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md) | the size function is the game's own code at a fixed address of this build; no Horizon query gives a smaller size |
 | `build` → `game` | Texture Pool x2: optional larger initial graphics allocation | memory | blocked: one full build ID and allocator call verified | judgement | 1 | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | the allocator is in the game and full-scale rendering can exhaust the original pool |
+| `build` → `game` | the allocators' NaN fill of new blocks: off | memory | blocked: one build of program 1; program 0 not yet checked for the same fill | checked: the five fill sites (movn w9, #0x8040, lsl #16 in main) and their no-fill checks, 2026-11-14 | 1 | [Kirby and the Forgotten Land - Nintendo Switch 2 Edition](../../dm/games/04004D300C5AE001/README.md) | HAL's allocator wrappers; a function-matched rule could carry it over the game's updates and to program 0 if its allocators fill as well |
 | `build` → unreviewed | Fire Emblem Fortune's Weave native 4:3 variant (VARIANT_CUTS['43']: camera aspect and ui2d pane rules) | rendering | unreviewed | judgement | 1 | [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | an opt-in variant (Game settings › Aspect ratio) of about 230 words in code caves of this main; each ui2d rule names panes of this build's layouts |
 
 ## Summary
@@ -110,6 +111,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Fire Emblem Fortune's Weave](#fire-emblem-fortunes-weave) | 0 | 0 | 0 | 0 | 0 | `build` → unreviewed |
 | [Fire Emblem: Three Houses](#fire-emblem-three-houses) | 12 | 0 | 0 | 0 | 0 | `build` → `game`, `build` → `host` |
 | [Hyrule Warriors: Age of Calamity](#hyrule-warriors-age-of-calamity) | 0 | 0 | 3 | 0 | 0 | `build` → `game` |
+| [Kirby and the Forgotten Land - Nintendo Switch 2 Edition](#kirby-and-the-forgotten-land---nintendo-switch-2-edition) | 5 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Luigi's Mansion 3](#luigis-mansion-3) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Mario + Rabbids Kingdom Battle](#mario--rabbids-kingdom-battle) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Mario + Rabbids® Sparks of Hope](#mario--rabbids-sparks-of-hope) | 7 | 0 | 0 | 0 | 0 | `build` → `game` ×2 |
@@ -393,6 +395,19 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - frame step `+0x8d94b0`: KTGL device config present interval: 1 above a 30 fps cap, else the game's 2 (state page target fps)
   - frame step `+0x166dab4`: KIDS frame task: fps and the frame-rate block = the cap, vsyncs per update marked; device frame rate 59.94 / vsyncs (state page target fps; 0 = the game's 30)
   - frame step `+0x166dc60`: KIDS frame task: the frame-rate object's steps × its fps × vsyncs per update / 60 (state page target fps; 0 = as the game sets them)
+
+### Kirby and the Forgotten Land - Nintendo Switch 2 Edition
+
+[Kirby and the Forgotten Land - Nintendo Switch 2 Edition](../../dm/games/04004D300C5AE001/README.md), `04004D300C5AE001`, [patches.py](../../dm/games/04004D300C5AE001/patches.py).
+
+- **`build` → `game`**, memory, blocked: one build of program 1; program 0 not yet checked for the same fill, checked: the five fill sites (movn w9, #0x8040, lsl #16 in main) and their no-fill checks, 2026-11-14: the allocators' NaN fill of new blocks: off. HAL's allocator wrappers; a function-matched rule could carry it over the game's updates and to program 0 if its allocators fill as well
+
+- **1.1.0 `main`** `395fc326…` ([patches.py:9](../../dm/games/04004D300C5AE001/patches.py#L9))
+  - cut `+0x863910`: main allocator: no NaN fill of a new block (cbnz w8 on the global no-fill byte → b, the same target)
+  - cut `+0x869604`: allocator (main+0x869400 kind): no NaN fill of a new block (cbnz w8 on the no-fill byte at +9 → b, the same target)
+  - cut `+0x8698c4`: allocator (main+0x869400 kind): no NaN fill of a new block (cbnz w8 on the no-fill byte at +9 → b, the same target)
+  - cut `+0x869e24`: allocator (main+0x869400 kind): no NaN fill of a new block (cbnz w8 on the no-fill byte at +9 → b, the same target)
+  - cut `+0x86d018`: StandardAllocator wrapper (main+0x86ce00): no NaN fill of a new block (cbnz w8 on the no-fill byte at +9 → b, the same target)
 
 ### Luigi's Mansion 3
 
@@ -745,7 +760,7 @@ Applied to the `sdk` of any build without CUTS, found by function fingerprint ([
 - node area 1 GB → 62 MB: SDK 19.3.11 (Pokémon Legends: Z-A), 19.3.13 (Octopath Traveler 0), 20.5.19 (BALL x PIT), 20.5.22 (Tears of the Kingdom)
 - node area 1 GB → 62 MB: SDK 22.2.0 (EA SPORTS FC 27, Well Dweller): the SDK 19 / 20 constructor, instruction for instruction up to its cold path, which gives each failing result its own abort (32 bytes more)
 - node area 1 GB → 62 MB: SDK 22.2.0 built for the Switch 2 (Fire Emblem Fortune's Weave): the constructor at sdk+0x16ba30 with return address signing and its own frame. The host's StandardAllocator cap counts on the 62 MB (alias_room): with 1 GB the capped region did not fit the alias region
-- node area 1 GB → 62 MB: SDK 19.3.3 (Mario Kart World), 20.5.15 (Yoshi and the Mysterious Book, Hyrule Warriors: Age of Imprisonment), 20.5.19 (Donkey Kong Bananza) built for the Switch 2: the constructor at sdk+0x14df00 on 20.5.15, with return address signing. Unreal's engine region takes what the alias region has room for, counting on the 62 MB (alias_room): with 1 GB nninitStartup's AllocateAddressRegion fails and it exits
+- node area 1 GB → 62 MB: SDK 19.3.3 (Mario Kart World), 20.5.15 (Yoshi and the Mysterious Book, Hyrule Warriors: Age of Imprisonment), 20.5.19 (Donkey Kong Bananza), and 19.3.7 (Kirby and the Forgotten Land - Nintendo Switch 2 Edition, sdk 5e81e793...) built for the Switch 2: the constructor at sdk+0x14df00 on 20.5.15 (sdk+0x14a9c0 on 19.3.7), with return address signing. Unreal's engine region takes what the alias region has room for, counting on the 62 MB (alias_room): with 1 GB nninitStartup's AllocateAddressRegion fails and it exits. Kirby's nninitStartup asks StandardAllocator::Initialize(nullptr, 20 GB) (returning to main+0x86cf10), which aborted in nn::diag (sdk+0x13c5d8) without the cut: the region did not fit after the 1 GB node area
 - node area 1 GB → 62 MB: SDK 21.4.1 (Sonic Frontiers Definitive Edition), 21.4.2 (Orbitals), 21.4.3 (Resident Evil 4), 21.4.4 (Splatoon Raiders) built for the Switch 2: the constructor at sdk+0x16db70 in all four, with return address signing: the 20.5 build's instructions in another order, with 32 more bytes on its cold path (an abort code per failing result). Unreal's engine region counts on the 62 MB (alias_room), as Yoshi and the Mysterious Book's. Region placement aligns to 64 KB or 2 MB only (sdk+0x16dd14), as SDK 20
 - regions of 4 MB and more aligned to 2 MB, as SDK 20: SDK 7.3.2 (DRAGON QUEST XI S), 8.2.1 (Super Smash Bros. Ultimate), 8.3.1 (Paper Mario: The Origami King), 10.4.1 (Advance Wars 1+2), 10.4.8 (Pikmin 4)
 - regions of 4 MB and more aligned to 2 MB, as SDK 20: SDK 11.4.0 (Pokémon Legends: Arceus, Kirby and the Forgotten Land): the next rule's size classes with 8 more bytes of body; the 4 GB StandardAllocator region of Arceus's nninitStartup (the host's cap) fits after the 62 MB node area only with it
