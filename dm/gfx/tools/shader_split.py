@@ -2743,9 +2743,12 @@ NV_STAGES = ['vs', 'ps', 'gs', 'hs', 'ds', 'cs']   # NVN stage order
 COMMON, TREES = None, {}   # Unity common strings and borrowed type trees (given when the pool starts)
 ZDICTS, _ZD = {}, {}       # zstd dictionaries by ID (given when the pool starts) and their digested form in this process
 
-def _pool_init(common, trees, zdicts={}):
-    global COMMON, TREES, ZDICTS
-    COMMON, TREES, ZDICTS = common, trees, zdicts
+LARGE_FILE = int(os.environ.get('DM_SPLIT_LARGE', 256 << 20))   # bytes: a file read whole at least this large is read by one pool worker at a time (scan_file_in)
+LARGE_LOCK = None   # the pool's lock for such files; None in this process (InProcess runs one job at a time)
+
+def _pool_init(common, trees, zdicts={}, large_lock=None):
+    global COMMON, TREES, ZDICTS, LARGE_LOCK
+    COMMON, TREES, ZDICTS, LARGE_LOCK = common, trees, zdicts, large_lock
 
 def zs_dicts(romfs):
     """Tears of the Kingdom compresses its RomFS files with zstd dictionaries (the frame header names one, ID 1 for the shader packages). They ship as Pack/ZsDic.pack.zs:
@@ -3317,6 +3320,15 @@ def scan_file_in(args):
                 if '.fx' in entry[0] or '/shaders/' in entry[0] or entry[0].endswith(('.vs.bin', '.ps.bin', '.fs.bin')):
                     found += phyre_shaders(vbf.read(f, entry), f'/{rel}/{entry[0]}')
         return rel, uniq_keys(found), var_pairs(found), trees
+    # a file read whole: one of LARGE_FILE bytes or more is read by one worker at a time (LARGE_LOCK). Orbitals Deluxe Edition has a 6.4 GB IoStore container and
+    # 0.1 to 0.9 GB videos; with every worker holding one, its full scan ran a 32 GB PC out of memory. Their shader markers occur in them by chance, so they are read
+    large = head[:4] != ZSTD_MAGIC and LARGE_LOCK is not None and os.path.getsize(path) >= LARGE_FILE
+    if large: LARGE_LOCK.acquire()
+    try: return scan_whole(path, rel, head, found, trees)
+    finally:
+        if large: LARGE_LOCK.release()
+
+def scan_whole(path, rel, head, found, trees):   # scan_file_in for a file no archive reader took: read whole, decoded by its first bytes, then scanned
     if head[:4] == ZSTD_MAGIC: d = unzs(path)   # by the magic: Paper Mario: The Thousand-Year Door names its zstd files .zst (8,726, its shaders among them)
     else:
         with open(path, 'rb') as f: d = f.read()
@@ -3415,9 +3427,11 @@ class InProcess:
         return f
     def map(self, fn, it): return map(fn, it)
 
-def pool(J, *initargs):
-    """The scan's workers: J processes, or this process when J is 1 (InProcess)"""
-    return cf.ProcessPoolExecutor(J, initializer=_pool_init, initargs=initargs) if J > 1 else InProcess(_pool_init, initargs)
+def pool(J, common, trees, zdicts):
+    """The scan's workers: J processes sharing one lock for the large files read whole (LARGE_LOCK), or this process when J is 1 (InProcess)"""
+    if J <= 1: return InProcess(_pool_init, (common, trees, zdicts))
+    import multiprocessing
+    return cf.ProcessPoolExecutor(J, initializer=_pool_init, initargs=(common, trees, zdicts, multiprocessing.Lock()))
 
 class ScanCache:
     """The scan's finished jobs kept in a folder (DM_SPLIT_RESUME), so a split stopped part way scans only the jobs it had not finished. The phone's split runs
@@ -3711,9 +3725,14 @@ def profile_differs(t, pairsout, psopairsout):
         p = GAME.table(name)
         if text is None or not os.path.isfile(p): continue
         with open(p, encoding='utf-8', newline='') as f: want = absent_tables(name, f.read(), absent)
-        if want != text: return f'made a {name} that differs from the profile\'s'
+        # the comment lines are left out: they name the game and the split's wording at the time, which a newer split or a renamed profile changes
+        # (Orbitals Deluxe Edition: its map's first line named the title ID, the split now writes the game's name, and every file was scanned in full)
+        if tables_data(want) != tables_data(text): return f'made a {name} that differs from the profile\'s'
     if absent: print(f'targeted split: compared with the profile\'s tables less the {len(absent)} shader(s) of shader_optional.tsv this dump does not have ({", ".join(sorted(absent)[:3])})', flush=True)
     return None
+
+def tables_data(text):   # a table's lines less its comment lines ('#')
+    return [ln for ln in text.splitlines() if not ln.startswith('#')]
 
 def optional_keys():
     """The keys of the profile's shader_map.tsv that only some of its registered builds have (shader_optional.tsv; scripts/pack_android.py optional_keys)"""
