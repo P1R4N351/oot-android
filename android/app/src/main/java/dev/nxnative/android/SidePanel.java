@@ -527,7 +527,7 @@ final class SidePanel extends FrameLayout {
     /**
      * Resolution: this game's Game resolution (the same choices and the same setting as Game settings › Game resolution), only for a game whose profile has a lever
      * (Profile.hasResolution). A game with graphics_scale rows changes now: the host takes the choice's graphics scale and operation mode and posts the console's change
-     * notifications, which the game answers by querying them again and resizing its scenes (Native.graphicsModeSet, hle_oe.c nxhost_graphics_mode_set). A window_fn or res_levels
+     * notifications, which the game answers by querying them again and resizing its scenes (Native.graphicsSet, hle_oe.c nxhost_graphics_mode_set). A window_fn or res_levels
      * game takes it at the next start. A game with one docked and one handheld row gets those two as radio buttons instead (Profile.modes).
      * A game with Resolution presets (ResPresets) gets them instead: the preset's window changes now, its 3D scene at the next start (the RomFS overlay is read at boot);
      * under Advanced the window row follows as before.
@@ -553,7 +553,7 @@ final class SidePanel extends FrameLayout {
                     Prefs.resPreset(act, game(), w < ps.size() ? ps.get(w).id : ResPresets.ADVANCED);   // the game's own setting: the next start takes it too
                     if (now) {
                         int[] m = p.resolutionLive(Prefs.startWindow(act, game()));
-                        if (m != null && !Native.graphicsModeSet(m[0], m[1])) Native.note("Resolution: this host cannot change the window live; it applies at the next start");
+                        if (m != null && !Native.graphicsSet(m)) Native.note("Resolution: this host cannot change the window live; it applies at the next start");
                     }
                     d.dismiss();
                     restyle(ID_RES_PRESET);
@@ -574,7 +574,7 @@ final class SidePanel extends FrameLayout {
                 if (!ps.isEmpty()) Prefs.resPreset(act, game(), ResPresets.ADVANCED);   // a window chosen under Advanced keeps Advanced
                 if (now) {
                     int[] m = p.resolutionLive(Prefs.gameWindow(act, game()));
-                    if (m != null && !Native.graphicsModeSet(m[0], m[1])) Native.note("Game resolution: this host cannot change it live; it applies at the next start");
+                    if (m != null && !Native.graphicsSet(m)) Native.note("Game resolution: this host cannot change it live; it applies at the next start");
                 }
                 restyle(id);
             });
@@ -592,7 +592,7 @@ final class SidePanel extends FrameLayout {
                 if (!ps.isEmpty()) Prefs.resPreset(act, game(), ResPresets.ADVANCED);   // a window chosen under Advanced keeps Advanced
                 if (now) {
                     int[] m = p.resolutionLive(Prefs.gameWindow(act, game()));
-                    if (m != null && !Native.graphicsModeSet(m[0], m[1])) Native.note("Game resolution: this host cannot change it live; it applies at the next start");
+                    if (m != null && !Native.graphicsSet(m)) Native.note("Game resolution: this host cannot change it live; it applies at the next start");
                 }
                 d.dismiss();
                 restyle(ID_RES);

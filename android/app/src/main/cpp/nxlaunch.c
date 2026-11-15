@@ -553,6 +553,13 @@ JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_graphicsModeSet(JNIE
     (void)env; (void)cls; if (!nxhost_graphics_mode_set) return JNI_FALSE;
     nxhost_graphics_mode_set(scale, opmode); return JNI_TRUE;
 }
+// The same with the graphics size of a game whose size gate draws below its scales (Native.graphicsStateSet): scale, mode and size together, one round of notifications
+#pragma weak nxhost_graphics_set
+void nxhost_graphics_set(int scale, int opmode, int w, int h);   // hle_oe.c: 0x0 = the game's own size
+JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_graphicsStateSet(JNIEnv *env, jclass cls, jint scale, jint opmode, jint w, jint h) {
+    (void)env; (void)cls; if (!nxhost_graphics_set) return JNI_FALSE;
+    nxhost_graphics_set(scale, opmode, w, h); return JNI_TRUE;
+}
 // Resolution and Upscaling quality of a game with a render_cfg row, live from the in-game panel (Native.renderSet): the host keeps the setting pending and posts notification 31
 #pragma weak nxhost_render_set
 void nxhost_render_set(int outh, int pct, int quality);   // hle_render.c: -1 keeps one

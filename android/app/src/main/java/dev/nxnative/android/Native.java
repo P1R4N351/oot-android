@@ -152,6 +152,11 @@ final class Native {
     /** Game resolution while the game runs, for a game with graphics_scale rows (Profile.resolutionLive): the graphics scale (0-2, -1 following the operation mode) and the operation mode
      *  (0 handheld, 1 console, -1 the profile's own); the host posts the console's change notifications and the game queries them again (hle_oe.c nxhost_graphics_mode_set). False when this host has no such call */
     static native boolean graphicsModeSet(int scale, int opmode);
+    /** Game resolution while the game runs with a graphics size too (DM_GRAPHICS_SIZE, a game whose size gate draws below its scales; 0x0 the game's own): the scale, mode and size
+     *  set together, one round of notifications (hle_oe.c nxhost_graphics_set). False when this host has no such call */
+    static native boolean graphicsStateSet(int scale, int opmode, int width, int height);
+    /** Profile.resolutionLive's {scale, mode, width, height} while the game runs */
+    static boolean graphicsSet(int[] m) { return graphicsStateSet(m[0], m[1], m[2], m[3]); }
     /** Resolution and Upscaling quality while the game runs, for a game with a render_cfg row (Profile.renderCfg): the output height (0 Original), the render scale in percent and the
      *  graphics quality (1 quality, 0 performance), -1 keeping one; the host writes them at the game's next notification 31, clamped to the render target pool the game started with
      *  (hle_render.c nxhost_render_set). False when this host has no such call */

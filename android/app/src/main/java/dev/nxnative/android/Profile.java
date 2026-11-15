@@ -59,7 +59,8 @@ final class Profile {
      * The host's environment lines for a Game resolution choice (Prefs.WINDOWS: "original", "2560x1440", "1920x1080", "1280x720", "960x540", "848x480"): DM_WINDOW_SIZE=&lt;choice&gt; for a game with
      * window_fn rows (its window size) or res_levels rows (a cap on its dynamic resolution); DM_GRAPHICS_SCALE and DM_OPMODE from the choice's graphics_scale row for a game that sizes its scenes by the graphics scale. Such a
      * game has only the few sizes its scales give, so a size choice without a row of its own takes the row of the largest size that fits in it, or the smallest row when none fits (Phone 540p on a game whose
-     * smallest is 1280x720); Original without a row sets nothing (the game's own). None for a game with neither.
+     * smallest is 1280x720); Original without a row sets nothing (the game's own). A row whose scale and mode a larger row also has is a size the scales do not give: it adds
+     * DM_GRAPHICS_SIZE=&lt;its size&gt;, which the game's size gate draws (Mario Tennis Fever's 960x540, android/mtf_size.c). None for a game with neither.
      */
     List<String> resolutionEnv(String choice) {
         List<String> env = new ArrayList<>();
@@ -67,6 +68,8 @@ final class Profile {
         else {
             int[] m = scaleRow(choice);
             if (m != null) { env.add("DM_GRAPHICS_SCALE=" + m[0]); env.add("DM_OPMODE=" + m[1]); }
+            int[] g = gateSize(scalePick(choice));
+            if (g != null) env.add("DM_GRAPHICS_SIZE=" + g[0] + "x" + g[1]);
         }
         return env;
     }
@@ -189,19 +192,38 @@ final class Profile {
 
     /**
      * Whether Game resolution changes while the game runs (the in-game panel): only for a game with graphics_scale rows, whose host changes the graphics scale and operation mode
-     * live and posts the console's notifications (Native.graphicsModeSet). A window_fn game's window size is written into its code at load, and a res_levels game's level lists
+     * live and posts the console's notifications (Native.graphicsSet). A window_fn game's window size is written into its code at load, and a res_levels game's level lists
      * are rewritten in its read-only data at load (loader.c): both apply at the next start.
      */
     boolean resolutionLive() { return resolution.startsWith("scale:"); }
 
     /**
-     * The graphics scale and operation mode for a choice while the game runs (Native.graphicsModeSet): the row resolutionEnv takes, or {-1, -1} where it sets nothing
-     * (Original without a row: the game's own, as a start without the lines); null for a game without graphics_scale rows.
+     * The graphics scale, operation mode and graphics size for a choice while the game runs (Native.graphicsSet): {scale, mode, width, height} of the row resolutionEnv takes, the size
+     * 0x0 unless the row has DM_GRAPHICS_SIZE; {-1, -1, 0, 0} where it sets nothing (Original without a row: the game's own, as a start without the lines); null for a game without
+     * graphics_scale rows.
      */
     int[] resolutionLive(String choice) {
         if (!resolutionLive()) return null;
-        int[] m = scaleRow(choice);
-        return m != null ? m : new int[] {-1, -1};
+        int[] m = scaleRow(choice), g = gateSize(scalePick(choice));
+        return m == null ? new int[] {-1, -1, 0, 0} : new int[] {m[0], m[1], g != null ? g[0] : 0, g != null ? g[1] : 0};
+    }
+
+    /**
+     * A graphics_scale row's size when the scales do not give it: another row has the same scale and mode and is larger on both sides (Mario Tennis Fever's 960x540 beside its
+     * 1280x720, both handheld scale 2), so the host's size gate for that game draws it (DM_GRAPHICS_SIZE); null for any other row
+     */
+    private int[] gateSize(String row) {
+        if (row == null || !resolution.startsWith("scale:")) return null;
+        int eq = row.indexOf('=');
+        int[] s = size(row.substring(0, eq));
+        if (s == null) return null;
+        for (String r : resolution.substring(6).split(",")) {
+            int e = r.indexOf('=');
+            if (e <= 0 || r.equals(row) || !r.substring(e).equals(row.substring(eq))) continue;
+            int[] o = size(r.substring(0, e));
+            if (o != null && o[0] > s[0] && o[1] > s[1]) return s;
+        }
+        return null;
     }
 
     /** The choice's graphics_scale row as {scale, operation mode (0 handheld, 1 console)}: its own row, else the largest that fits in it, else the smallest; null when none applies */
