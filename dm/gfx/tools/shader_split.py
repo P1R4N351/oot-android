@@ -2794,6 +2794,28 @@ def frame_size(f):
     o = 6 - single + (0, 1, 2, 4)[fhd & 3]   # after the window descriptor and the dictionary ID
     return int.from_bytes(f[o:o + n], 'little') + (256 if n == 2 else 0)
 
+def lz4_frame(f):
+    """An LZ4 frame (lz4's Frame format) decompressed block by block with lz4.block, which every packing Python has: the phone's carries python-lz4's block module
+    only (android/ondevice/build.sh), and the frame module's absence left the .cmp containers closed, among them the 9,092 of Kirby and the Forgotten Land's
+    add-on that hold its Switch 2 Edition's shaders (BananaNative #356). A linked block decodes with the frame's last 64 KiB as its dictionary. The checksums are
+    not verified: unsized checks the size against its prefix"""
+    import lz4.block
+    flg, bd = f[4], f[5]
+    if flg >> 6 != 1 or not 4 <= bd >> 4 & 7: raise ValueError(f'an LZ4 frame descriptor this reader does not know (FLG {flg:#04x}, BD {bd:#04x})')
+    bmax = 1 << 8 + 2 * (bd >> 4 & 7)   # the block maximum: 4 = 64 KiB … 7 = 4 MiB
+    linked = not flg & 0x20
+    o, out = 6 + (8 if flg & 8 else 0) + (4 if flg & 1 else 0) + 1, bytearray()   # after the content size and dictionary ID when present, and the header checksum
+    while True:
+        if o + 4 > len(f): raise ValueError('the LZ4 frame ends before its end mark')
+        n = int.from_bytes(f[o:o + 4], 'little'); o += 4
+        if not n: return bytes(out)
+        stored, n = n >> 31, n & 0x7FFFFFFF
+        if n > bmax or o + n > len(f): raise ValueError(f'an LZ4 block of {n} bytes (at most {bmax}, {len(f) - o} left)')
+        b = f[o:o + n]; o += n + (4 if flg & 0x10 else 0)   # and its checksum when the frame has them
+        if stored: out += b
+        elif linked and out: out += lz4.block.decompress(b, uncompressed_size=bmax, dict=bytes(out[-0x10000:]))
+        else: out += lz4.block.decompress(b, uncompressed_size=bmax)
+
 def unsized(d, where):
     """A size-prefixed frame (HAL's .cmp containers, Kirby and the Forgotten Land): a 4-byte little-endian uncompressed size, then a zstd frame (with a dictionary as for a zstd file)
     or an LZ4 frame (its ubin/ map data) → the frame decompressed. Bytes whose frame header records another size are not such a container and are returned as they are (Tears of the
@@ -2803,9 +2825,7 @@ def unsized(d, where):
     if frame_size(f) not in (None, n): return d
     did = zs_dict_id(f)
     try:
-        if f[:4] == LZ4_FRAME_MAGIC:
-            import lz4.frame
-            dec = lz4.frame.decompress(f)
+        if f[:4] == LZ4_FRAME_MAGIC: dec = lz4_frame(f)
         elif did and did not in ZDICTS: dec = None
         else: dec = unzs_dict(f, did, where) if did else zstd_mod().decompress(f)
     except Exception as e: why = str(e) or type(e).__name__

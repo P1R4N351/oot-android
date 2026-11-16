@@ -7,7 +7,7 @@
 # Usage: build.sh <work dir> [all|python|tools|zbic]   (default all; zbic adds only libzbicdec.so and libcra.so to an existing stage; downloads and intermediate files go into the work dir: put it on the dump drive, not in the home folder)
 # → <work dir>/stage/
 #     lib/libpython3.14.so, libnxpack.so, libzbicdec.so, libcra.so, libdmsh_xlate.so, libSPIRV-Tools-shared.so   the app's jniLibs (arm64-v8a)
-#     python/lib/python3.14/                   the Python home: the standard library with lib-dynload/, site-packages/capstone (+ lib/libcapstone.so), site-packages/lz4 (block, frame)
+#     python/lib/python3.14/                   the Python home: the standard library with lib-dynload/, site-packages/capstone (+ lib/libcapstone.so), site-packages/lz4
 #     bin/dm_pack_cli                          the adb shell test runner (dm_pack_cli.c)
 # The sources are pinned by version and SHA-256 (below; SPIRV-Tools by its Vulkan SDK tag); a mismatch stops the build. "python" makes the stage afresh, so run
 # "tools" after it (all does both).
@@ -46,16 +46,13 @@ ninja -C $W/build/capstone >> $W/build/capstone.log
 cp -R $W/src/capstone-5.0.7/capstone $SP/; mkdir -p $SP/capstone/lib
 cp -L $W/build/capstone/libcapstone.so $SP/capstone/lib/libcapstone.so
 $BIN/llvm-strip --strip-debug $SP/capstone/lib/libcapstone.so   # its debug info names the build folder (this machine's paths); the NDK's own strip, as $CC, on any host
-# python-lz4 4.4.5: lz4, lz4.block (the rewriter's NSO reader) and lz4.frame (the shader split's size-prefixed frames: HAL's .cmp containers, Kirby and the
-# Forgotten Land's ubin/ and snd/), its C extensions against the Android Python
-L=$W/src/lz4-4.4.5; mkdir -p $SP/lz4/block $SP/lz4/frame
+# python-lz4 4.4.5: lz4 and lz4.block (the rewriter's NSO reader needs nothing else), its C extensions against the Android Python
+L=$W/src/lz4-4.4.5; mkdir -p $SP/lz4/block
 cp $L/lz4/__init__.py $L/lz4/version.py $SP/lz4/
 cp $L/lz4/block/__init__.py $SP/lz4/block/
-cp $L/lz4/frame/__init__.py $SP/lz4/frame/
 EXT=(-shared -fPIC -O2 -I$INC -I$L/lz4libs -L$P/lib -lpython3.14 -Wl,-z,max-page-size=16384)
 $=CC $EXT -o $SP/lz4/_version.$SFX $L/lz4/_version.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c
 $=CC $EXT -o $SP/lz4/block/_block.$SFX $L/lz4/block/_block.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c
-$=CC $EXT -o $SP/lz4/frame/_frame.$SFX $L/lz4/frame/_frame.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c $L/lz4libs/lz4frame.c $L/lz4libs/xxhash.c
 # libnxpack.so (dm_pack.c: the C entry and the JNI one, class dev.nxnative.android.PackNative) and the test runner
 cp $P/lib/libpython3.14.so $S/lib/
 $=CC -shared -fPIC -O2 -Wall -I$INC -o $S/lib/libnxpack.so $HERE/dm_pack.c -L$P/lib -lpython3.14 -Wl,-z,max-page-size=16384

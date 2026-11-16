@@ -37,6 +37,26 @@ class Unsized(unittest.TestCase):
         self.assertEqual(d[4:8], ss.LZ4_FRAME_MAGIC)
         self.assertEqual(unsized(d), (BODY, ''))
 
+    def test_lz4_frame_without_the_frame_module(self):
+        # the phone's Python has lz4.block only (BananaNative #356: Kirby's add-on keeps its shaders in such frames): the reader must not need lz4.frame
+        import lz4.frame
+        d = struct.pack('<I', len(BODY)) + lz4.frame.compress(BODY)
+        from unittest import mock
+        with mock.patch.dict(sys.modules, {'lz4.frame': None}): self.assertEqual(unsized(d), (BODY, ''))
+
+    def test_lz4_frame_reader_matches_the_frame_module(self):
+        # every frame option: block sizes, linked and independent blocks, block and content checksums, stored (incompressible) blocks, several blocks
+        import hashlib, lz4.frame
+        noise = b''.join(hashlib.sha256(i.to_bytes(4, 'little')).digest() for i in range(20000))   # 640 KB that do not compress: stored blocks
+        text = b''.join(b'shader %d uses %d; ' % (i, i % 97) for i in range(60000))                 # ~1 MB of repeats that reach back across blocks
+        for data in (b'', BODY, noise, text, noise[:100000] + text):
+            for bs in (lz4.frame.BLOCKSIZE_MAX64KB, lz4.frame.BLOCKSIZE_MAX256KB, lz4.frame.BLOCKSIZE_MAX1MB, lz4.frame.BLOCKSIZE_MAX4MB):
+                for linked in (True, False):
+                    for checks in (False, True):
+                        f = lz4.frame.compress(data, block_size=bs, block_linked=linked, block_checksum=checks, content_checksum=checks, store_size=checks)
+                        with self.subTest(n=len(data), bs=bs, linked=linked, checks=checks): self.assertEqual(ss.lz4_frame(f), data)
+        with self.assertRaises(ValueError): ss.lz4_frame(lz4.frame.compress(text)[:-9])   # cut before its end mark
+
     def test_frame_size(self):
         import lz4.frame
         zs = ss.zstd_mod()
