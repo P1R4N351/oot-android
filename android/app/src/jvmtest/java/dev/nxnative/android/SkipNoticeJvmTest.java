@@ -6,6 +6,8 @@ package dev.nxnative.android;
  * percent &lt;status or -&gt;           → "percent &lt;n&gt;"
  * causes &lt;status or -&gt;            → "causes &lt;text&gt;"
  * text &lt;percent&gt; &lt;driver or -&gt;    → "text &lt;the notice&gt;"
+ * nomesh &lt;status&gt; &lt;percent&gt;       → "nomesh &lt;true|false&gt; &lt;the notice&gt;"
+ * missing &lt;status&gt; &lt;percent&gt;      → "missing &lt;true|false&gt; &lt;the notice&gt;"
  * </pre>
  */
 public final class SkipNoticeJvmTest {
@@ -15,6 +17,7 @@ public final class SkipNoticeJvmTest {
             case "percent": System.out.println("percent " + SkipNotice.percent(s)); break;
             case "causes": System.out.println("causes " + SkipNotice.causes(s)); break;
             case "nomesh": System.out.println("nomesh " + SkipNotice.noMesh(s) + " " + SkipNotice.textNoMesh(Integer.parseInt(a[2]))); break;
+            case "missing": System.out.println("missing " + SkipNotice.missingShaders(s) + " " + SkipNotice.textMissingShaders(Integer.parseInt(a[2]))); break;
             case "text": System.out.println("text " + SkipNotice.text(Integer.parseInt(a[1]), a.length > 2 && !a[2].equals("-") ? a[2] : null)); break;
             default: throw new IllegalArgumentException(a[0]);
         }

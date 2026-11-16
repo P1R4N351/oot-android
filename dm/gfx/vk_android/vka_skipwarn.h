@@ -1,15 +1,17 @@
-// The skipped-work warning (DM_VK_SKIP_WARN; android/README.md "In-game notices"): when the replay skips a large share of a game's draws and dispatches for causes that
-// point to the GPU or its driver, the player is told once per run that another driver may draw the picture. Pure counters and arithmetic, free of Android and Vulkan so the
-// Mac's unit test (dm/host/tests/t_android_skipwarn.c) can check them. Only causes of the device count: a pipeline or module the driver refused, a feature the device lacks.
-// Skips the game or a profile asks for (render conditions, empty draws, cuts) and ones of the replay's own state never do.
+// The skipped-work warning (DM_VK_SKIP_WARN; android/README.md "In-game notices"): when the replay skips a large share of a game's draws and dispatches for causes the
+// player can change, the player is told once per run what to change. Pure counters and arithmetic, free of Android and Vulkan so the Mac's unit test
+// (dm/host/tests/t_android_skipwarn.c) can check them. Causes of the device count (a pipeline or module the driver refused, a feature the device lacks: another driver may
+// draw it), and so do shaders the pack's library does not have (VKS_MISSING: a pack made from an incomplete dump or by an older split, which no driver changes; the game is
+// prepared again). Skips the game or a profile asks for (render conditions, empty draws, cuts) and ones of the replay's own state never do.
 #ifndef VKA_SKIPWARN_H
 #define VKA_SKIPWARN_H
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
-enum { VKS_MESH, VKS_SHADER, VKS_PIPELINE, VKS_FEATURE, VKS_N };
-static const char *const vks_name[VKS_N] = {"mesh draws without VK_EXT_mesh_shader", "shaders refused", "pipelines not made", "features the device lacks"};
+enum { VKS_MESH, VKS_SHADER, VKS_PIPELINE, VKS_FEATURE, VKS_MISSING, VKS_N };
+static const char *const vks_name[VKS_N] = {"mesh draws without VK_EXT_mesh_shader", "shaders refused", "pipelines not made", "features the device lacks",
+                                            "shaders missing from the pack"};
 enum { VKS_WINDOW = 300, VKS_FIRST = 900, VKS_MIN_WORK = 200, VKS_DEFAULT_PCT = 5 };   // frames in a window; no verdict before this frame; fewer draws in a window say nothing
 
 typedef struct {
@@ -18,7 +20,7 @@ typedef struct {
     char causes[224];                          // what the warning named
 } vkskip;
 
-// Called with the cumulative counters each frame: work = draws and dispatches that ran, dev = device-caused skips by cause, other = every other skip. Returns 1 once, at
+// Called with the cumulative counters each frame: work = draws and dispatches that ran, dev = the counted skips by cause (above), other = every other skip. Returns 1 once, at
 // the second window in a row whose share of device-caused skips in all draws and dispatches attempted is over threshold_pct (0 = never), with pct, causes and the frame
 // count in s. A window with fewer than VKS_MIN_WORK attempts (a loading screen) says nothing and breaks the row.
 static inline int vkskip_step(vkskip *s, uint64_t frame, uint64_t work, const uint64_t dev[VKS_N], uint64_t other, int threshold_pct) {

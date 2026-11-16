@@ -2,7 +2,8 @@ package dev.nxnative.android;
 
 /**
  * The in-game notice for skipped work (android/README.md, In-game notices; pure Java: dm/tools/tests/test_android_skipnotice.py runs it on the JVM). The host counts the draws
- * and dispatches the Vulkan replay cannot run for causes of the GPU or its driver (refused pipelines and shaders, a missing mesh shader or other feature) and, once a run,
+ * and dispatches the Vulkan replay cannot run for causes of the GPU or its driver (refused pipelines and shaders, a missing mesh shader or other feature) or because the
+ * pack's shader library lacks their shaders (vka_skipwarn.h VKS_MISSING), and, once a run,
  * when they are a large share two windows in a row, answers Native.skipStatus() with "&lt;percent&gt; &lt;causes&gt;" (vka_exec.c nxhost_skip_status; DM_VK_SKIP_WARN is the
  * threshold, 0 = off). GameActivity polls it and shows this text once, small and dismissible.
  */
@@ -34,6 +35,18 @@ final class SkipNotice {
     /** The notice for a device without mesh shading: honest about the cause, no driver advice */
     static String textNoMesh(int percent) {
         return "This GPU has no mesh shading, so some models are missing from the picture (" + percent + " % of draws skipped). Another GPU driver may not change this.";
+    }
+
+    /**
+     * Whether the largest cause is shaders the pack's shader library does not have (vka_skipwarn.h VKS_MISSING): a pack made from an incomplete dump or by an older
+     * split (BananaNative #356: a Switch 2 Edition prepared without its add-on's shaders). No driver draws a shader that is not there, so the notice names none
+     */
+    static boolean missingShaders(String status) { return causes(status).startsWith("shaders missing from the pack"); }
+
+    /** The notice for shaders missing from the pack: not the driver; prepare the game again (the game page's Pack › Prepare again) */
+    static String textMissingShaders(int percent) {
+        return "Part of the picture is not drawn: this game's pack lacks shaders the game uses (" + percent + " % of draws skipped). Another GPU driver will not change this. "
+                + "Prepare the game again from a complete dump: its page › Prepare again.";
     }
 
     /** The notice: what is wrong, where to change it, and the driver in use now (null or empty = the system's) */

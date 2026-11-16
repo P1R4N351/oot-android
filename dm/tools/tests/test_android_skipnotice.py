@@ -19,6 +19,12 @@ class Wiring(unittest.TestCase):
         self.assertIn('Native_skipStatus', (REPO / 'android/app/src/main/cpp/nxlaunch.c').read_text(encoding='utf-8'))
         self.assertIn('native String skipStatus', (REPO / 'android/app/src/main/java/dev/nxnative/android/Native.java').read_text(encoding='utf-8'))
 
+    def test_the_launcher_reads_the_hosts_cause_names(self):
+        # SkipNotice matches the host's cause names (vka_skipwarn.h vks_name) by their text: a renamed cause would silently lose its notice
+        h, java = (REPO / 'dm/gfx/vk_android/vka_skipwarn.h').read_text(encoding='utf-8'), SRC.read_text(encoding='utf-8')
+        for name in ('mesh draws without VK_EXT_mesh_shader', 'shaders missing from the pack'):
+            self.assertIn(f'"{name}"', h); self.assertIn(f'"{name}"', java)
+
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')
 class Notice(unittest.TestCase):
@@ -47,6 +53,14 @@ class Notice(unittest.TestCase):
         r = self.java('nomesh', '30 mesh draws without VK_EXT_mesh_shader 900, shaders refused 49', 30)
         self.assertTrue(r.startswith('true This GPU has no mesh shading, so some models are missing'), r)
         self.assertTrue(self.java('nomesh', '9 pipelines not made 50, mesh draws without VK_EXT_mesh_shader 5', 9).startswith('false'))
+
+    def test_shaders_missing_from_the_pack(self):
+        # BananaNative #356: a pack without the add-on's shaders skipped 99 % of draws, and the notice sent the player after a driver; the pack's cause names no driver
+        r = self.java('missing', '99 shaders missing from the pack 488394, shaders refused 12', 99)
+        self.assertEqual(r, 'true Part of the picture is not drawn: this game\'s pack lacks shaders the game uses (99 % of draws skipped). Another GPU driver will not '
+                            'change this. Prepare the game again from a complete dump: its page › Prepare again.')
+        self.assertTrue(self.java('missing', '20 shaders refused 400, shaders missing from the pack 10', 20).startswith('false'))   # the largest cause decides
+        self.assertTrue(self.java('nomesh', '99 shaders missing from the pack 488394', 99).startswith('false'))
 
     def test_no_warning(self):
         for s in ('-', '', '0 x', 'abc', '101 x', '-3 x'):

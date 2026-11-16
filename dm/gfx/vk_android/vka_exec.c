@@ -94,7 +94,8 @@ static uint64_t g_job_frame; static int g_job_frame_set;   // the frame of the s
 void vka_exec_sub_frame(uint64_t f) { g_job_frame = f; g_job_frame_set = 1; }
 uint64_t vka_frame_start_ns(uint64_t f) { unsigned k = f % 64; return atomic_load(&g_fstart_f[k]) == f ? atomic_load(&g_fstart[k]) : 0; }   // now_ns; 0 = not known (vka_perf.c)
 // The skipped-work warning (vka_skipwarn.h, DM_VK_SKIP_WARN): once per run, when the replay skipped over the threshold's share of the draws and dispatches in two windows of
-// VKS_WINDOW frames in a row for causes of the device (refused pipelines and shaders, a missing feature), the [RED] line below and nxhost_skip_status (the launcher's notice)
+// VKS_WINDOW frames in a row for causes of the device (refused pipelines and shaders, a missing feature) or shaders missing from the pack, the [RED] line below and
+// nxhost_skip_status (the launcher's notice). Its advice follows the largest cause
 static vkskip g_skipw; static _Atomic int g_skipw_pct;
 extern void vka_draw_skips(uint64_t dev[VKS_N], uint64_t *work, uint64_t *other);
 static void skipwarn_frame(uint64_t f) {
@@ -102,9 +103,12 @@ static void skipwarn_frame(uint64_t f) {
     if (th <= 0 || g_skipw.fired) return;
     uint64_t dev[VKS_N], work, other; vka_draw_skips(dev, &work, &other);
     if (!vkskip_step(&g_skipw, f, work, dev, other, th)) return;
-    int mesh = !strncmp(g_skipw.causes, vks_name[VKS_MESH], strlen(vks_name[VKS_MESH]));   // (the largest cause: this device has no mesh shading, which no driver choice here changes)
+    // the largest cause, named first: this device has no mesh shading, or the pack lacks shaders (an incomplete dump, an older split), which no driver choice here changes
+    int mesh = !strncmp(g_skipw.causes, vks_name[VKS_MESH], strlen(vks_name[VKS_MESH]));
+    int missing = !strncmp(g_skipw.causes, vks_name[VKS_MISSING], strlen(vks_name[VKS_MISSING]));
     VRED("%d %% of draws skipped over the last %d frames (causes: %s): %s", g_skipw.pct, VKS_WINDOW, g_skipw.causes,
-         mesh ? "this GPU has no mesh shading, so some models are missing" : "the GPU driver may not suit this game");
+         mesh ? "this GPU has no mesh shading, so some models are missing"
+              : missing ? "the pack's shader library lacks shaders the game uses: prepare the game again from a complete dump" : "the GPU driver may not suit this game");
     atomic_store_explicit(&g_skipw_pct, g_skipw.pct, memory_order_release);
 }
 // The launcher's notice (Native.skipStatus): "<percent> <causes>" once the warning fired, "" before; the buffer ends with a NUL

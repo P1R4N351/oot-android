@@ -259,7 +259,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     /**
      * The skipped-work notice (SkipNotice): every 5 s from 30 s after the start, ask the host whether the replay skipped a large share of the game's draws for causes of the
-     * GPU driver (Native.skipStatus, DM_VK_SKIP_WARN); the host says so once, after the first loading seconds, and the notice shows once per run: small, at the bottom,
+     * GPU driver or for shaders missing from the pack (Native.skipStatus, DM_VK_SKIP_WARN); the host says so once, after the first loading seconds, and the notice shows once per run: small, at the bottom,
      * a tap dismisses it, it fades after 20 s. Stops after showing, or when this host cannot say (no such entry point: an empty answer every time is still polled, cheaply)
      */
     private static boolean skipShown;
@@ -282,7 +282,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         String st = Native.skipStatus();
         Native.note("skipped work: notice shown (" + pct + " % of draws; driver: " + (drv == null ? "system" : drv.label()) + ")");
         TextView h = new TextView(this);
-        h.setText(SkipNotice.noMesh(st) ? SkipNotice.textNoMesh(pct) : SkipNotice.text(pct, drv == null ? null : drv.label()));
+        h.setText(SkipNotice.noMesh(st) ? SkipNotice.textNoMesh(pct) : SkipNotice.missingShaders(st) ? SkipNotice.textMissingShaders(pct) : SkipNotice.text(pct, drv == null ? null : drv.label()));
         h.setTextColor(Color.WHITE);
         h.setTextSize(13);
         float dp = getResources().getDisplayMetrics().density;

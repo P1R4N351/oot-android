@@ -30,7 +30,9 @@ static int g_vattr_clear = 1;   // DM_VK_VATTR_CLEAR: a BindVertexAttribState re
                                 // 0 = the old merge, where the attributes past its count keep the earlier binds' formats and offsets
 uint64_t vka_n_rp;   // render passes the draws opened (vka_exec.c replay statistics)
 static uint64_t g_draws, g_skipped, g_dispatches;
-static uint64_t g_skip_dev[VKS_N];   // the skips whose cause is the device or its driver (vka_skipwarn.h), also counted in g_skipped; read by vka_draw_skips
+static uint64_t g_skip_dev[VKS_N];   // the skips the warning counts by cause (vka_skipwarn.h: the device's, shaders missing from the pack), also counted in g_skipped; read by vka_draw_skips
+// The cause of a draw or dispatch skipped for its shaders (resolve's bad): a shader the pack's library does not have (VKA_BAD_MISSING) is the pack's, not the driver's
+#define SHADER_CAUSE(bad) ((bad) & VKA_BAD_MISSING ? VKS_MISSING : VKS_SHADER)
 static uint32_t g_claim_words;   // the draw's claim words (an upper bound of its primitives): 0 = its geometry shader takes no claim
 #define SKIPD(c, ...) do { g_skip_dev[c]++; SKIP(__VA_ARGS__); } while (0)   // (SKIP, counted as a device cause)
 #define SKIP(...) do { g_skipped++; static _Atomic int n_; if (atomic_fetch_add(&n_, 1) < 4) VRED(__VA_ARGS__); return; } while (0)
@@ -1671,7 +1673,7 @@ static int resolve(const prog_t *p, int st, vka_shader **out, unsigned *bad) {
     uint64_t sr = p->serial; typeof(g_pm[0]) *m = &g_pm[(sr ^ sr >> 6) & 63];
     if (sr && m->serial == sr) ps = m->ps;
     else { if (!vka_prog_shaders(p, &ps)) return 0; if (sr) { m->serial = sr; m->ps = ps; } }
-    if (ps.bad & (1u << st | VKA_BAD_MISSING)) { *bad |= 1u << st; return 1; }
+    if (ps.bad & (1u << st | VKA_BAD_MISSING)) { *bad |= 1u << st | (ps.bad & VKA_BAD_MISSING); return 1; }   // (missing kept apart: SHADER_CAUSE)
     *out = ps.sh[st]; return 1;
 }
 // Vertex input: an attribute per input location the vertex shader reads (Location = NVN attribute index), each from its stream; an input no attribute feeds reads a zero buffer.
@@ -2259,7 +2261,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
         const prog_t *mp = d->bst[7];
         { vka_shader *m = NULL; unsigned b2 = 0; if (d->bst[1] && d->bst[1] != mp && resolve(d->bst[1], 7, &m, &b2) && (m || (b2 & 1u << 7))) mp = d->bst[1]; }
         if (!resolve(mp, 6, &sh[6], &bad) || !resolve(mp, 7, &sh[7], &bad) || !resolve(d->bst[1], 1, &sh[1], &bad)) SKIP("mesh draw skipped: no shader library");
-        if (bad) { g_skipped++; g_skip_dev[VKS_SHADER]++; return; }   // a refused or missing shader (logged when it was made)
+        if (bad) { g_skipped++; g_skip_dev[SHADER_CAUSE(bad)]++; return; }   // a refused or missing shader (logged when it was made)
         if (!sh[7]) SKIP("mesh draw with no mesh shader bound: skipped");
         if (vegetation_cut(d, sh)) return;
         // Diagnostics: DM_VK_MESH_LOG=1 logs each (task, mesh, pixel) shader triple once with its first draw's workgroups; DM_VK_MESH_SKIP=<mesh key>,... skips the mesh
@@ -2298,7 +2300,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
         }
     } else {
         for (int st = 0; st < 5; st++) if (!resolve(d->bst[st], st, &sh[st], &bad)) SKIP("draw skipped: no shader library");
-        if (bad) { g_skipped++; g_skip_dev[VKS_SHADER]++; return; }   // a refused or missing shader (logged when it was made)
+        if (bad) { g_skipped++; g_skip_dev[SHADER_CAUSE(bad)]++; return; }   // a refused or missing shader (logged when it was made)
         if (!sh[0]) SKIP("draw with no vertex shader bound: skipped");
         if (sh[1] && (sh[1]->e->flags & DMSH_VK_F_MESH_PRIM)) SKIP("pixel shader %016llx reads per-primitive mesh outputs and is drawn with a vertex shader: skipped", (unsigned long long)sh[1]->key);
         if (d->rast_discard && d->tf_on) SKIP("transform feedback is not on Vulkan yet (F_TF): the draw is skipped");
@@ -3055,7 +3057,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     vka_rp_end();
     vka_shader *sh[VKA_NSTAGE] = {0}; unsigned bad = 0;
     if (!resolve(d->cprog, 5, &sh[5], &bad)) SKIP("dispatch skipped: no shader library");
-    if (bad) { g_skipped++; g_skip_dev[VKS_SHADER]++; return; }
+    if (bad) { g_skipped++; g_skip_dev[SHADER_CAUSE(bad)]++; return; }
     if (!sh[5]) SKIP("dispatch with no compute shader bound: skipped");
     if (VKA_ENV("DM_VK_SKIP_NDVE", 1) && vka_is_ndve_key(sh[5]->key)) {
         if (vka_nan_on()) vka_tex_watch_dispatch(sh[5]->key);
