@@ -43,7 +43,7 @@ _V11 = [
     (0x0058e734, '00000000', 'aaccedf2', 'v11 camera and UI'),
     (0x0058e738, '00000000', '8c030014', 'v11 camera and UI'),
     (0x0058f568, '00000000', '7f010aeb', 'v11 camera and UI'),
-    (0x0058f56c, '00000000', 'c1ae0954', 'v30: b.ne 0x5a2b44 (the L_Info subtree check first; v11 had b.ne 0x586344)'),
+    (0x0058f56c, '00000000', 'c1ae0954', 'v32: b.ne 0x5a2b44 (the part subtree check first; v11 had b.ne 0x586344)'),
     (0x0058f570, '00000000', 'c1fbff17', 'minimap: b 0x58e474 (N_RotCenter keeps the game rotation; v11 wrote 180 to +0x44)'),
     (0x00586344, '00000000', '890904b4', 'v11 camera and UI'),
     (0x00586348, '00000000', '101d40bd', 'v11 camera and UI'),
@@ -173,7 +173,7 @@ _UI_V12 = [
 
     (0x005a3c88, '00000000', '6a559552', 'v12: mov w10, #0xaaab'),
 
-    (0x005a3c8c, '00000000', 'f06cff17', 'v12: b #0x57f04c'),
+    (0x005a3c8c, '00000000', '7eac0114', 'v32: b 0x60ee84 (the Parts pane check before the stretch; v12 had b #0x57f04c)'),
 
     (0x005a4544, '00000000', '2c5940f9', 'v12: ldr x12, [x9, #0xb0]'),
 
@@ -528,29 +528,59 @@ _UI_V28 = [
     (0x005ec250, '00000000', '8688fe17', 'v28: b #0x58e468'),
 ]
 
-# v30: the quest window's contents could still come out 4/3 tall and 180 too high on the first opening after loading a save (on the Nova; every
-# point of the contents sat at 4/3 x (its place + 180)). L_Info is a part: inside it the QuestInfo layout's own root (1920x1080) looks like a
-# full-screen layer to v10's overlay rule (stretched 4/3) and its child N_Body (y 396) to v4's edge rule (moved 180), whose parent is not
-# named L_Info, so v27 did not catch it. Now nothing below a big L_Info (>= 1080 tall: the quest window, the Quest List, the Tutorials) gets any
-# rule: before the rules run, the pane's ancestors are walked (pane +0x18 parent, +0xb0 name, +0x54 height; caves 0x5a2b44, 0x5fbb64, 0x6037c4),
-# so the contents keep their place in L_Info at any depth and on every frame. L_Info itself keeps its own treatment (v23 / v29).
+# v32 (replaces v30 and v31): the quest window's contents could come out 4/3 tall and 180 too high on an opening (now and then on the Nova,
+# never on the PC). Heap dumps of that state (DM_CTL memdump) showed L_Info with global y scale 4/3 and N_Body at 4/3 x (396 + 180): the overlay
+# stretch and the edge move, which the L_Info name checks block, so a layout pass ran while the part was built and before it had that name
+# (v31's "RootPane with a parent" test did not catch it either); the game then keeps those matrices until the window is rebuilt. The checks now
+# use the pane's type (its vtable: the ui2d Parts pane, main+0x1fc9398) and size, which are set when the pane is made:
+# - a Parts pane is never stretched by the overlay rule (cave 0x60ee84 at the stretch, 0x5a3c8c; the big parts the rule met are all exempt
+#   by name already: L_List, L_EquipList*, L_UnitInfo, L_Info);
+# - nothing below a Parts pane at least 1080 tall and under 1896 wide (the quest window, Quest List and Tutorials' L_Info) gets a rule, and
+#   nothing below a RootPane that has a parent (caves 0x5a2b44, 0x5fbb64, 0x6037c4, 0x609a64, 0x60bb84, 0x60c8e4, walking pane +0x18 parents).
+# L_Info itself keeps its own treatment by name (v23 / v29 move up under a Right anchor).
 _UI_V30 = [
-    (0x005a2b44, '00000000', 'ec0309aa', 'v30: mov x12, x9 (start at the parent)'),
-    (0x005a2b48, '00000000', '8ee98bd2', 'v30: x14 = "L_Info"'),
-    (0x005a2b4c, '00000000', '2ec9adf2', 'v30: movk x14, #0x6e49, lsl #16'),
-    (0x005a2b50, '00000000', 'ceeccdf2', 'v30: movk x14, #0x6f66, lsl #32'),
-    (0x005a2b54, '00000000', '04640114', 'v30: b 0x5fbb64'),
-    (0x005fbb64, '00000000', '0c3fc5b4', 'v30: cbz x12, 0x586344 (no L_Info above: the rules as before)'),
-    (0x005fbb68, '00000000', '8d5940f9', 'v30: ldr x13, [x12, #0xb0] (ancestor name)'),
-    (0x005fbb6c, '00000000', 'bf010eeb', 'v30: cmp x13, x14'),
-    (0x005fbb70, '00000000', 'a0e20354', 'v30: b.eq 0x6037c4'),
-    (0x005fbb74, '00000000', '8c0d40f9', 'v30: ldr x12, [x12, #0x18] (its parent)'),
-    (0x005fbb78, '00000000', 'fbffff17', 'v30: b 0x5fbb64'),
-    (0x006037c4, '00000000', '8d5540b9', 'v30: ldr w13, [x12, #0x54] (that L_Info height)'),
-    (0x006037c8, '00000000', 'ee90a852', 'v30: mov w14, #0x44870000 (1080.0)'),
-    (0x006037cc, '00000000', 'bf010e6b', 'v30: cmp w13, w14'),
-    (0x006037d0, '00000000', '2265c554', 'v30: b.hs 0x58e474 (inside a big L_Info: no rule)'),
-    (0x006037d4, '00000000', 'dc0afe17', 'v30: b 0x586344 (small L_Info: the rules as before)'),
+    (0x005a2b44, '00000000', 'ec0300aa', 'v32: x12 = the pane (walk the pane and its ancestors)'),
+    (0x005a2b48, '00000000', '2ed100f0', 'v32: x14 = the ui2d Parts pane vtable (main+0x1fc9398)'),
+    (0x005a2b4c, '00000000', 'ce610e91', 'v32: add x14, x14, #0x398'),
+    (0x005a2b50, '00000000', '1f2003d5', 'v32: nop '),
+    (0x005a2b54, '00000000', '4fea8dd2', 'v32: x15 = "RootPane"'),
+    (0x005a2b58, '00000000', 'ef8daef2', 'v32: movk x15, #0x746f, lsl #16'),
+    (0x005a2b5c, '00000000', '02640114', 'v32: b #0x5fbb64'),
+    (0x005fbb64, '00000000', '0f2accf2', 'v32: movk x15, #0x6150, lsl #32'),
+    (0x005fbb68, '00000000', 'cfadecf2', 'v32: movk x15, #0x656e, lsl #48'),
+    (0x005fbb6c, '00000000', '8d5940f9', 'v32: loop: x13 = name'),
+    (0x005fbb70, '00000000', 'bf010feb', 'v32: cmp x13, x15'),
+    (0x005fbb74, '00000000', '80f70654', 'v32: b.eq 0x609a64 (a RootPane: has it a parent?)'),
+    (0x005fbb78, '00000000', '131f0014', 'v32: b #0x6037c4'),
+    (0x006037c4, '00000000', '9f0100eb', 'v32: the pane itself is not tested as a big part'),
+    (0x006037c8, '00000000', '60000054', 'v32: b.eq #0x6037d4'),
+    (0x006037cc, '00000000', 'ee200014', 'v32: b 0x60bb84 (a big part above?)'),
+    (0x006037d0, '00000000', '1f2003d5', 'v32: nop '),
+    (0x006037d4, '00000000', '8c0d40f9', 'v32: next: its parent'),
+    (0x006037d8, '00000000', '6c5bc1b4', 'v32: cbz x12, 0x586344 (top reached: the rules as before)'),
+    (0x006037dc, '00000000', 'e4e0ff17', 'v32: b #0x5fbb6c'),
+    (0x00609a64, '00000000', '8a0d40f9', 'v32: the RootPane\'s parent'),
+    (0x00609a68, '00000000', '6a50c2b5', 'v32: cbnz x10, 0x58e474 (a RootPane with a parent is a part being built: no rule)'),
+    (0x00609a6c, '00000000', '56e7ff17', 'v32: b #0x6037c4'),
+    (0x0060bb84, '00000000', '8a0140f9', 'v32: ancestor vtable'),
+    (0x0060bb88, '00000000', '5f010eeb', 'v32: cmp x10, x14'),
+    (0x0060bb8c, '00000000', '41e2fb54', 'v32: b.ne 0x6037d4 (not a part)'),
+    (0x0060bb90, '00000000', '8d5540b9', 'v32: its height'),
+    (0x0060bb94, '00000000', 'ea90a852', 'v32: mov w10, #0x44870000 (1080.0)'),
+    (0x0060bb98, '00000000', 'bf010a6b', 'v32: cmp w13, w10'),
+    (0x0060bb9c, '00000000', '52030014', 'v32: b #0x60c8e4'),
+    (0x0060c8e4, '00000000', '8377fb54', 'v32: b.lo 0x6037d4 (under 1080 tall)'),
+    (0x0060c8e8, '00000000', '8d5140b9', 'v32: its width'),
+    (0x0060c8ec, '00000000', 'aa9da852', 'v32: mov w10, #0x44ed0000 (1896.0)'),
+    (0x0060c8f0, '00000000', 'bf010a6b', 'v32: cmp w13, w10'),
+    (0x0060c8f4, '00000000', '0277fb54', 'v32: b.hs 0x6037d4 (full width, e.g. L_UnitInfo 3400)'),
+    (0x0060c8f8, '00000000', 'df06fe17', 'v32: b 0x58e474 (inside a big panel part, e.g. L_Info 1634x1096: no rule)'),
+    (0x0060ee84, '00000000', '0d0040f9', 'v32: the pane vtable (from the overlay stretch, 0x5a3c8c)'),
+    (0x0060ee88, '00000000', 'cecd00f0', 'v32: x14 = the Parts pane vtable (main+0x1fc9398)'),
+    (0x0060ee8c, '00000000', 'ce610e91', 'v32: add x14, x14, #0x398'),
+    (0x0060ee90, '00000000', 'bf010eeb', 'v32: cmp x13, x14'),
+    (0x0060ee94, '00000000', 'c060c054', 'v32: b.eq 0x58faac (a Parts pane is never stretched; the other rules as before)'),
+    (0x0060ee98, '00000000', '6dc0fd17', 'v32: b 0x57f04c (the stretch)'),
 ]
 
 # Screen shape (Game settings › Aspect ratio › Screen shape): every value above that depends on the 4:3 shape is read from one of seven words instead of being part of an

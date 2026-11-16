@@ -174,7 +174,7 @@ The game keeps its 1920x1080 window and scene; its cameras take a 4:3 aspect and
 | `_UI_V25` | Battle unit icons (UI placed on 3D positions) follow their unit |
 | `_UI_V27` | Quest window: its contents stay in place in `L_Info` |
 | `_UI_V28` | Quest window (offer / turn-in): window and frame keep their 16:9 place, right above the Report buttons; only an `L_Info` under a `Right` anchor (Quest List, Tutorials) moves to the top |
-| `_UI_V30` | Nothing inside a big `L_Info` (>= 1080 tall) gets a layout rule, so the quest window's contents are never stretched or moved, on any frame |
+| `_UI_V30` | Checks by pane type and size, not name: a Parts pane is never stretched, and nothing inside a big panel part (>= 1080 tall, under 1896 wide: the quest window, Quest List, Tutorials) gets a layout rule, so the quest window's contents are never stretched or moved, also when the game lays them out before naming the part |
 
 Checked screens: map HUD and minimap, world map, quest offer and Quest List, tutorials, dungeon battles, movie subtitles, command menu, forecast, combat and Blaze Arts, EXP and level-up, unit details, items, quick settings, obelisks, Base Menu, shops, dialogue. Not yet checked: the end-of-chapter battle report. Cave torches miss some of their light pools at a distance in both aspects (likely the game's own light culling; open).
 
