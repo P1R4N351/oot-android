@@ -89,7 +89,7 @@ _V11 = [
     (0x0058e5d0, '00000000', '2022321e', 'v11 camera and UI'),
     (0x0058e5d4, '00000000', '0bf5ff54', 'v11 camera and UI'),
     (0x0058e5d8, '00000000', 'fbffff17', 'v11 camera and UI'),
-    (0x0058e464, '00000000', '3342211e', 'v11 camera and UI'),
+    (0x0058e464, '00000000', '88640114', 'v28: b 0x5e7684 (the QuestTalk Wdw check before the edge move; v11 had fneg s19, s17)'),
     (0x0058e468, '00000000', '0822201e', 'v11 camera and UI'),
     (0x0058e46c, '00000000', '31ce331e', 'v11 camera and UI'),
     (0x0058e470, '00000000', '4228311e', 'v11 camera and UI'),
@@ -422,6 +422,8 @@ _UI_V22 = [
 # Complete, class mastered and ability learned), the dialogue choices (Common_Choice: MenuItemList 1920x1080), the dialogue history (Common_TalkLog:
 # the 1500x1080 Viewport scissor and its L_ScrollBar). Names starting with L_EquipL, MenuItem, Viewport, L_Scroll and the name N_Pos now skip the
 # stretch and keep the other rules (caves 0x5760a4, 0x5b4d04, 0x566484, 0x55fd44, 0x55f444: 7 words each, chained after v23's L_Info check).
+# v29: L_UnitInfo 3400x1625 (Common_UnitInfoScout, Battle_UnitInfoDetail) sits under a Left anchor at y 0 while the Right panel beside it (anchor y 446)
+# takes the edge move, so the left column stood 180 below the right one at 4:3; it now moves up by the same shape shift (v23's L_Info move, 0x5d7988).
 # v26: also L_UnitIn* (Common_UnitInfoScout's L_UnitInfo 3400x1625: Character Info when recruiting, stretched tall; v17 already keeps its children in place),
 # cave 0x55a9a4 after the L_Scroll check.
 _UI_V24 = [
@@ -465,7 +467,7 @@ _UI_V24 = [
     (0x0055a9ac, '00000000', '2a8dcef2', 'v26: movk x10, #0x7469, lsl #32'),
     (0x0055a9b0, '00000000', '2ac9edf2', 'v26: movk x10, #0x6e49, lsl #48'),
     (0x0055a9b4, '00000000', '7f010aeb', 'v26: cmp x11, x10'),
-    (0x0055a9b8, '00000000', 'a0871a54', 'v26: b.eq #0x58faac'),
+    (0x0055a9b8, '00000000', '807e3e54', 'v29: b.eq #0x5d7988 (L_UnitIn*: not stretched and moved up by the shape shift, as the Right panel beside it; v26 had b.eq 0x58faac)'),
     (0x0055a9bc, '00000000', 'ba1b0114', 'v26: b #0x5a18a4'),
 ]
 
@@ -494,14 +496,15 @@ _UI_V27 = [
     (0x005d2cb0, '00000000', 'caeccdf2', 'v27: movk x10, #0x6f66, lsl #32'),
     (0x005d2cb4, '00000000', '9f010aeb', 'v27: cmp x12, x10'),
     (0x005d2cb8, '00000000', 'e0bddd54', 'v27: b.eq #0x58e474'),
-    (0x005d2cbc, '00000000', '72520014', 'v28: b #0x5e7684 (the QuestTalk Wdw check; v27 had b 0x5a6868)'),
+    (0x005d2cbc, '00000000', 'eb4eff17', 'v27: b #0x5a6868'),
 ]
 
 # v28: the quest turn-in and offer window (Common_QuestTalk) has its L_Info right under RootPane, with its Report / Don't Report buttons (N_Menu >
 # MenuItemList, y -459) laid out just below it; the Quest List and the Tutorials have theirs under a Right anchor beside a list. v23's 180 up move
 # suits the list screens but left an empty band between the turn-in window and its buttons. An L_Info whose parent's name starts with Root now keeps its 16:9 place
 # (unscaled, no further rule: cave 0x5d3984 before v23's move at 0x5d7988), and so does the window's frame (Wdw, 1014x882 at y 452 under RootPane,
-# which v4's edge rule moved 180 up: a top-level Wdw about 1014 wide, caves 0x5e7684 and 0x5ec244 after v27; the Base Menu's Wdw is 520 wide).
+# which v4's edge rule moved 180 up: a top-level Wdw about 1014 wide, caves 0x5e7684 and 0x5ec244 at the edge move itself, 0x58e464,
+# which three rule paths reach, so no frame of the opening slips past it; the Base Menu's Wdw is 520 wide).
 # The whole window then sits where 16:9 has it, with the buttons right under it. Checked on the Nova at the Behelda Axes turn-in.
 _UI_V28 = [
     (0x005d3984, '00000000', '2c5940f9', 'v28: ldr x12, [x9, #0xb0] (parent name; x9 is the parent on the overlay path)'),
@@ -510,16 +513,17 @@ _UI_V28 = [
     (0x005d3990, '00000000', '9f010a6b', 'v28: cmp w12, w10'),
     (0x005d3994, '00000000', '0057dd54', 'v28: b.eq #0x58e474 (L_Info on RootPane: in place, not stretched)'),
     (0x005d3998, '00000000', 'fc0f0014', 'v28: b #0x5d7988 (other L_Info: v23\'s 180 up move)'),
-    (0x005e7684, '00000000', 'ea8a8cd2', 'v28: x10 = "Wdw"'),
+    (0x005e7684, '00000000', 'ea8a8cd2', 'v28: x10 = "Wdw" (from the edge move at 0x58e464, which every path to it passes)'),
     (0x005e7688, '00000000', 'ea0ea0f2', 'v28: movk x10, #0x77, lsl #16'),
     (0x005e768c, '00000000', '7f010aeb', 'v28: cmp x11, x10'),
-    (0x005e7690, '00000000', 'c18edf54', 'v28: b.ne #0x5a6868 (other names: as before)'),
-    (0x005e7694, '00000000', 'ec120014', 'v28: b #0x5ec244'),
-    (0x005ec244, '00000000', '0aa44079', 'v28: ldrh w10, [x0, #0x52] (top half of the pane width)'),
-    (0x005ec248, '00000000', '4a114051', 'v28: sub w10, w10, #0x4000'),
-    (0x005ec24c, '00000000', '5ff51171', 'v28: cmp w10, #0x47d (width 1012 to 1016: QuestTalk\'s 1014)'),
-    (0x005ec250, '00000000', '2011d154', 'v28: b.eq #0x58e474 (the turn-in window frame stays in place)'),
-    (0x005ec254, '00000000', '85e9fe17', 'v28: b #0x5a6868 (other Wdw panes, e.g. the Base Menu\'s 520 wide: as before)'),
+    (0x005e7690, '00000000', 'e15d0254', 'v28: b.ne #0x5ec24c (other names: the move)'),
+    (0x005e7694, '00000000', '0aa44079', 'v28: ldrh w10, [x0, #0x52] (top half of the pane width)'),
+    (0x005e7698, '00000000', '4a114051', 'v28: sub w10, w10, #0x4000'),
+    (0x005e769c, '00000000', 'ea120014', 'v28: b #0x5ec244'),
+    (0x005ec244, '00000000', '5ff51171', "v28: cmp w10, #0x47d (width 1012 to 1016: QuestTalk's 1014)"),
+    (0x005ec248, '00000000', '6011d154', 'v28: b.eq #0x58e474 (the turn-in window frame stays in place)'),
+    (0x005ec24c, '00000000', '3342211e', "v28: fneg s19, s17 (other panes, e.g. the Base Menu's 520 wide Wdw: the move, as before)"),
+    (0x005ec250, '00000000', '8688fe17', 'v28: b #0x58e468'),
 ]
 
 # Screen shape (Game settings › Aspect ratio › Screen shape): every value above that depends on the 4:3 shape is read from one of seven words instead of being part of an
