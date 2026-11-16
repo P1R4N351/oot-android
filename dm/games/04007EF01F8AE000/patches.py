@@ -506,13 +506,15 @@ _UI_V27 = [
 # which v4's edge rule moved 180 up: a top-level Wdw about 1014 wide, caves 0x5e7684 and 0x5ec244 at the edge move itself, 0x58e464,
 # which three rule paths reach, so no frame of the opening slips past it; the Base Menu's Wdw is 520 wide).
 # The whole window then sits where 16:9 has it, with the buttons right under it. Checked on the Nova at the Behelda Axes turn-in.
+# v29: the L_Info test is now "parent named Right*" (the Quest List and the Tutorials) instead of "parent named Root*": on some openings (after
+# Don't Report and talking again) the quest window's L_Info had another parent name, took v23's move and its contents sat 180 above the frame.
 _UI_V28 = [
     (0x005d3984, '00000000', '2c5940f9', 'v28: ldr x12, [x9, #0xb0] (parent name; x9 is the parent on the overlay path)'),
-    (0x005d3988, '00000000', '4aea8d52', 'v28: w10 = "Root"'),
-    (0x005d398c, '00000000', 'ea8dae72', 'v28: movk w10, #0x746f, lsl #16'),
-    (0x005d3990, '00000000', '9f010a6b', 'v28: cmp w12, w10'),
-    (0x005d3994, '00000000', '0057dd54', 'v28: b.eq #0x58e474 (L_Info on RootPane: in place, not stretched)'),
-    (0x005d3998, '00000000', 'fc0f0014', 'v28: b #0x5d7988 (other L_Info: v23\'s 180 up move)'),
+    (0x005d3988, '00000000', '4a2a8d52', 'v29: w10 = "Righ"'),
+    (0x005d398c, '00000000', 'ea0cad72', 'v29: movk w10, #0x6867, lsl #16'),
+    (0x005d3990, '00000000', '9f010a6b', 'v29: cmp w12, w10'),
+    (0x005d3994, '00000000', '0157dd54', 'v29: b.ne #0x58e474 (L_Info not under a Right anchor, e.g. the quest window: in place, not stretched)'),
+    (0x005d3998, '00000000', 'fc0f0014', 'v29: b #0x5d7988 (L_Info beside a list, under Right: v23\'s move up by the shape shift)'),
     (0x005e7684, '00000000', 'ea8a8cd2', 'v28: x10 = "Wdw" (from the edge move at 0x58e464, which every path to it passes)'),
     (0x005e7688, '00000000', 'ea0ea0f2', 'v28: movk x10, #0x77, lsl #16'),
     (0x005e768c, '00000000', '7f010aeb', 'v28: cmp x11, x10'),
