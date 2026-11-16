@@ -408,7 +408,7 @@ _UI_V22 = [
     (0x005d7de8, '00000000', '2ac9adf2', 'v23: movk x10, #0x6e49, lsl #16'),
     (0x005d7dec, '00000000', 'caeccdf2', 'v23: movk x10, #0x6f66, lsl #32'),
     (0x005d7df0, '00000000', '7f010aeb', 'v23: cmp x11, x10'),
-    (0x005d7df4, '00000000', 'a0dcff54', 'v23: b.eq 0x5d7988'),
+    (0x005d7df4, '00000000', '80dcfd54', 'v28: b.eq 0x5d3984 (RootPane check; v23 had b.eq 0x5d7988)'),
     (0x005d7df8, '00000000', 'ab78fe17', 'v24: b 0x5760a4 name checks (L_EquipL, N_Pos, MenuItem, Viewport, L_Scroll), then the v12 L_List check at 0x5a18a4; v23 had b 0x5a18a4'),
     (0x005d7988, '00000000', '8a66a852', 'v23: mov w10, #0x43340000 (180.0)'),
     (0x005d798c, '00000000', '5301271e', 'v23: fmov s19, w10'),
@@ -494,7 +494,32 @@ _UI_V27 = [
     (0x005d2cb0, '00000000', 'caeccdf2', 'v27: movk x10, #0x6f66, lsl #32'),
     (0x005d2cb4, '00000000', '9f010aeb', 'v27: cmp x12, x10'),
     (0x005d2cb8, '00000000', 'e0bddd54', 'v27: b.eq #0x58e474'),
-    (0x005d2cbc, '00000000', 'eb4eff17', 'v27: b #0x5a6868'),
+    (0x005d2cbc, '00000000', '72520014', 'v28: b #0x5e7684 (the QuestTalk Wdw check; v27 had b 0x5a6868)'),
+]
+
+# v28: the quest turn-in and offer window (Common_QuestTalk) has its L_Info right under RootPane, with its Report / Don't Report buttons (N_Menu >
+# MenuItemList, y -459) laid out just below it; the Quest List and the Tutorials have theirs under a Right anchor beside a list. v23's 180 up move
+# suits the list screens but left an empty band between the turn-in window and its buttons. An L_Info whose parent's name starts with Root now keeps its 16:9 place
+# (unscaled, no further rule: cave 0x5d3984 before v23's move at 0x5d7988), and so does the window's frame (Wdw, 1014x882 at y 452 under RootPane,
+# which v4's edge rule moved 180 up: a top-level Wdw about 1014 wide, caves 0x5e7684 and 0x5ec244 after v27; the Base Menu's Wdw is 520 wide).
+# The whole window then sits where 16:9 has it, with the buttons right under it. Checked on the Nova at the Behelda Axes turn-in.
+_UI_V28 = [
+    (0x005d3984, '00000000', '2c5940f9', 'v28: ldr x12, [x9, #0xb0] (parent name; x9 is the parent on the overlay path)'),
+    (0x005d3988, '00000000', '4aea8d52', 'v28: w10 = "Root"'),
+    (0x005d398c, '00000000', 'ea8dae72', 'v28: movk w10, #0x746f, lsl #16'),
+    (0x005d3990, '00000000', '9f010a6b', 'v28: cmp w12, w10'),
+    (0x005d3994, '00000000', '0057dd54', 'v28: b.eq #0x58e474 (L_Info on RootPane: in place, not stretched)'),
+    (0x005d3998, '00000000', 'fc0f0014', 'v28: b #0x5d7988 (other L_Info: v23\'s 180 up move)'),
+    (0x005e7684, '00000000', 'ea8a8cd2', 'v28: x10 = "Wdw"'),
+    (0x005e7688, '00000000', 'ea0ea0f2', 'v28: movk x10, #0x77, lsl #16'),
+    (0x005e768c, '00000000', '7f010aeb', 'v28: cmp x11, x10'),
+    (0x005e7690, '00000000', 'c18edf54', 'v28: b.ne #0x5a6868 (other names: as before)'),
+    (0x005e7694, '00000000', 'ec120014', 'v28: b #0x5ec244'),
+    (0x005ec244, '00000000', '0aa44079', 'v28: ldrh w10, [x0, #0x52] (top half of the pane width)'),
+    (0x005ec248, '00000000', '4a114051', 'v28: sub w10, w10, #0x4000'),
+    (0x005ec24c, '00000000', '5ff51171', 'v28: cmp w10, #0x47d (width 1012 to 1016: QuestTalk\'s 1014)'),
+    (0x005ec250, '00000000', '2011d154', 'v28: b.eq #0x58e474 (the turn-in window frame stays in place)'),
+    (0x005ec254, '00000000', '85e9fe17', 'v28: b #0x5a6868 (other Wdw panes, e.g. the Base Menu\'s 520 wide: as before)'),
 ]
 
 # Screen shape (Game settings › Aspect ratio › Screen shape): every value above that depends on the 4:3 shape is read from one of seven words instead of being part of an
@@ -530,7 +555,7 @@ def _shape(cuts):
 
 
 _MAIN = 'db93b0125f4850601d61c3edde012f8e'
-VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24 + _UI_V25 + _UI_V27)}}
+VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24 + _UI_V25 + _UI_V27 + _UI_V28)}}
 
 BINDING = [
     {'what': "Fire Emblem Fortune's Weave native 4:3 variant (VARIANT_CUTS['43']: camera aspect and ui2d pane rules)", 'now': 'build', 'goal': 'unreviewed', 'purpose': 'rendering',
