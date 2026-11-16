@@ -251,6 +251,17 @@ class Tools(Fixture):
         self.assertEqual(str(pack_dump.version_dir(self.nup, vers, 0)), f'{self.nup}:base')
         self.assertEqual(pack_dump.scan(self.dump)[0], app)
 
+    def test_program_1_nup(self):   # BananaNative #356: a .nup of a folder whose base/ is a Switch 2 Edition's program 1 is that program's, as the folder is; its add-ons index as the folder's
+        src = self.root / 'Edition'; self.addCleanup(shutil.rmtree, src, True)
+        (src / 'base/exefs').mkdir(parents=True); (src / 'base/romfs').mkdir(); (src / 'dlc' / f'{DLC:016x}/0/romfs').mkdir(parents=True)
+        (src / 'base/exefs/main').write_bytes(module(b'program 1')); (src / 'base/exefs/main.npdm').write_bytes(npdm(TID + 1))
+        (src / 'base/romfs/a.txt').write_text('program 0\'s RomFS'); (src / 'dlc' / f'{DLC:016x}/0/romfs/dlcfile').write_text('dlc')
+        n = write_nup(src, self.root / 'Edition.nup'); self.addCleanup(n.unlink)
+        for s in (src, n):
+            app, _, dlc = pack_dump.scan(s)
+            self.assertEqual((app, list(dlc), pack_dump.dlc_index(DLC, app)), (TID + 1, [DLC], 1), s)
+            self.assertEqual([str(r) for r in pack_dump.split_addons(app, dlc)], [str(dlc[DLC])], s)
+
     def test_pack_version_and_dlc_images_match_the_folder(self):
         out = self.root / 'packed'; self.addCleanup(shutil.rmtree, out, True)
         quiet = lambda s: None

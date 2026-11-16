@@ -3589,7 +3589,8 @@ def main():
     # Several versions (base game + update): the RomFS and main arguments are comma-separated and paired one to one; the output is their union (keys are content hashes, shaders shared by versions appear once).
     # The first version's source column is unchanged; later versions are prefixed with their workspace directory name (e.g. v327680): /v327680/Shader/…, main@v327680. They sort after the first version, so existing rows keep their package indices.
     romfs_v, main_v = [nup.default_romfs(r) for r in romfs_l.split(',')], main_l.split(',')
-    dlc_v = [nup.default_romfs(r) for r in dlc_v]
+    dump_aoc = [] if dlc_v else dump_addons(os.environ.get('DM_SPLIT_DUMP'))
+    dlc_v = [nup.default_romfs(r) for r in dlc_v] + dump_aoc
     if len(romfs_v) != len(main_v): red(f'{len(romfs_v)} RomFS and {len(main_v)} main: they must pair one to one')
     files, results, common, dumps, nros = [], [], None, [], []
     for i, (romfs, mainnso) in enumerate(zip(romfs_v, main_v)):
@@ -3635,7 +3636,7 @@ def main():
     zdicts = {k: v for r in romfs_v + dlc_v for k, v in zs_dicts(r).items()}   # Tears of the Kingdom's zstd dictionaries (zs_dicts)
     J = int(os.environ.get('J', '8'))
     rd = os.environ.get('DM_SPLIT_RESUME')   # the phone's split (PackService): kept results from a stopped run
-    inputs = sys.argv[1:3] + sys.argv[8:]   # the inputs only (RomFS, main and DLC; not the output paths), and main's size and time with the jobs: main gives Unity's common strings to every scan
+    inputs = sys.argv[1:3] + sys.argv[8:] + dump_aoc   # the inputs only (RomFS, main and DLC; not the output paths), and main's size and time with the jobs: main gives Unity's common strings to every scan
     mains = [(m, 'main') for m in main_v]
     targeted = os.environ.get('DM_SPLIT_TARGETED') == '1'
     out = None
@@ -3673,6 +3674,19 @@ def main():
         out = split_tables(list(results), big, todo, dumps, J, common, zdicts, ScanCache(cd, scan_digest(inputs, big + todo + mains)) if cd else None)
     stage('writing the shaders found')
     write_outputs(out, pkg, mapout, factsout, pairsout, psopairsout)
+
+def dump_addons(dump):
+    """DM_SPLIT_DUMP (the phone's split step, PackService): the dump folder or .nup the RomFS argument is of → the add-on RomFS roots its program's split reads,
+    as pack_android.py passes them (scripts/pack_dump.py split_addons: a program n > 0, a Switch 2 Edition's program 1, keeps its shaders in its application's
+    add-ons; none for program 0). [] when unset"""
+    if not dump: return []
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'scripts'))
+    import pack_dump
+    try: app, _, dlc = pack_dump.scan(pack_dump.Path(dump))
+    except pack_dump.Error as e: red(f'DM_SPLIT_DUMP: {e}')
+    roots = [str(r) for r in pack_dump.split_addons(app, dlc)]
+    if roots: print(f'split: program {app:016X} keeps shaders in its application\'s add-ons: {", ".join(roots)}', flush=True)
+    return roots
 
 class Fallback(Exception): pass   # the targeted scan cannot give the full scan's outputs (split_tables)
 

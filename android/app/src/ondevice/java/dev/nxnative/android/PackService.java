@@ -551,6 +551,9 @@ public final class PackService extends Service {
         PackEngine.setenv("NX_PACK_JOBS", String.valueOf(workers));
         PackEngine.setenv("J", s.equals("split") ? "1" : String.valueOf(workers));   // the split's J is its process pool: 1 = in this process
         PackEngine.setenv("DM_SPLIT_RESUME", splitScan.getPath());   // the split's kept scan results (only shader_split.py reads it)
+        // the dump the split's RomFS is of: a program n > 0 (a Switch 2 Edition's program 1) keeps its shaders in its application's add-ons, which the split then
+        // reads too, as pack_android.py does (scripts/pack_dump.py split_addons; BananaNative issue #356: only the base's RomFS was read)
+        PackEngine.setenv("DM_SPLIT_DUMP", s.equals("split") ? dump.getPath() : "");
         // a profile with a selected set: the split keeps the code of only those shaders (and their pixel shaders), as the shaders step builds only them; a full
         // package of Pokopia held 4.3 GB and its scan ran out of memory (docs/reference/memory.md, A shader split that keeps every shader's code in memory)
         PackEngine.setenv("DM_SPLIT_SELECTED", s.equals("split") && selection(j) != null ? "1" : "0");

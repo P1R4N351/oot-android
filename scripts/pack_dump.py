@@ -132,7 +132,9 @@ def nup_scan(path):
     code = [p for p in base + sorted((p for p in n.packages if p.kind == nup.UPDATE), key=lambda p: -p.version) if p.exefs != nup.NONE and (pkg(p) / 'exefs/main.npdm').is_file()]
     if not code: raise Error(f'{path}: no package with exefs/main.npdm (neither the base nor an update)')
     app = program_id(pkg(code[0]) / 'exefs/main.npdm')
-    if app & 0xFFF: raise Error(f'{path}: base program ID {app:016X} is not a base title ID')   # a NUP file holds program 0 only (no program index in its packages)
+    # as scan(): the program's index is in the low byte. A NUP file's packages carry no program index, but one made from a folder whose base/ is a Switch 2 Edition's
+    # program 1 (exefs of 04004D300C5AE001) holds that program, whose profile is its own
+    if app & 0xF00: raise Error(f'{path}: base program ID {app:016X} is not a base title ID')
     vers = {p.version: pkg(p) for p in n.packages if p.kind == nup.UPDATE}
     if not any(p.romfs != nup.NONE for p in n.packages if p.kind in (nup.BASE, nup.UPDATE)): raise Error(f'{path}: no RomFS in the base or an update')
     dlc = {}
@@ -140,7 +142,7 @@ def nup_scan(path):
         if p.kind != nup.ADDON: continue
         if not 0 < (index := dlc_index(p.title_id, app)) <= 2000: raise Error(f'{path}: add-on {p.title_id:016X} is not a DLC of {app:016X}')
         if p.romfs == nup.NONE: raise Error(f'{path}: add-on {p.title_id:016X} has no RomFS')
-        dlc[app + 0x1000 + index] = pkg(p, '/romfs')
+        dlc[(app & ~0xFF) + 0x1000 + index] = pkg(p, '/romfs')   # named in the game's range, as scan() names them
     if str(n.path).endswith('.nsp'):   # NSP Box writes each DLC, and each version of the game, as an NSP of its own: the ones beside the game's that are of it (found by their content, whatever they are called)
         for f in sorted(Path(n.path).parent.glob('*.nsp')):
             if str(f) == n.path: continue
@@ -148,7 +150,7 @@ def nup_scan(path):
             except (nup.Error, OSError): continue
             for p in m.packages:
                 if p.kind == nup.ADDON and 0 < (index := dlc_index(p.title_id, app)) <= 2000 and p.romfs != nup.NONE:
-                    dlc.setdefault(app + 0x1000 + index, romfs.Path(f'{m.path}:{p.selector}/romfs'))
+                    dlc.setdefault((app & ~0xFF) + 0x1000 + index, romfs.Path(f'{m.path}:{p.selector}/romfs'))
                 elif p.kind == nup.UPDATE and p.title_id == app and p.exefs != nup.NONE and p.romfs != nup.NONE:   # another version of the game, a snapshot of its own
                     vers.setdefault(p.version, romfs.Path(f'{m.path}:{p.selector}'))
     return app, vers, dlc
@@ -193,6 +195,14 @@ def scan(dump):
         dlc[(app & ~0xFF) + 0x1000 + index] = dlc_romfs(d)   # named in the game's range, as nup_scan names them
     dlc.update(patches)
     return app, vers, dlc
+
+
+def split_addons(app, dlc):
+    """The add-on RomFS roots the shader split of program app reads beside its own RomFS (shader_split.py's add-on argument), from scan()'s {DLC title ID: its
+    RomFS}. A program n > 0 (app's low byte: a Switch 2 Edition's program 1) keeps its shaders in the application's add-ons (Kirby's 01004D300C5AF001, Wonder's
+    010015100B515001), so its profile's shader_map.tsv was split with them: all of them, in scan()'s order. Program 0's map is of the game alone. Both packers
+    take this: pack_android.py, with --program or on a dump whose base/ is the program itself, and the phone's split step (DM_SPLIT_DUMP)"""
+    return list(dlc.values()) if app & 0xFF else []
 
 
 def data_patch_of(d, tid):

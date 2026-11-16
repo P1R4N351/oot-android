@@ -375,6 +375,7 @@ DM_SLOWFRAME	developer	Diagnostics			text			both
 DM_SPIN	developer	Performance			text			both						
 DM_SPIN_LIST	developer	Diagnostics			text			both						
 DM_SPIN_POLL	developer	Performance			text			both						
+DM_SPLIT_DUMP	developer	Packing			text			both						
 DM_SPLIT_FILES	developer	Diagnostics			text			both						
 DM_SPLIT_LARGE	developer	Diagnostics			text			both						
 DM_SPLIT_RESUME	internal	Diagnostics			text			both						Mac or iOS only
