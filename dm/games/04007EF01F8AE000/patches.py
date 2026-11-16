@@ -43,7 +43,7 @@ _V11 = [
     (0x0058e734, '00000000', 'aaccedf2', 'v11 camera and UI'),
     (0x0058e738, '00000000', '8c030014', 'v11 camera and UI'),
     (0x0058f568, '00000000', '7f010aeb', 'v11 camera and UI'),
-    (0x0058f56c, '00000000', 'c16efb54', 'v11 camera and UI'),
+    (0x0058f56c, '00000000', 'c1ae0954', 'v30: b.ne 0x5a2b44 (the L_Info subtree check first; v11 had b.ne 0x586344)'),
     (0x0058f570, '00000000', 'c1fbff17', 'minimap: b 0x58e474 (N_RotCenter keeps the game rotation; v11 wrote 180 to +0x44)'),
     (0x00586344, '00000000', '890904b4', 'v11 camera and UI'),
     (0x00586348, '00000000', '101d40bd', 'v11 camera and UI'),
@@ -528,6 +528,31 @@ _UI_V28 = [
     (0x005ec250, '00000000', '8688fe17', 'v28: b #0x58e468'),
 ]
 
+# v30: the quest window's contents could still come out 4/3 tall and 180 too high on the first opening after loading a save (on the Nova; every
+# point of the contents sat at 4/3 x (its place + 180)). L_Info is a part: inside it the QuestInfo layout's own root (1920x1080) looks like a
+# full-screen layer to v10's overlay rule (stretched 4/3) and its child N_Body (y 396) to v4's edge rule (moved 180), whose parent is not
+# named L_Info, so v27 did not catch it. Now nothing below a big L_Info (>= 1080 tall: the quest window, the Quest List, the Tutorials) gets any
+# rule: before the rules run, the pane's ancestors are walked (pane +0x18 parent, +0xb0 name, +0x54 height; caves 0x5a2b44, 0x5fbb64, 0x6037c4),
+# so the contents keep their place in L_Info at any depth and on every frame. L_Info itself keeps its own treatment (v23 / v29).
+_UI_V30 = [
+    (0x005a2b44, '00000000', 'ec0309aa', 'v30: mov x12, x9 (start at the parent)'),
+    (0x005a2b48, '00000000', '8ee98bd2', 'v30: x14 = "L_Info"'),
+    (0x005a2b4c, '00000000', '2ec9adf2', 'v30: movk x14, #0x6e49, lsl #16'),
+    (0x005a2b50, '00000000', 'ceeccdf2', 'v30: movk x14, #0x6f66, lsl #32'),
+    (0x005a2b54, '00000000', '04640114', 'v30: b 0x5fbb64'),
+    (0x005fbb64, '00000000', '0c3fc5b4', 'v30: cbz x12, 0x586344 (no L_Info above: the rules as before)'),
+    (0x005fbb68, '00000000', '8d5940f9', 'v30: ldr x13, [x12, #0xb0] (ancestor name)'),
+    (0x005fbb6c, '00000000', 'bf010eeb', 'v30: cmp x13, x14'),
+    (0x005fbb70, '00000000', 'a0e20354', 'v30: b.eq 0x6037c4'),
+    (0x005fbb74, '00000000', '8c0d40f9', 'v30: ldr x12, [x12, #0x18] (its parent)'),
+    (0x005fbb78, '00000000', 'fbffff17', 'v30: b 0x5fbb64'),
+    (0x006037c4, '00000000', '8d5540b9', 'v30: ldr w13, [x12, #0x54] (that L_Info height)'),
+    (0x006037c8, '00000000', 'ee90a852', 'v30: mov w14, #0x44870000 (1080.0)'),
+    (0x006037cc, '00000000', 'bf010e6b', 'v30: cmp w13, w14'),
+    (0x006037d0, '00000000', '2265c554', 'v30: b.hs 0x58e474 (inside a big L_Info: no rule)'),
+    (0x006037d4, '00000000', 'dc0afe17', 'v30: b 0x586344 (small L_Info: the rules as before)'),
+]
+
 # Screen shape (Game settings › Aspect ratio › Screen shape): every value above that depends on the 4:3 shape is read from one of seven words instead of being part of an
 # instruction, so the host can lay the UI out for any shape from 1:1 to 16:9 by writing those words at load (game.tsv shape_table, loader.c shape_apply). The words hold the
 # 4:3 values, so the variant is the 4:3 mod as before when nothing writes them (4:3 itself, or a host without shape_apply). Each site's fmov / mov becomes an `ldr` of its
@@ -561,7 +586,7 @@ def _shape(cuts):
 
 
 _MAIN = 'db93b0125f4850601d61c3edde012f8e'
-VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24 + _UI_V25 + _UI_V27 + _UI_V28)}}
+VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24 + _UI_V25 + _UI_V27 + _UI_V28 + _UI_V30)}}
 
 BINDING = [
     {'what': "Fire Emblem Fortune's Weave native 4:3 variant (VARIANT_CUTS['43']: camera aspect and ui2d pane rules)", 'now': 'build', 'goal': 'unreviewed', 'purpose': 'rendering',
