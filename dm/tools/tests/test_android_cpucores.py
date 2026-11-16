@@ -53,7 +53,7 @@ class Workers(unittest.TestCase):
         self.assertEqual(got['workers'], '3')
 
     def test_service_sets_it(self):
-        self.assertIn('PackEngine.setenv("DMSH_VK_PROCS", String.valueOf(CpuCores.shaderWorkers()))', SERVICE.read_text())
+        self.assertIn('PackEngine.setenv("DMSH_VK_PROCS", String.valueOf(PackPolicy.workers(CpuCores.shaderWorkers(), thermal)))', SERVICE.read_text())
 
 
 if __name__ == '__main__':

@@ -418,7 +418,7 @@ static Result cv_dec_init(void *t, int codec, uint16_t w, uint16_t h, uint32_t i
     d->event = (uint8_t *)t + CV_EVENT_OFF; hle_bind_system_event(d->event, 0); hle_signal_system_event(d->event);
     if (cv_thread_on()) { if (!pthread_create(&d->th, NULL, cv_worker, d)) d->th_ok = 1; else LOG("[RED] nn::codec: the decode thread did not start: packets decode on the submitting thread"); }
     *(cv_dec **)t = d;
-    LOG("[codec] %s decoder %u: %ux%u, input format %u, output format %u%s (%s on the host, %s)", k_cv_name[codec], d->id, w, h, in, out,
+    LOG("[codec] %s decoder %u at %.1f s: %ux%u, input format %u, output format %u%s (%s on the host, %s)", k_cv_name[codec], d->id, dm_rel_s(), w, h, in, out,
         d->csd_n ? ", with parameter sets" : "", codec == CV_AV1 ? mav1_backend(d->av1) : codec == CV_H264 ? "VideoToolbox" : "libvpx",
         d->th_ok ? "on a decode thread of its own" : "on the submitting thread (DM_CODEC_THREAD=0)");
     return 0;
@@ -429,6 +429,7 @@ static Result cv_dec_fin(void *t) {
         pthread_mutex_lock(&d->mu); cv_qwait(d); d->quit = 1; pthread_cond_broadcast(&d->qcv); pthread_mutex_unlock(&d->mu);
         pthread_join(d->th, NULL);   // (th_ok stays set: the last stats line still names the decode thread)
     }
+    LOG("[codec] %s decoder %u finalized at %.1f s: %llu packets in, %llu pictures out", k_cv_name[d->codec], d->id, dm_rel_s(), (unsigned long long)d->submits, (unsigned long long)d->pictures);
     pthread_mutex_lock(&g_cv_mu); g_cv[d->id - 1] = NULL; pthread_mutex_lock(&d->mu); if (cv_stat_on()) cv_stat_flush(d, now_ns(), " (the last, at Finalize)"); pthread_mutex_unlock(&d->mu); pthread_mutex_unlock(&g_cv_mu);   // no sync handle lookup is still inside
     if (d->codec != CV_H264 && d->codec != CV_AV1 && d->vpx_ok) vpx_codec_destroy(&d->vpx);
     if (d->avc) mavc_free(d->avc);
@@ -466,6 +467,7 @@ static Result cv_dec_unreg(void *t, uint32_t i) {   // the buffer leaves the dec
 }
 static Result cv_dec_reset(void *t) {   // Stop / Flush: pictures not yet given to a buffer and a pending end of stream are dropped, the decoder starts over at the next key frame
     cv_dec *d = cv_of(t); if (!d) return 0;
+    { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 32) LOG("[codec] %s decoder %u stopped or flushed at %.1f s: %llu packets in, %llu pictures out so far", k_cv_name[d->codec], d->id, dm_rel_s(), (unsigned long long)d->submits, (unsigned long long)d->pictures); }
     pthread_mutex_lock(&d->mu);
     if (d->th_ok) cv_qwait(d);   // queued packets dropped, a decode running finishes (its pictures given up) before the codec starts over
     for (int i = 0; i < d->nheld; i++) cv_img_free(d->held[i]);
@@ -480,6 +482,7 @@ static Result cv_dec_reset(void *t) {   // Stop / Flush: pictures not yet given 
 // then counts only later signals: with none at Start it never sent a packet, and every movie stayed black, with the game waiting behind it
 static Result cv_dec_start(void *t) {
     cv_dec *d = cv_of(t); if (!d) return CV_R(2004);
+    { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 32) LOG("[codec] %s decoder %u started at %.1f s", k_cv_name[d->codec], d->id, dm_rel_s()); }
     pthread_mutex_lock(&d->mu);
     if (d->event && cv_load(d) < cv_ready_at(d)) hle_signal_system_event(d->event);
     pthread_mutex_unlock(&d->mu);

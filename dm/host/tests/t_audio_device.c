@@ -109,7 +109,7 @@ static OSStatus mock_dispose(AudioComponentInstance au) {
     unit.disposals++; return noErr;
 }
 
-uint64_t now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (uint64_t)t.tv_sec * 1000000000ull + t.tv_nsec; }
+uint64_t g_t0_ns; uint64_t now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (uint64_t)t.tv_sec * 1000000000ull + t.tv_nsec; }
 static struct { const void *key; void *value; } object;
 void *objmap_get(const void *key) { assert(key == object.key); return object.value; }
 void objmap_put(const void *key, void *value) { assert(!object.key); object.key = key; object.value = value; }

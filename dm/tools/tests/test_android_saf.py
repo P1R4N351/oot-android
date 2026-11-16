@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/SaveZipJvmTest.java'
 STUB = '''package dev.nxnative.android;
@@ -17,6 +18,7 @@ public final class BuildConfig {
     public static final String NX_DMSH_VK_CHAIN = "6607c8d19abc";
     public static final String NX_DMSH_VK_ABI = "01b52a48538b";
     public static final String NX_DMSH_VK_ABI_COMPAT = "";
+    public static final String NX_DMSH_VK_ABI_SAME = "";
 }
 '''
 
@@ -29,7 +31,7 @@ class SaveZipJvm(unittest.TestCase):
             (t / 'BuildConfig.java').write_text(STUB)
             srcs = [SRC / f'{n}.java' for n in ('SaveZip', 'SaveStore', 'PackZip', 'CopyPlan', 'GameFile', 'GameList', 'Frontend', 'Pack', 'DumpLayout', 'BuildCheck',
                                                 'RomfsCheck', 'Nup', 'Nsp', 'Zstd', 'Profile', 'ShaderLibs')]
-            r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-encoding', 'UTF-8', '-d', str(t / 'classes'), *map(str, srcs), str(TEST), str(t / 'BuildConfig.java')],
+            r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-encoding', 'UTF-8', '-d', str(t / 'classes'), str(WORDS), *map(str, srcs), str(TEST), str(t / 'BuildConfig.java')],
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             (t / 'run').mkdir()

@@ -51,6 +51,16 @@ class Registry(unittest.TestCase):
                 for bid in getattr(m, kind, {}):
                     self.assertNotIn(bid, seen, f'{kind} of {bid} in {seen.get(bid)} and {p}'); seen[bid] = p
 
+    def test_frame_skip_rows_opt_in(self):   # OBS_MTF_SKIP rows (a game's own draw flag) only in a profile with fps_decouple skip, which patch_nso.py also refuses; the number is dm.h's
+        dmh = (REPO / 'dm/host/dm.h').read_text()
+        self.assertRegex(dmh, r'\bOBS_MTF_SKIP = 39\b')
+        self.assertIn("OBS_MTF_SKIP = 39", source.read_text())
+        for p, m in MODS.items():
+            rows = [oid for gates in getattr(m, 'OBS', {}).values() for _, oid, _, _ in gates if oid & 0xff == 39]
+            if rows:
+                self.assertIn(['skip'], game.load(p.parent.name).values('fps_decouple'), p)
+                self.assertEqual(sorted(oid >> 8 for oid in rows), [0, 1], p)   # the frame's start and the submit (mtf_speed.c GATE_FRAME, GATE_SUBMIT)
+
     def test_entry_forms(self):
         for p, m in MODS.items():
             for bid, cuts in getattr(m, 'CUTS', {}).items():

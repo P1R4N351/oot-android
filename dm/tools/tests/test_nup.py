@@ -242,6 +242,15 @@ class Damaged(Fixture):
         except Exception: same = False
         self.assertFalse(same and m.verify(k))
 
+    def test_verify_names_every_damaged_file(self):   # Forgejo #291, #342: zeros over a run of extents (a cut or sparse copy): the CLI names each file, it does not stop at the first
+        d = bytearray(self.nup.read_bytes()); n = nup.open_nup(self.nup)
+        _, off, stored, _, _ = n.record(n.node(f'update/{VER}/romfs/Shader/big.bin'))
+        d[off:off + stored] = bytes(stored)
+        p = self.bad(bytes(d), 'hole.nup')
+        r = subprocess.run([sys.executable, str(REPO / 'dm/tools/nup.py'), str(p), 'verify', f'update/{VER}/romfs'], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn('big.bin', r.stdout); self.assertRegex(r.stdout, r'\d+ files, [1-9]\d* bad')
+
 
 class Tools(Fixture):
     def test_pack_dump_scan(self):
@@ -250,6 +259,17 @@ class Tools(Fixture):
                          (TID, {VER: f'{self.nup}:update/{VER}'}, {DLC: f'{self.nup}:addon/{DLC:016x}/romfs'}))
         self.assertEqual(str(pack_dump.version_dir(self.nup, vers, 0)), f'{self.nup}:base')
         self.assertEqual(pack_dump.scan(self.dump)[0], app)
+
+    def test_program_1_nup(self):   # BananaNative #356: a .nup of a folder whose base/ is a Switch 2 Edition's program 1 is that program's, as the folder is; its add-ons index as the folder's
+        src = self.root / 'Edition'; self.addCleanup(shutil.rmtree, src, True)
+        (src / 'base/exefs').mkdir(parents=True); (src / 'base/romfs').mkdir(); (src / 'dlc' / f'{DLC:016x}/0/romfs').mkdir(parents=True)
+        (src / 'base/exefs/main').write_bytes(module(b'program 1')); (src / 'base/exefs/main.npdm').write_bytes(npdm(TID + 1))
+        (src / 'base/romfs/a.txt').write_text('program 0\'s RomFS'); (src / 'dlc' / f'{DLC:016x}/0/romfs/dlcfile').write_text('dlc')
+        n = write_nup(src, self.root / 'Edition.nup'); self.addCleanup(n.unlink)
+        for s in (src, n):
+            app, _, dlc = pack_dump.scan(s)
+            self.assertEqual((app, list(dlc), pack_dump.dlc_index(DLC, app)), (TID + 1, [DLC], 1), s)
+            self.assertEqual([str(r) for r in pack_dump.split_addons(app, dlc)], [str(dlc[DLC])], s)
 
     def test_pack_version_and_dlc_images_match_the_folder(self):
         out = self.root / 'packed'; self.addCleanup(shutil.rmtree, out, True)
@@ -362,6 +382,7 @@ public final class BuildConfig {
     public static final String NX_DMSH_VK_CHAIN = "6607c8d19abc";
     public static final String NX_DMSH_VK_ABI = "01b52a48538b";
     public static final String NX_DMSH_VK_ABI_COMPAT = "";
+    public static final String NX_DMSH_VK_ABI_SAME = "";
 }
 '''
 
@@ -370,7 +391,7 @@ public final class BuildConfig {
         t = Path(tempfile.mkdtemp(prefix='nupjvm_'))
         try:
             (t / 'BuildConfig.java').write_text(self.STUB)
-            subprocess.run(['javac', '-d', str(t / 'classes')] + [str(src / f'{c}.java') for c in ('Nup', 'Nsp', 'Zstd', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Profile', 'ShaderLibs', 'PickedPath', 'CopyPlan')]
+            subprocess.run(['javac', '-d', str(t / 'classes')] + [str(src / f'{c}.java') for c in ('Nup', 'Nsp', 'Zstd', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Profile', 'ShaderLibs', 'PickedPath', 'CopyPlan', 'Words')]
                            + [str(REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/NupJvmTest.java'), str(t / 'BuildConfig.java')], check=True, capture_output=True, text=True)
             (t / 'run').mkdir()
             r = subprocess.run(['java', '-cp', str(t / 'classes'), 'dev.nxnative.android.NupJvmTest', str(REPO), str(t / 'run')] + ([sys.executable] if have_zstd() else []),

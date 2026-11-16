@@ -28,6 +28,10 @@ public final class AdvancedTableJvmTest {
         check(n.accepts("1024") && !n.accepts("100") && !n.accepts("9000") && !n.accepts("x"), "number values");
         check(n.forGame(null) && n.forGame("04007EF01F8AE000"), "a both-scope row is in the global list and a game's");
 
+        AdvancedTable.Row dd = AdvancedTable.find(rows, "DM_OOT_DRAW_DISTANCE");
+        check(dd != null && dd.live() && dd.forGame("0400486024DEC000") && !dd.forGame("04007EF01F8AE000") && dd.options().size() == 4 && dd.accepts("80") && !dd.accepts("0"), "Draw distance is a live choice row of Ocarina of Time");
+        check(!q.live(), "a row without the live column is not live");
+
         AdvancedTable.Row o = AdvancedTable.find(rows, "DM_MEM_FILEBACK");
         check(o != null && o.owned() && !o.editable(), "an owned row is not editable");
 

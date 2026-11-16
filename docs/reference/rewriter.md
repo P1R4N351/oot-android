@@ -339,6 +339,13 @@ To enroll a cut for any game's own module:
 - **Cause:** a newer SDK reads a register macOS traps (`CTR_EL0` in SDK 16's `FlushDataCache`).
 - **Fix:** rewrite to a constant (`patch_nso.py`, the `ctr` site kind).
 
+### Atomics at an unaligned address on a core without FEAT_LSE2 (Android)
+
+- **Symptom:** `CRASH sig=7 (BUS_ADRALN)` at an `ldadd` / `ldclr` / `swp` / `cas`, with `fault: code 1 (BUS_ADRALN) ... 2 fault hooks did not claim it`, an address that is not a multiple of the access size, on a Snapdragon 888 (Cortex-X1, A78, A55: Armv8.2) and not on newer phones. Ocarina of Time: `ldadd w9, w8, [x8]` at `main+0x104e4c`, x8 = `0x...5f1`.
+- **Cause:** the game builds an object at +0xd1 of another (`main+0x1052e8`: `str x8, [x20, #0xd1]!`, the vtable of the embedded object) and adds to its reference count (+0x50) with an LSE atomic, so the address is odd. FEAT_LSE2 (Armv8.4) makes such an access one atomic access while it stays in a 16-byte block; before it every unaligned atomic is an alignment fault. The code is the game's own and the odd address is the game's own, so nothing the host handed it is wrong: the cores of newer phones do it in hardware.
+- **Fix:** `crash.c` decodes the faulting instruction at a `BUS_ADRALN` (`lse_unaligned.h`: LDADD, LDCLR, LDEOR, LDSET, LDSMAX, LDSMIN, LDUMAX, LDUMIN, SWP and CAS, 32 and 64 bit, any acquire / release form, also with the result register XZR), does it again atomically on the aligned 16-byte block that holds the bytes (`ldaxp` / `stlxp`, so an aligned atomic on a neighbouring word is ordered with it), writes the old value to the register and goes on at the next instruction. Bytes across a 16-byte block are done under a lock, atomic only against another such access. Every such access costs one signal; the log says so for the 1st, 1,000th and 100,000th. Unit test: `t_lse_unaligned` (the crash's instruction, each operation at each offset, threads adding through it beside an aligned atomic add).
+- **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md#found-on-this-game) (issue #343, Galaxy S21 Ultra, Turnip v26.3.0-R6; the phone check is open).
+
 ### Key page entry 0 on Android
 
 - **Symptom:** every Android boot stops right after `thread slots: tpidr_el0 + 0x10 → K18 +0 …` with `FATAL main: key page entry 0 is 0 (host key not created) -- the game would read TSD slot 0`.

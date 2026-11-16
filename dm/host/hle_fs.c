@@ -894,7 +894,7 @@ static int64_t img_serve(mount_t *m, int64_t k, const char *path) {
         uint8_t h[4];
         int got_header = 0;
         if (m->img->aux && (ent->flags & IMG_ENT_ZSTD)) {
-            char why[200] = "";
+            char why[400] = "";
             const uint8_t *zbytes = nup_z_get(m->img, ent->a, why, sizeof why);
             if (zbytes) {
                 memcpy(h, zbytes, 4);
@@ -932,7 +932,7 @@ HLE_FORCE("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci", "fsp-srv → open(2)", Re
         if ((k = img_serve(&g_mnt[mi], k, path)) < 0) return RES_PATH_NOT_FOUND;
         ent = &g_mnt[mi].img->e[k];
         if (ent->flags & IMG_ENT_ZSTD) {   // a compressed file of a NUP package: decompressed now, held until CloseFile
-            char why[200] = "";
+            char why[400] = "";
             if (!nup_z_get(g_mnt[mi].img, ent->a, why, sizeof why)) { LOG("[RED] fs %s: cannot decompress it from %s: %s", path, ((nup_aux *)g_mnt[mi].img->aux)->what, why); return RES_FAIL; }
         }
         *out = FH_OUT(IMG_HANDLE(mi, k));
@@ -947,6 +947,7 @@ HLE_FORCE("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci", "fsp-srv → open(2)", Re
     if (S_ISDIR(st.st_mode)) { close(fd); return RES_PATH_NOT_FOUND; }
     if (fd >= (int)sizeof g_fmode) die("fd beyond the table");
     g_fmode[fd] = (uint8_t)mode; *out = FH_OUT(fd);
+    if (fd == 0) LOG("[RED] fs open %s returned descriptor 0 (stdin was closed in this process): the guest sees a null handle", hp);
     { const char *c = strchr(path, ':'); size_t ln = c ? (size_t)(c - path) : 0; uint16_t token = 0;
       for (int i = 0; c && i < g_nmnt; i++) if (strlen(g_mnt[i].name) == ln && !strncmp(g_mnt[i].name, path, ln) && g_mnt[i].txn_root >= 0) { token = (uint16_t)(g_mnt[i].txn_root + 1); break; }
       atomic_store(&g_ftxn[fd], token); }
@@ -964,7 +965,7 @@ HLE_FORCE("_ZN2nn2fs8ReadFileEPmNS0_10FileHandleElPvm", "fsp-srv → pread(2)", 
         fd = g_mnt[IMG_M(h)].img->fd; base = (int64_t)x->a;
         sz = off < 0 || (uint64_t)off >= x->b ? 0 : (size_t)(x->b - off) < sz ? (size_t)(x->b - off) : sz;
         if (x->flags & IMG_ENT_ZSTD) {   // a compressed NUP file: its decompressed bytes, held by the open (one more reference for this read, in case the game reads a closed handle)
-            romfs_img *m = g_mnt[IMG_M(h)].img; char why[200] = ""; uint64_t f0 = now_ns();
+            romfs_img *m = g_mnt[IMG_M(h)].img; char why[400] = ""; uint64_t f0 = now_ns();
             const uint8_t *src = nup_z_get(m, x->a, why, sizeof why);
             if (!src) { LOG("[RED] fs ReadFile: cannot decompress a file of %s: %s", ((nup_aux *)m->aux)->what, why); return RES_FAIL; }
             dm_guest_write_prepare(buf, sz);
@@ -1031,8 +1032,10 @@ HLE_FORCE("_ZN2nn2fs9WriteFileENS0_10FileHandleElPKvmRKNS0_11WriteOptionE", "fsp
     }
     return RES_OK;
 }
-HLE_FORCE("_ZN2nn2fs11GetFileSizeEPlNS0_10FileHandleE", "fsp-srv → fstat(2)", Result, h_fs_GetFileSize, int64_t *out, uint64_t h) { dm_thread_service_request(); h = FH_IN(h);
-    if (!h) return RES_FAIL;
+HLE_FORCE("_ZN2nn2fs11GetFileSizeEPlNS0_10FileHandleE", "fsp-srv → fstat(2)", Result, h_fs_GetFileSize, int64_t *out, uint64_t h) { dm_thread_service_request(); uint64_t guest_h = h; h = FH_IN(h);
+    if (!h) {   // a file handle is an fd; 0 is never a file the game opened. Named: a game that aborts on a failed size (Fire Emblem: Fortune's Weave, thread sndSetup) gave no hint here
+        static atomic_int n; if (atomic_fetch_add(&n, 1) < 8) LOG("[RED] fs GetFileSize: null file handle (the guest passed %#llx): the open before it handed none back, or the game lost it", (unsigned long long)guest_h);
+        return RES_FAIL; }
     if (IMG_H(h)) { *out = (int64_t)g_mnt[IMG_M(h)].img->e[IMG_K(h)].b; return RES_OK; }
     struct stat st; if (fstat((int)h, &st)) return err_res("fstat", "fd");
     *out = st.st_size; return RES_OK;

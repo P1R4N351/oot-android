@@ -8,7 +8,7 @@
 #include "../hle_movie_avc.c"
 #include <assert.h>
 
-uint64_t now_ns(void) { return 1; }
+uint64_t g_t0_ns; uint64_t now_ns(void) { return 1; }
 __thread _Atomic int dm_host_work;   // hle_thread.c
 static struct { void *ev; int bound, set; } g_ev[16];
 static int ev_slot(void *e) { for (int i = 0; i < 16; i++) if (g_ev[i].ev == e) return i; for (int i = 0; i < 16; i++) if (!g_ev[i].ev) { g_ev[i].ev = e; return i; } abort(); }

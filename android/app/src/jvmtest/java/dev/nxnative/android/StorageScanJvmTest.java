@@ -77,6 +77,7 @@ public final class StorageScanJvmTest {
         File restamp = put(new File(packA, "shaders/.restamp-" + CUR + "/dmsh_vk.lib"), "half").getParentFile();
         File packE = put(new File(ext, "packs/" + E + "/pack.tsv"), "p").getParentFile();
         File onlyOld = put(new File(packE, "shaders/v-" + OLD + "/dmsh_vk.lib"), "PLAYED").getParentFile();
+        File layerE = put(new File(packE, "shaders/layer/built.tsv"), "x").getParentFile();   // the shader layer built while playing (LayerDir): its own item, deletable
         File packB = put(new File(ext, "packs/" + B + "/pack.tsv"), "p").getParentFile();
         File partial = put(new File(ext, "packs/" + A + ".partial/pack.tsv"), "p").getParentFile();
         File replacedA = put(new File(ext, "packs/" + A + ".replaced/pack.tsv"), "p").getParentFile();
@@ -115,6 +116,7 @@ public final class StorageScanJvmTest {
         check(kind(l, restamp) == StorageScan.Kind.UNFINISHED && kind(l, partial) == StorageScan.Kind.UNFINISHED && kind(l, replacedA) == StorageScan.Kind.UNFINISHED, "pack leftovers");
         check(!listed(l, replacedC), "a replaced pack whose pack is missing");
         check(kind(l, packB) == StorageScan.Kind.UNUSED_PACKS && !listed(l, packE), "packs of no listed game");
+        check(kind(l, layerE) == StorageScan.Kind.LAYER && !listed(l, packE) && !listed(l, onlyOld), "a listed game's shader layer is its own item; its pack and library stay");
         check(kind(l, part) == StorageScan.Kind.UNFINISHED && kind(l, orphan) == StorageScan.Kind.UNUSED_COPIES && !listed(l, copyA), "copies");
         check(kind(l, log1) == StorageScan.Kind.OLD_LOGS && kind(l, dig1) == StorageScan.Kind.OLD_LOGS && !listed(l, log2) && !listed(l, logB), "old logs, the newest kept");
         check(kind(l, tempA) == StorageScan.Kind.GAME_TEMP && !listed(l, cacheA) && !listed(l, new File(ext, "temp/" + D)), "temp: not cache storage, not a folder holding a save");

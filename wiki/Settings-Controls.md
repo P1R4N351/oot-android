@@ -14,9 +14,12 @@ How you play: the on-screen controls, a controller, rumble, button mapping and m
 ## Screen rotation
 - **What it does:** **Landscape** (default) or **Automatic**, for the game screen.
 
-## Controller: in-game panel
+## Controller panel: opening the in-game panel
 - **What it does:** how a controller opens the in-game panel: **Home, or hold - and + (half a second)** (default), **Home button only**, **Hold - and + only (half a second)**, or **Off**. In the panel the D-pad or left stick moves the focus, A presses, B closes, L and R switch tabs.
 - **What to expect:** while the panel is open no controller input reaches the game, and every button the game holds is released when it opens.
+
+## Per game
+**Rumble**, **On-screen controls**, **Screen rotation** and **Controller panel** are also on each game's page (Game tab, Controls). A game's row says "As in Settings: <value>" until you pick a value for that game; **Default (Settings: <value>)** at the top of its list clears the game's own value again.
 
 ## Players and controllers
 Each connected gamepad is a player of its own. The in-game panel's **Controllers > Player 1** (shown while a gamepad is connected) picks which one is player 1, or **Automatic**; the choice is kept for every game.

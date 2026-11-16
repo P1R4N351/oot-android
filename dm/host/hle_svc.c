@@ -611,7 +611,7 @@ uint64_t svc_dispatch(int num, uint64_t *regs, uint64_t orig_addr) {
         uint32_t result = map_arguments(dst, src, size);
         if (result) { regs[0] = result; return 0; }
         pthread_mutex_lock(&g_map_lock);
-        char why[200] = "";
+        char why[400] = "";
         if (map_find(dst, size)) { result = 0xD401; snprintf(why, sizeof why, "the destination is mapped already"); }
         else if (map_source_busy(src, size)) { result = 0xD401; snprintf(why, sizeof why, "the source is mapped elsewhere"); }
         else if (!map_source_backed(src, size)) {

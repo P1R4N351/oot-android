@@ -116,7 +116,7 @@ public final class GameListJvmTest {
         write(new File(fixUpd, "updates/65536/romfs/b.txt"), "update\n");
 
         for (File folder : new File[] {baseOnly, updOnly, both, codeInUpd, fixUpd}) {
-            File nupFile = nup(repo, folder, new File(root, folder.getName() + ".nup"), python);
+            File nupFile = nup(repo, folder, alone(root, folder), python);
             for (File d : new File[] {folder, nupFile}) {
                 String tag = d.getName();
                 check(Pack.titleIdOf(d).equals(folder == fixUpd ? FIX_TID : FIX2), tag + ": title ID " + Pack.titleIdOf(d));
@@ -183,6 +183,13 @@ public final class GameListJvmTest {
      * another version number is that build. Prepare starts from it (DumpLayout.find, with the profile build it is), and the 1.8.0 pack (version 0) plays it as it
      * is: the card's build check passes and the RomFS is that version's (its own, else the base's). Another build ID under any number is still refused
      */
+    /** A folder dump's .nup, in a folder of its own: .nup files of one game beside each other find each other (an update .nup, a DLC), and these fixtures are not parts of one game */
+    static File alone(File root, File folder) {
+        File d = new File(root, "nup-" + folder.getName());
+        d.mkdirs();
+        return new File(d, folder.getName() + ".nup");
+    }
+
     static void sameBuildOtherVersion(File repo, File run, String python, File root, File otherCode, File otherBoth) throws Exception {
         Pack v0 = pack(new File(run, "pack-v0"), FIX2, "0", "main=" + id(11), "sdk=" + id(3));
         // "1.8.1" alone: an update package with 1.8.0's modules and its own RomFS
@@ -197,7 +204,7 @@ public final class GameListJvmTest {
         version(new File(noRomfs, "base"), FIX2, 11, true);
         version(new File(noRomfs, "updates/65538"), FIX2, 11, false);
         for (File folder : new File[] {alone, over, noRomfs}) {
-            File nupFile = nup(repo, folder, new File(root, folder.getName() + ".nup"), python);
+            File nupFile = nup(repo, folder, alone(root, folder), python);
             for (File d : new File[] {folder, nupFile}) {
                 String tag = d.getName();
                 DumpLayout.Found f = DumpLayout.find(d);
@@ -212,7 +219,7 @@ public final class GameListJvmTest {
         }
         // another build ID: refused under any version number (fixed-address cuts never run on another build)
         for (File folder : new File[] {otherCode, otherBoth}) {
-            for (File d : new File[] {folder, new File(root, folder.getName() + ".nup")}) {
+            for (File d : new File[] {folder, alone(root, folder)}) {
                 String tag = d.getName();
                 check(DumpLayout.versionWith(d, BuildCheck.builds(v0)) < 0 && v0.gameVersion(d).equals("0"), tag + ": another build is not the pack's");
                 BuildCheck.Result r = BuildCheck.build(v0, d);

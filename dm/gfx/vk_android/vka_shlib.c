@@ -77,8 +77,46 @@ int vka_shlib_open(vka_shlib *L, const char *path, const char *chain, const char
     L->mapped = 1;
     return 1;
 }
+int vka_shlib_empty(vka_shlib *L, dmsh_vk_header *h, const char *chain, const char *vk_chain, const char *game, const char *abi, uint16_t sg, uint16_t sa, char *err, size_t errn) {
+    memset(L, 0, sizeof *L); memset(h, 0, sizeof *h);
+    const char *from[3] = {chain, vk_chain, game}; char *to[3] = {h->chain, h->vk_chain, h->game};
+    for (int i = 0; i < 3; i++) if (from[i]) { size_t n = strlen(from[i]); if (n > 16) return fail(err, errn, "header string %s is longer than 16 characters", from[i]); memcpy(to[i], from[i], n); }
+    if (abi) { if (strlen(abi) != sizeof h->abi) return fail(err, errn, "ABI %s is not %zu characters", abi, sizeof h->abi); memcpy(h->abi, abi, sizeof h->abi); }
+    h->magic = DMSH_VK_LIB_MAGIC; h->version = DMSH_VK_LIB_VERSION; h->subgroup_size = sg; h->ssbo_align = sa;
+    h->blob_off = sizeof *h;   // (entry, binding and module tables: no records, at offset 0; an empty blob after the header)
+    return vka_shlib_check(L, h, sizeof *h, chain, vk_chain, game, NULL, err, errn);
+}
+int vka_shlib_extract(vka_shlib *out, const vka_shlib *L, const dmsh_vk_entry *e, char *err, size_t errn) {
+    memset(out, 0, sizeof *out);
+    if (!L || !L->h || !e) return fail(err, errn, "no entry");
+    // Layout: header, the entry, its bindings, its module records (each table 8-aligned: the records are 64, 24 and 16 bytes), then the blob (16-aligned): c1 bytes, modules
+    size_t eo = sizeof(dmsh_vk_header), bo = eo + sizeof(dmsh_vk_entry), mo = bo + (size_t)e->bind_count * sizeof(dmsh_vk_bind), blo = (mo + (size_t)e->mod_count * sizeof(dmsh_vk_module) + 15) & ~(size_t)15;
+    uint64_t blob = e->c1_len ? ((uint64_t)e->c1_len + 15) & ~15ull : 0;
+    for (unsigned i = 0; i < e->mod_count; i++) blob += ((uint64_t)L->mod[e->mod + i].stored + 15) & ~15ull;
+    if (blob > (1ull << 31)) return fail(err, errn, "entry %016llx: %llu blob bytes", (unsigned long long)e->key, (unsigned long long)blob);
+    uint8_t *b = calloc(1, blo + (size_t)blob);
+    if (!b) return fail(err, errn, "entry %016llx: %zu bytes not allocated", (unsigned long long)e->key, blo + (size_t)blob);
+    dmsh_vk_header *h = (dmsh_vk_header *)b; *h = *L->h;
+    h->entry_count = 1; h->entry_off = (uint32_t)eo; h->bind_count = e->bind_count; h->bind_off = (uint32_t)bo; h->mod_count = e->mod_count; h->mod_off = (uint32_t)mo;
+    h->blob_off = blo; h->blob_size = blob;
+    dmsh_vk_entry *ne = (dmsh_vk_entry *)(b + eo); *ne = *e; ne->bind = 0; ne->mod = 0; ne->c1_off = 0; ne->c1_off_hi = 0;
+    if (e->bind_count) memcpy(b + bo, L->bind + e->bind, (size_t)e->bind_count * sizeof(dmsh_vk_bind));
+    uint64_t o = 0;
+    if (e->c1_len) { memcpy(b + blo, vka_shlib_c1(L, e), e->c1_len); o = ((uint64_t)e->c1_len + 15) & ~15ull; }
+    dmsh_vk_module *nm = (dmsh_vk_module *)(b + mo);
+    for (unsigned i = 0; i < e->mod_count; i++) {
+        const dmsh_vk_module *m = &L->mod[e->mod + i];
+        nm[i] = *m; nm[i].off = (uint32_t)o; nm[i].off_hi = (uint16_t)(o >> 32);
+        memcpy(b + blo + o, L->blob + vka_shlib_mod_off(m), m->stored);
+        o += ((uint64_t)m->stored + 15) & ~15ull;
+    }
+    if (!vka_shlib_check(out, b, blo + (size_t)blob, NULL, NULL, NULL, NULL, err, errn)) { free(b); memset(out, 0, sizeof *out); return 0; }
+    out->mapped = 2; out->by_abi = L->by_abi; out->differs = L->differs;
+    return 1;
+}
 void vka_shlib_close(vka_shlib *L) {
-    if (L->mapped && L->base) munmap((void *)L->base, L->size);
+    if (L->mapped == 2 && L->base) free((void *)L->base);
+    else if (L->mapped && L->base) munmap((void *)L->base, L->size);
     memset(L, 0, sizeof *L);
 }
 

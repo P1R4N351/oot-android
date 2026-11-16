@@ -113,6 +113,11 @@ The idea of changing the scene camera's aspect and of scaling the UI projection 
 values where the game uses them, squeezes the UI into the middle of the unchanged 16:9 frame instead of widening it, and adds the vertical field-of-view correction for pictures narrower than 16:9.
 It lives under `dm/host/android/` so the Mac and iPhone builds do not include it. The shared parts of both games' callbacks are in `dm/host/android/wide_shape.h`.
 
+**The optional Mario Tennis Fever camera and 2D layer aspect (`dm/host/android/mtf_wide.c`, with its gates in `dm/games/0400D4201C6EA000/patches.py`) is GPL-3.0-or-later**, as it
+builds on the shared `dm/host/android/wide_shape.h`. Its game sites (the display layout setter's aspect store, the camera's fovy loads and the layout projection setup) were found by
+disassembly of the game's own `nro0` here. Its two nn::ui2d sites and the full-canvas pane rule are those of the Mario Kart World file above (the same SDK code), whose idea comes from
+adriadam10's [mkw-recomp](https://github.com/adriadam10/mkw-recomp) (MIT). It lives under `dm/host/android/` so the Mac and iPhone builds do not include it.
+
 **The optional Pokopia world-camera correction is GPL-3.0-or-later.**
 [`dm/host/android/pkp_aspect.c`](../dm/host/android/pkp_aspect.c) adapts the camera/FOV handling in
 [`runtime/games/pkp/render/pkp_aspect.cpp`](https://github.com/Dittobyte/Recompia/blob/75dae2f2ccdada74e6b8ba12ea7de30560a84221/runtime/games/pkp/render/pkp_aspect.cpp)

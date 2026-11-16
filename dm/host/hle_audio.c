@@ -668,11 +668,24 @@ HLE_FORCE("_ZN2nn5audio22GetAudioInSampleFormatEPKNS0_7AudioInE", "recording sam
 
 // ---------- SDK 21's OutputStream (Xenoblade Chronicles 2's Switch 2 Edition, SDK 21.4.4) ----------
 enum { OS_NONE = 0, OS_STOPPED = 1, OS_STARTED = 2, OS_FLOAT = 5, OS_PCM16 = 2 };
-typedef struct { uint8_t key[64]; pthread_mutex_t m; int ch, fmt, cap, queued, nblk, state; } ostream;   // key: the AudioOut's object (au_info writes its first 16 bytes)
+typedef struct { uint8_t key[64]; pthread_mutex_t m; int ch, fmt, cap, queued, nblk, state;
+                 uint64_t writes, frames, refused, polls, polls_full, purges, purged, starts, stops, last_ns, t0_ns; int peak_queued; } ostream;   // the counters since the last log line (under m)   // key: the AudioOut's object (au_info writes its first 16 bytes)
 typedef struct { gbuf b; int frames; int16_t pcm[]; } oblock;
 static ostream *os_of(const void *g) { ostream *o = objmap_get(g); if (!o) die("OutputStream %p was not opened by the host", g); return o; }
 static void os_reclaim(ostream *o) {   // under o->m: the blocks the output played
     gbuf *b; while ((b = h_au_Released(o->key))) { oblock *k = (oblock *)b; o->queued -= k->frames; o->nblk--; free(k); }
+}
+// One line about a stream's writes every 5 s while the game uses it (under o->m): what the game wrote, what the stream refused, how often it had no room, what a purge dropped. A voice that
+// stops early shows as writes that stop (the game's side) or as refusals and a full queue (the host's); nothing here changes a call's answer
+static void os_log_stats(ostream *o, const char *why) {
+    uint64_t now = now_ns();
+    if (!o->t0_ns) { o->t0_ns = o->last_ns = now; }
+    if (!why && now - o->last_ns < 5000000000ull) return;
+    if (o->writes | o->refused | o->polls | o->purges | o->starts | o->stops)
+        LOG("audio #%d OutputStream at %.1f s%s, the last %.1f s: %llu writes (%llu frames), %llu refused; the game asked for room %llu times, none left on %llu; %llu purges (%llu frames dropped); %llu starts, %llu stops; queued now %d of %d frames (at most %d), state %d",
+            ao(o->key)->id, dm_rel_s(), why ? why : "", (double)(now - o->last_ns) / 1e9, (unsigned long long)o->writes, (unsigned long long)o->frames, (unsigned long long)o->refused,
+            (unsigned long long)o->polls, (unsigned long long)o->polls_full, (unsigned long long)o->purges, (unsigned long long)o->purged, (unsigned long long)o->starts, (unsigned long long)o->stops, o->queued, o->cap, o->peak_queued, o->state);
+    o->writes = o->frames = o->refused = o->polls = o->polls_full = o->purges = o->purged = o->starts = o->stops = 0; o->peak_queued = o->queued; o->last_ns = now;
 }
 HLE_FORCE("_ZN2nn5audio29GetDefaultVirtualOutputDeviceEPNS0_15AudioDeviceNameE", "connect to auddmg:u; the host has one output: its name", void, h_os_DefaultDev, char *name) {
     memset(name, 0, 0x100); memcpy(name, "AudioVirtualOutput", sizeof "AudioVirtualOutput");
@@ -714,29 +727,31 @@ HLE_FORCE("_ZN2nn5audio16OpenOutputStreamEPNS0_16OutputStreamTypeEPvmRKNS0_15Aud
     return os_open(g, NULL, fmt, frames, __builtin_return_address(0));
 }
 HLE_FORCE_BIG("_ZN2nn5audio17StartOutputStreamEPNS0_16OutputStreamTypeE", "start the stream's output", Result, h_os_Start, void *g) {
-    ostream *o = os_of(g); o->state = OS_STARTED; return au_start_at(o->key, dm_bigstack_caller(__builtin_return_address(0)));
+    ostream *o = os_of(g); o->state = OS_STARTED; pthread_mutex_lock(&o->m); o->starts++; os_log_stats(o, NULL); pthread_mutex_unlock(&o->m);
+    return au_start_at(o->key, dm_bigstack_caller(__builtin_return_address(0)));
 }
 HLE_FORCE_BIG("_ZN2nn5audio18StartOutputStreamsEPKPNS0_16OutputStreamTypeEi", "start several streams' outputs", Result, h_os_StartN, void *const *gs, int n) {
     void *lr = dm_bigstack_caller(__builtin_return_address(0));
     for (int i = 0; i < n; i++) {
-        ostream *o = os_of(gs[i]); o->state = OS_STARTED;
+        ostream *o = os_of(gs[i]); o->state = OS_STARTED; pthread_mutex_lock(&o->m); o->starts++; pthread_mutex_unlock(&o->m);
         Result r = au_start_at(o->key, lr); if (r) return r;
     }
     return RES_OK;
 }
 HLE_FORCE_BIG("_ZN2nn5audio16StopOutputStreamEPNS0_16OutputStreamTypeE", "stop the stream's output", void, h_os_Stop, void *g) {
     ostream *o = os_of(g); au_stop_at(o->key, dm_bigstack_caller(__builtin_return_address(0))); o->state = OS_STOPPED;
+    pthread_mutex_lock(&o->m); o->stops++; os_log_stats(o, NULL); pthread_mutex_unlock(&o->m);
 }
 HLE_FORCE("_ZN2nn5audio17PurgeOutputStreamEPNS0_16OutputStreamTypeE", "drop the frames not yet played", void, h_os_Purge, void *g) {
     ostream *o = os_of(g);
-    pthread_mutex_lock(&o->m); os_reclaim(o); pthread_mutex_unlock(&o->m);
+    pthread_mutex_lock(&o->m); os_reclaim(o); int before = o->queued; pthread_mutex_unlock(&o->m);
     pthread_mutex_lock(&g_aos_lock); au_release_pending(ao(o->key)); pthread_mutex_unlock(&g_aos_lock);
-    pthread_mutex_lock(&o->m); os_reclaim(o); pthread_mutex_unlock(&o->m);
+    pthread_mutex_lock(&o->m); os_reclaim(o); o->purges++; if (before > o->queued) o->purged += (uint64_t)(before - o->queued); os_log_stats(o, NULL); pthread_mutex_unlock(&o->m);
 }
 HLE_FORCE_BIG("_ZN2nn5audio17CloseOutputStreamEPNS0_16OutputStreamTypeE", "close the stream's output", void, h_os_Close, void *g) {
     ostream *o = objmap_get(g); if (!o) return;
     au_stop_at(o->key, NULL);
-    pthread_mutex_lock(&o->m); os_reclaim(o); pthread_mutex_unlock(&o->m);
+    pthread_mutex_lock(&o->m); os_reclaim(o); os_log_stats(o, " (closing)"); pthread_mutex_unlock(&o->m);
     au_close(o->key, dm_bigstack_caller(__builtin_return_address(0)));
     objmap_del(g); pthread_mutex_destroy(&o->m); free(o);
 }
@@ -747,6 +762,8 @@ HLE_FORCE("_ZN2nn5audio29GetOutputStreamFreeFrameCountEPKNS0_16OutputStreamTypeE
     ostream *o = os_of(g);
     pthread_mutex_lock(&o->m); os_reclaim(o);
     int n = o->nblk >= QMAX - 1 ? 0 : o->cap - o->queued;
+    o->polls++; if (n <= 0) o->polls_full++;
+    os_log_stats(o, NULL);
     pthread_mutex_unlock(&o->m);
     return n < 0 ? 0 : n;
 }
@@ -754,7 +771,7 @@ HLE_FORCE("_ZN2nn5audio17WriteOutputStreamEPNS0_16OutputStreamTypeEPKvi", "frame
     ostream *o = os_of(g);
     if (frames <= 0 || !data) return 0;
     pthread_mutex_lock(&o->m); os_reclaim(o);
-    if (o->nblk >= QMAX - 1 || frames > o->cap - o->queued) { pthread_mutex_unlock(&o->m); return 0; }
+    if (o->nblk >= QMAX - 1 || frames > o->cap - o->queued) { o->refused++; os_log_stats(o, NULL); pthread_mutex_unlock(&o->m); return 0; }
     oblock *k = malloc(sizeof *k + (size_t)frames * o->ch * 2); if (!k) die("OutputStream block malloc");
     size_t n = (size_t)frames * o->ch;
     if (o->fmt == OS_FLOAT) {
@@ -765,8 +782,10 @@ HLE_FORCE("_ZN2nn5audio17WriteOutputStreamEPNS0_16OutputStreamTypeEPKvi", "frame
         }
     } else memcpy(k->pcm, data, n * 2);
     k->b.ptr = k->pcm; k->b.cap = k->b.size = (uint64_t)frames * o->ch * 2; k->frames = frames;
-    if (!h_au_Append(o->key, &k->b)) { pthread_mutex_unlock(&o->m); free(k); return 0; }
+    if (!h_au_Append(o->key, &k->b)) { o->refused++; pthread_mutex_unlock(&o->m); free(k); return 0; }
     o->queued += frames; o->nblk++;
+    o->writes++; o->frames += (uint64_t)frames; if (o->queued > o->peak_queued) o->peak_queued = o->queued;
+    os_log_stats(o, NULL);
     pthread_mutex_unlock(&o->m);
     return frames;
 }

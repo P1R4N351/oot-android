@@ -33,6 +33,36 @@ Rows you set are written into the log of the next run (`[adv]` lines), so a shar
 - **When to toggle:** when the picture shows spikes or flicker on models.
 - **Default:** Auto: on with Qualcomm's driver when its mesh shaders are on (`DM_VK_MESH=1`), off otherwise. Qualcomm's driver draws mesh shaders through compute by default, where this workaround is not needed.
 
+### Draw distance
+- **What it does:** Ocarina of Time only. Caps how far the game draws: Long (300), Medium (150), Short (80) or Very short (40). Also a slider in the in-game panel's Performance tab, applied at once.
+- **When to toggle:** when a field or town is slow. In one walk through Hyrule Field on one phone the game drew about 2,600 objects a frame at Auto and about 1,400 at Medium. Frame rate rose less and the numbers moved between runs when the phone got hot.
+- **What to expect:** far scenery is cut off and appears as you walk, and fields show a plain horizon where the cut is.
+- **Default:** Auto, the game's own distance.
+
+### Fog at the cut
+- **What it does:** Ocarina of Time only. With a Draw distance set, pulls the game's own distance fog in so the cut ends in haze instead of a hard horizon. Off (Auto), Light, Medium or Strong. Also an in-game slider.
+- **When to toggle:** when a short Draw distance shows a plain line at the horizon.
+- **What to expect:** Light: the far half of the range fades into the sky's haze. Medium and Strong start the haze nearer and make it thicker: distant hills turn bluish and hazy, and reflections are fogged too. Tried on one phone at distance 100 in Hyrule Field, standing still; not checked on every area, driver or cutscene.
+- **Default:** Auto (off).
+
+### Shadow range
+- **What it does:** Ocarina of Time only. Shortens the range of the moving shadows: Long (500), Medium (200), Short (100) or Very short (50). Also an in-game slider.
+- **When to toggle:** the game is slow in a field or town. It drew about 10 to 20 % fewer objects at Short and Very short in one test.
+- **What to expect:** shadows end nearer Link; at Short and Very short distant shadows stop at a line, and the title screen and viewer show a line at any value.
+- **Default:** Auto.
+
+### Foliage distance
+- **What it does:** Ocarina of Time only. Scales how far grass, bushes and small trees are drawn: 75, 50 or 35 % of the game's distances. Also an in-game slider.
+- **When to toggle:** the game is slow where there is a lot of vegetation. Not measured to lower the object count in the first test; tell us what you see.
+- **What to expect:** vegetation ends nearer and appears as you walk, with its shadows.
+- **Default:** Auto.
+
+### Model detail distance
+- **What it does:** Ocarina of Time only. Makes people, buildings and props switch to simpler models nearer: 0.75, 0.5 or 0.3 of the game's distance. Also an in-game slider.
+- **When to toggle:** the game is slow in a town or field. It does not lower the object count, so a gain would show as GPU time only; not confirmed yet.
+- **What to expect:** distant models look simpler and may change as you walk closer.
+- **Default:** Auto.
+
 ## Rows for memory and speed
 
 These are in the Advanced group, collapsed. None is measured on every game.
@@ -47,6 +77,23 @@ These are in the Advanced group, collapsed. None is measured on every game.
 | **Skipped-work notice** | the notice "Part of the picture is not drawn" appears and you want it off (0) or only for larger gaps | 5 % |
 
 Rows that a launcher control sets (**Frame rate cap**, **Instanced draws**, **Classic render passes**, **Background pipelines**, **RAM saver**, **Motion sensitivity**, **Full vegetation**, **Game language**, **GPU timing**, **GPU driver**, **Rumble**) are described on [Settings: Performance](Settings-Performance), [Settings: Game](Settings-Game) and [Settings: Controls](Settings-Controls).
+
+## Developer switches new in 0.3.40
+
+Behind **Show developer options**; raw names.
+
+| Switch | What it does |
+|---|---|
+| `DM_VK_LAYER` | `0` turns the run-time shader layer off ([Live shader building](Live-Shader-Building)) |
+| `DM_VK_LAYER_DIR` | the layer's folder (the app sets it) |
+| `DM_VK_LAYER_DROP` | test: pretend a share of the library's shaders are missing |
+| `DM_VK_SPEC_MAPS_PCT` | background shader builds wait from this percent (default 50) of Android's memory-map limit |
+| `DM_SHADER_SAMPLE` | size of the quick check that lets an older shader library stand as this version's (default 300; `0` turns the check off) ([Live shader building](Live-Shader-Building#after-an-app-update)) |
+| `DM_SHADER_SAMPLE_SEED` | diagnostic: the seed of that check's random draw, to repeat a run |
+| `DM_VK_TS_TICK` | `0` keeps the driver's GPU timestamp period; by default a period that is more than 2 % off the measured one is replaced (community change #345 by nevercholt, for Turnip T30 on an Adreno 740) |
+| `DM_VK_TSCAL` | diagnostic: logs host and GPU times for the next n submissions |
+| `DM_MOVIE_LETTERBOX` | `0` turns off the movie letterbox of the Fire Emblem 4:3 variant |
+| `DM_OOT_FOG_AT_CUT` and the Ocarina of Time distance switches | the rows described above |
 
 ## Limits
 

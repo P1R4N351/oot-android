@@ -35,9 +35,14 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_audio_stats
 	$(B)/t_fpslock
 	$(B)/t_oot_wide
+	$(B)/t_oot_shadow
+	$(B)/t_oot_foliage
+	$(B)/t_oot_fog
 	$(B)/t_dkb_wide
 	$(B)/t_mkw_wide
 	$(B)/t_mtf_size
+	$(B)/t_mtf_speed
+	$(B)/t_mtf_wide
 	$(B)/t_pkp_aspect
 	$(B)/t_uecvar
 	$(B)/t_audren_work
@@ -83,12 +88,14 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_imgmem
 	$(B)/t_android_zshare
 	$(B)/t_android_texlimit
+	$(B)/t_android_tstick
 	$(B)/t_android_lowram
 	$(B)/t_android_livemap
 	$(B)/t_android_smap
 	$(B)/t_android_texown
 	$(B)/t_android_mapbudget
 	$(B)/t_android_psogate
+	$(B)/t_android_hangparts
 	$(B)/t_android_auto
 	$(B)/t_nvn_dpool
 	$(B)/t_android_t2tpath
@@ -100,6 +107,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_place
 	$(B)/t_android_ovl
 	$(B)/t_android_pace
+	$(B)/t_lse_unaligned
 	$(B)/t_android_skipwarn
 	$(B)/t_android_gmem
 	$(B)/t_android_fpenv
@@ -110,6 +118,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_tlsig
 	$(B)/t_android_gbar
 	$(B)/t_android_memu
+	TMPDIR="$(abspath $(B))" $(B)/t_android_layerreq
 run: $(B)/t_nro
 run: $(B)/t_pack_modules
 run: $(B)/t_game_args
@@ -416,7 +425,7 @@ coverage:
 	LLVM_PROFILE_FILE="$(call cov_profile,$(B)/cov)" $(MAKE) -i B=$(B)/cov SAN="$(COV_FLAGS)" run
 	@$(call cov_export,$(B)/cov)
 # The Android host's pure parts (dm/host/android): resampler, channel map, SPS size, MediaCodec picture layouts; gamepad / touch / sensor mapping
-run: $(B)/t_android_av $(B)/t_android_input $(B)/t_android_shlib $(B)/t_android_spvpatch $(B)/t_android_imgmem $(B)/t_android_zshare $(B)/t_android_texlimit $(B)/t_android_lowram $(B)/t_android_livemap $(B)/t_android_smap $(B)/t_android_mapbudget $(B)/t_android_psogate $(B)/t_android_wbfollow $(B)/t_android_pckeep $(B)/t_android_pwlist $(B)/t_android_fmtlist $(B)/t_android_place $(B)/t_android_ovl $(B)/t_android_pace $(B)/t_android_skipwarn $(B)/t_android_gmem $(B)/t_android_fpenv $(B)/t_android_soft $(B)/t_android_qsched $(B)/t_android_poolslot $(B)/t_android_prepass $(B)/t_android_tlsig $(B)/t_android_texown $(B)/t_android_gbar $(B)/t_android_memu $(B)/t_android_auto
+run: $(B)/t_android_av $(B)/t_android_input $(B)/t_android_shlib $(B)/t_android_spvpatch $(B)/t_android_imgmem $(B)/t_android_zshare $(B)/t_android_texlimit $(B)/t_android_tstick $(B)/t_android_lowram $(B)/t_android_livemap $(B)/t_android_smap $(B)/t_android_mapbudget $(B)/t_android_psogate $(B)/t_android_hangparts $(B)/t_android_wbfollow $(B)/t_android_pckeep $(B)/t_android_pwlist $(B)/t_android_fmtlist $(B)/t_android_place $(B)/t_android_ovl $(B)/t_android_pace $(B)/t_lse_unaligned $(B)/t_android_skipwarn $(B)/t_android_gmem $(B)/t_android_fpenv $(B)/t_android_soft $(B)/t_android_qsched $(B)/t_android_poolslot $(B)/t_android_prepass $(B)/t_android_tlsig $(B)/t_android_texown $(B)/t_android_gbar $(B)/t_android_memu $(B)/t_android_auto $(B)/t_android_layerreq
 $(B)/t_android_av: t_android_av.c ../android/av_android.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. $(WEAK_HOST) -o $@ t_android_av.c
 $(B)/t_android_input: t_android_input.c ../android/input_map.c ../android/input_map.h ../../gfx/vk_android/vka_present_fit.h ../motion_fusion.h ../dm_input.h | $(B)
@@ -436,6 +445,9 @@ $(B)/t_android_zshare: t_android_zshare.c $(VKA)/vka_zshare.h | $(B)
 # The texture cache's limit and eviction order (vka_texlimit.h; vka_tex.c vka_tex_prune_locked)
 $(B)/t_android_texlimit: t_android_texlimit.c $(VKA)/vka_texlimit.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_texlimit.c
+# The GPU timestamp tick measured against the host clock (vka_tstick.h; vka_exec.c tick_sample)
+$(B)/t_android_tstick: t_android_tstick.c $(VKA)/vka_tstick.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_tstick.c
 # A profile's low-RAM keys: the predicate (profile keys, MemTotal at most 12 GiB, DM_VK_LOW_RAM) and the image cache's ceiling (vka_lowram.h; vka_tex.c vka_low_ram, img_limit_update)
 $(B)/t_android_lowram: t_android_lowram.c $(VKA)/vka_lowram.h $(VKA)/vka_texlimit.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_lowram.c
@@ -469,6 +481,9 @@ $(B)/t_android_wbfollow: t_android_wbfollow.c $(VKA)/vka_wbfollow.h | $(B)
 run: $(B)/t_android_wbfollow
 $(B)/t_android_psogate: t_android_psogate.c $(VKA)/vka_psogate.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_psogate.c
+# Where in a submission the GPU stopped, from the parts' timestamps (vka_hangparts.h; vka_exec.c vka_exec_hang_parts)
+$(B)/t_android_hangparts: t_android_hangparts.c $(VKA)/vka_hangparts.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_hangparts.c
 # Automatic defaults by driver: the rules and the "[auto]" log line (vka_auto.h; vka_dev.c auto_log)
 $(B)/t_android_auto: t_android_auto.c $(VKA)/vka_auto.h $(VKA)/vka_psogate.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_auto.c
@@ -516,6 +531,9 @@ $(B)/t_android_gmem: t_android_gmem.c $(VKA)/vka_gmem.h ../../gfx/nvn/dmsh_abi.h
 # The pace line's parts (vka_pace.h)
 $(B)/t_android_pace: t_android_pace.c $(VKA)/vka_pace.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_pace.c -lm
+# Unaligned LSE atomics done in software for a core without FEAT_LSE2 (lse_unaligned.h, crash.c; issue #343)
+$(B)/t_lse_unaligned: t_lse_unaligned.c ../lse_unaligned.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_lse_unaligned.c
 # The skipped-work warning's window logic (vka_skipwarn.h)
 $(B)/t_android_skipwarn: t_android_skipwarn.c $(VKA)/vka_skipwarn.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_skipwarn.c
@@ -538,6 +556,8 @@ $(B)/t_android_tlsig: t_android_tlsig.c $(VKA)/vka_tlsig.h | $(B)
 $(B)/t_android_soft: t_android_soft.c $(VKA)/vka_soft.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_soft.c
 # NVN2 task and mesh draws through compute (vka_memu_spv.c): the fixtures in memu/ converted and validated by spirv-val when it is on the PATH; DM_VK_MEMU_LIB=<dmsh_vk.lib> adds every task and mesh module of a real library
+$(B)/t_android_layerreq: t_android_layerreq.c $(VKA)/vka_layerreq.h $(VKA)/vka_shlib.c $(VKA)/vka_shlib.h ../../gfx/nvn/dmsh_abi_vk.h ../../gfx/nvn/dmsh_chain_vk.h $(B)/zstddeclib.o | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_layerreq.c $(VKA)/vka_shlib.c $(B)/zstddeclib.o -lpthread
 $(B)/t_android_memu: t_android_memu.c $(VKA)/vka_memu_spv.c $(VKA)/vka_memu_spv.h $(VKA)/vka_memu_abi.h $(VKA)/vka_memu_order.h $(VKA)/vka_spvpatch.c $(VKA)/vka_shlib.c $(VKA)/vka_bind.c memu/memu_fixtures.h $(B)/zstddeclib.o | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_memu.c $(VKA)/vka_memu_spv.c $(VKA)/vka_spvpatch.c $(VKA)/vka_shlib.c $(VKA)/vka_bind.c $(B)/zstddeclib.o
 # The replay's SPIR-V rewrite of integer-fed vertex inputs (vka_spvpatch.c): the selftest's vertex shader, validated by spirv-val when it is on the PATH; DM_VK_SPV_DIR=<.spv folder> adds those modules
@@ -579,9 +599,27 @@ run: $(B)/t_mtf_size
 $(B)/t_mtf_size: t_mtf_size.c ../android/mtf_size.c ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_mtf_size.c -lm -pthread
 
+run: $(B)/t_mtf_speed
+$(B)/t_mtf_speed: t_mtf_speed.c ../android/mtf_speed.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_mtf_speed.c -lm -pthread
+run: $(B)/t_mtf_wide
+$(B)/t_mtf_wide: t_mtf_wide.c ../android/mtf_wide.c ../android/wide_shape.h ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_mtf_wide.c -lm -pthread
+
 run: $(B)/t_oot_wide
 $(B)/t_oot_wide: t_oot_wide.c ../android/oot_wide.c ../android/wide_shape.h ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_oot_wide.c -lm -pthread
+
+run: $(B)/t_oot_shadow
+$(B)/t_oot_shadow: t_oot_shadow.c ../android/oot_shadow.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_oot_shadow.c -lm -pthread
+run: $(B)/t_oot_foliage
+$(B)/t_oot_foliage: t_oot_foliage.c ../android/oot_foliage.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_oot_foliage.c -lm -pthread
+
+run: $(B)/t_oot_fog
+$(B)/t_oot_fog: t_oot_fog.c ../android/oot_fog.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_oot_fog.c -lm -pthread
 
 run: $(B)/t_dkb_wide
 $(B)/t_dkb_wide: t_dkb_wide.c ../android/dkb_wide.c ../android/wide_shape.h ../hle.h ../dm.h $(GAME_H) | $(B)

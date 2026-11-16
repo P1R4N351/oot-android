@@ -12,9 +12,13 @@ Per the project's guide and game notes (not every game has been compared on both
 | Fire Emblem Fortune's Weave (`04007EF01F8AE000`) | on Adreno 740 pick Turnip |
 | Mario Kart World (`0400C3F00006E000`) | not compared yet |
 | Pokémon Pokopia (`0400A3A01EE4C000`) | both, about 60 fps on each |
-| Zelda: Ocarina of Time (`0400486024DEC000`, experimental) | plays on both; see its page |
+| Zelda: Ocarina of Time (`0400486024DEC000`, experimental) | plays on both; Turnip is 1.5-2x slower here, and the app warns when a Turnip driver is picked for it; see its page |
 | Mario Tennis Fever (`0400D4201C6EA000`, experimental) | Turnip; the system driver stalls and shows dark patches |
 | Splatoon Raiders (`0400380020056000`, experimental) | a white scene was seen on System: try Turnip |
+
+### A Qualcomm driver build we recommend
+
+On phones with a Qualcomm GPU, the best results we saw were with a custom Qualcomm driver build, **Qualcomm 891.14**, picked for the game in place of **System** and of Turnip. We do not host driver files. **Install... > Download...** lists the releases of StevenMXZ/Adreno-Tools-Drivers with **v891.14** first and marked "(recommended)", and an installed copy is marked "(recommended)" in the driver list (or use **Pick a zip...**, see below, with a zip you got yourself: https://github.com/StevenMXZ/Adreno-Tools-Drivers/releases/tag/v891.14). The app marks it; it never picks a driver for you. It is a driver from outside this project, so it can still show faults of its own; the known ones are in each game's page (for example the cave walls on Death Mountain Trail in [Ocarina of Time](Game-Zelda-Ocarina-of-Time)). Changing driver starts the pipeline cache again, so the first start is slow. Tell us what you see on your phone: this is one phone's result, not a promise.
 
 See [Games](Games) for the current state of each.
 

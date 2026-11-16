@@ -2,6 +2,7 @@
 manifests (hashes only: the leak check), and the launcher's side of it on the JVM (ShaderLibs.java with android/app/src/jvmtest's ShaderLibsJvmTest: which older library
 plays while the update runs, how many shaders an update translates). The libraries here are small ones written with the header layout of dmsh_abi_vk.h. No game files;
 the JVM part is skipped without a JDK. The whole delta (a version A library upgraded to B, byte-identical to a full B build) is the Mac simulation in SHADERS.md."""
+import json
 import ast
 import collections
 import os
@@ -16,6 +17,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 sys.path.insert(0, str(REPO / 'dm/gfx/tools'))
 import vk_android_delta as delta   # noqa: E402
 
@@ -58,7 +60,7 @@ def profile_keys(prof):
     return delta.phone_keys(mapk, seen.read_text() if seen.exists() else None, load_pairs(g, str(prof / 'shader_map.tsv')), build_keys)
 
 
-def write_lib(path, version, game=GAME, abi='', shaders=(), codec=1):
+def write_lib(path, version, game=GAME, abi='', shaders=(), codec=1, inputs='5dd843bed8d1'):
     """A library with shaders [(key, [SPIR-V modules], c1)], as write_library lays it out (entries sorted, then bindings, modules, the blob 16-aligned)"""
     entries, binds, mods, blob = bytearray(), bytearray(), bytearray(), bytearray()
     nb = nm = 0
@@ -74,7 +76,7 @@ def write_lib(path, version, game=GAME, abi='', shaders=(), codec=1):
         entries += entry(key, nmods=len(ms), c1=c1, m0=m0, b0=b0, c1_off=c1o)
     eo = 128; bo = eo + len(entries); mo = bo + len(binds); blo = (mo + len(mods) + 15) // 16 * 16
     pad = lambda s: s.encode().ljust(16, b'\0')
-    head = delta.HEAD.pack(VK['LIB_MAGIC'], VK['LIB_VERSION'], pad('a139922bad5c'), pad(version), pad(game), pad('5dd843bed8d1'), len(shaders), eo, nb, bo, nm, mo,
+    head = delta.HEAD.pack(VK['LIB_MAGIC'], VK['LIB_VERSION'], pad('a139922bad5c'), pad(version), pad(game), pad(inputs), len(shaders), eo, nb, bo, nm, mo,
                            blo, len(blob), 64, 64, abi.encode().ljust(12, b'\0'))
     data = head + entries + binds + mods
     data += b'\0' * (blo - len(data)) + blob
@@ -335,7 +337,7 @@ class Launcher(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp(prefix='shlibs_'))
-        subprocess.run(['javac', '-Xlint:all', '-Werror', '-d', str(cls.tmp / 'classes'), str(SRC), str(TEST)], check=True, capture_output=True, text=True)
+        subprocess.run(['javac', '-Xlint:all', '-Werror', '-d', str(cls.tmp / 'classes'), str(SRC), str(WORDS), str(TEST)], check=True, capture_output=True, text=True)
 
     @classmethod
     def tearDownClass(cls): shutil.rmtree(cls.tmp, ignore_errors=True)
@@ -384,6 +386,82 @@ class Launcher(unittest.TestCase):
         self.assertEqual(self.java('legacy', pack, GAME, '444444444444'), 'none', 'never the current version')
         self.assertEqual(self.java('legacy', pack, '0100000000001000', cur), 'none', 'never another game\'s')
 
+    def test_sample_candidate(self):
+        """A sampled keep may take over an older library exactly when the update would be optional (same ABI and inputs, the layer covers the game) and no sample for this version
+        concluded about that library yet; DM_SHADER_SAMPLE=0 turns it off; the result file's verdict is read back"""
+        pack = self.tmp / 'pack_sample'; abi = delta.abi_digest(); cur = '76b097613f15'; inp = '5dd843bed8d1'
+        write_lib(pack / 'shaders/v-222222222222/dmsh_vk.lib', '222222222222', abi=abi, shaders=[('00000000000000aa', [spirv(20, 1)], b'')], inputs=inp)
+        self.assertEqual(self.java('samplecand', pack, GAME, cur, abi, inp), 'v-222222222222', 'on by default')
+        self.assertEqual(self.java('samplecand', pack, GAME, cur, abi, inp, 'DM_SHADER_SAMPLE=300'), 'v-222222222222')
+        self.assertEqual(self.java('samplecand', pack, GAME, cur, abi, inp, 'DM_SHADER_SAMPLE=0'), 'none')
+        self.assertEqual(self.java('samplecand', pack, GAME, cur, abi, inp, 'DM_SHADER_SAMPLE=25\nDM_VK_LAYER=1'), 'v-222222222222')
+        self.assertEqual(self.java('samplecand', pack, GAME, cur, abi, inp, 'DM_VK_LAYER=0'), 'none', 'no layer: nothing would verify what is played')
+        self.assertEqual(self.java('samplecand', pack, GAME, cur, abi, 'bbbbbbbbbbbb'), 'none', 'other inputs')
+        self.assertEqual(self.java('samplecand', pack, '0100000000001000', cur, abi, inp), 'none', 'a Maxwell title')
+        self.assertEqual((self.java('samplesize'), self.java('samplesize', 'DM_SHADER_SAMPLE=25'), self.java('samplesize', 'X=1;DM_SHADER_SAMPLE=0')), ('300', '25', '0'))
+        self.assertEqual((self.java('samplefirst'), self.java('samplefirst', 'DM_SHADER_SAMPLE_FIRST=50'), self.java('samplesize', 'DM_SHADER_SAMPLE_FIRST=50'),
+                          self.java('samplefirst', 'DM_SHADER_SAMPLE=25')), ('200', '50', '300', '200'))
+        self.assertEqual(self.java('sampleresult', pack, cur), 'none')
+        (pack / f'shaders/.sample-{cur}.json').write_text('{"accepted": false, "old": "222222222222", "version": "%s"}\n' % cur)
+        self.assertEqual(self.java('sampleresult', pack, cur), 'declined 222222222222')
+        self.assertEqual(self.java('samplecand', pack, GAME, cur, abi, inp, 'DM_SHADER_SAMPLE=300'), 'none', 'a library a sample declined is not asked about again')
+        write_lib(pack / 'shaders/v-333333333333/dmsh_vk.lib', '333333333333', abi=abi, shaders=[('00000000000000aa', [spirv(20, 1)], b'')], inputs=inp)
+        self.assertEqual(self.java('samplecand', pack, GAME, cur, abi, inp, 'DM_SHADER_SAMPLE=300'), 'v-333333333333', 'another older library is a new question')
+        (pack / f'shaders/.sample-{cur}.json').write_text('{"accepted": true, "old": "333333333333"}\n')
+        self.assertEqual(self.java('sampleresult', pack, cur), 'accepted 333333333333')
+        write_lib(pack / f'shaders/v-{cur}/dmsh_vk.lib', cur, abi=abi, shaders=[], inputs=inp)
+        self.assertEqual(self.java('samplecand', pack, GAME, cur, abi, inp), 'none', 'this version\'s library is there')
+
+    def test_optional_update(self):
+        """An older library makes the update optional only when the host plays it as it was made (this APK's own ABI, not an older ABI's), from the profile's own inputs, and
+        the shader layer covers what it lacks (a Switch 2 title, DM_VK_LAYER not 0 in the player's lines)"""
+        pack = self.tmp / 'pack_optional'; abi = delta.abi_digest(); cur = '76b097613f15'; inp = '5dd843bed8d1'
+        sh = [('00000000000000aa', [spirv(10, 1)], b'')]
+        self.assertEqual(self.java('optional', pack, GAME, cur, abi, inp), 'none', 'no library at all: required')
+        write_lib(pack / 'shaders/v-333333333333/dmsh_vk.lib', '333333333333', abi='0123456789ab', shaders=sh)   # another ABI
+        self.assertEqual(self.java('optional', pack, GAME, cur, abi, inp), 'none', 'another ABI: required')
+        write_lib(pack / 'shaders/v-111111111111/dmsh_vk.lib', '111111111111', abi=abi, shaders=sh, inputs='aaaaaaaaaaaa')
+        self.assertEqual(self.java('optional', pack, GAME, cur, abi, inp), 'none', 'the same ABI from other shader tables: required')
+        write_lib(pack / 'shaders/v-222222222222/dmsh_vk.lib', '222222222222', abi=abi, shaders=sh)
+        os.utime(pack / 'shaders/v-222222222222/dmsh_vk.lib', (time.time() + 100, time.time() + 100))
+        self.assertEqual(self.java('optional', pack, GAME, cur, abi, inp), 'v-222222222222', 'the same ABI and inputs: optional (the library the host takes)')
+        self.assertEqual(self.java('optional', pack, GAME, cur, abi, inp, 'DM_FOO=1\nDM_VK_LAYER=1'), 'v-222222222222')
+        self.assertEqual(self.java('optional', pack, GAME, cur, abi, inp, 'DM_FOO=1\nDM_VK_LAYER=0'), 'none', 'the player switched the layer off: required')
+        self.assertEqual(self.java('optional', pack, GAME, cur, abi, inp, 'DM_VK_LAYER=00'), 'v-222222222222', 'only the value 0 switches it off')
+        self.assertEqual(self.java('optional', pack, '0100000000001000', cur, abi, inp), 'none', 'another game\'s library, and a Maxwell title: required')
+        os.utime(pack / 'shaders/v-111111111111/dmsh_vk.lib', (time.time() + 200, time.time() + 200))
+        self.assertEqual(self.java('optional', pack, GAME, cur, abi, inp), 'none', 'the host takes the newest library of its ABI: this one has other tables')
+        self.assertEqual(self.java('optional', pack, GAME, cur, 'unknown', inp), 'none')
+        self.assertEqual(self.java('optional', pack, GAME, cur, abi, 'bbbbbbbbbbbb'), 'none', 'the profile has other inputs than the library')
+
+    def test_on_demand(self):
+        """A pack with no library this app can play on starts anyway when the shader layer covers the game (the launcher's "Ready"): no library at
+        all, or only one of an ABI the host cannot play; an older library the host plays, one from before the ABI field, this version's own library, a Maxwell title and a layer
+        switched off keep their usual states"""
+        pack = self.tmp / 'pack_ondemand'; abi = delta.abi_digest(); cur = '76b097613f15'
+        sh = [('00000000000000aa', [spirv(10, 1)], b'')]
+        self.assertEqual(self.java('ondemand', pack, GAME, cur, abi), 'true', 'no library at all')
+        write_lib(pack / 'shaders/v-333333333333/dmsh_vk.lib', '333333333333', abi='0123456789ab', shaders=sh)   # another ABI
+        self.assertEqual(self.java('ondemand', pack, GAME, cur, abi), 'true', 'only a library of an ABI the host cannot play')
+        self.assertEqual(self.java('ondemand', pack, GAME, cur, abi, '0123456789ab'), 'false', 'that ABI is one the host follows: it plays on it')
+        self.assertEqual(self.java('ondemand', pack, GAME, cur, abi, '-', 'DM_VK_LAYER=0'), 'false', 'layer switched off: Shaders needed')
+        self.assertEqual(self.java('ondemand', pack, '0100000000001000', cur, abi), 'false', 'a Maxwell title: no layer')
+        write_lib(pack / 'shaders/v-444444444444/dmsh_vk.lib', '444444444444', abi='', shaders=sh)   # before the ABI field: the host plays it as a last resort
+        self.assertEqual(self.java('ondemand', pack, GAME, cur, abi), 'false', 'a legacy library plays')
+        shutil.rmtree(pack / 'shaders/v-444444444444')
+        write_lib(pack / 'shaders/v-222222222222/dmsh_vk.lib', '222222222222', abi=abi, shaders=sh)
+        self.assertEqual(self.java('ondemand', pack, GAME, cur, abi), 'false', 'an older library of this ABI plays (the optional update)')
+        shutil.rmtree(pack / 'shaders/v-222222222222'); shutil.rmtree(pack / 'shaders/v-333333333333')
+        write_lib(pack / f'shaders/v-{cur}/dmsh_vk.lib', cur, abi=abi, shaders=sh, inputs='aaaaaaaaaaaa')
+        self.assertEqual(self.java('ondemand', pack, GAME, cur, abi), 'false', 'this version\'s library (even of other tables) is the one the host loads')
+
+    def test_layer_covers(self):
+        self.assertEqual(self.java('layer', GAME), 'true')
+        self.assertEqual(self.java('layer', '0100000000010000'), 'false', 'a Switch 1 title has a Maxwell control section: the host copies none, no layer')
+        self.assertEqual(self.java('layer', GAME, 'DM_VK_LAYER = 0'), 'false')
+        self.assertEqual(self.java('layer', GAME, 'DM_VK_LAYER=0;DM_X=1'), 'false')
+        self.assertEqual(self.java('layer', GAME, 'XDM_VK_LAYER=0'), 'true')
+
     def test_playable_older_abi(self):
         """A library of an older ABI the host also plays (vka_abi_compat.h DMSH_VK_ABI_COMPAT): taken only when the pack has none of the APK's own ABI, the newest of them;
         never another game's or the current version; an APK without the list (or with an empty one) does not take it"""
@@ -423,6 +501,50 @@ class Launcher(unittest.TestCase):
         self.assertTrue((old / 'dmsh_vk.lib').is_file(), 'the older library stays')
         self.assertEqual(self.java('restamp', pack, GAME, cur, abi, f'66d1dd2cd5ff:{o}:{n}'), 'none', 'once only: this version has its library')
         self.assertEqual(self.java('restamp', pack, GAME, cur, abi, ''), 'none')
+
+    def test_known_transition(self):
+        """A library of a VK chain the table knows for this chain is MOVED in as this version's (one rename, the header's version, abi and chain rewritten in place, the
+        marker last, an accepted result file; no copy, the older folder is gone); another chain, or a pack with this version's library, changes nothing"""
+        pack = self.tmp / 'kn'; cur = '19662e4c4a25'; abi = '4fbeb79f5ab7'; chain = 'c87c663335cf'
+        sh = [('00000000000000aa', [spirv(10, 1)], b''), ('00000000000000bb', [spirv(40, 2)], b'x' * 33)]
+        old = pack / 'shaders/v-65883461079b'; write_lib(old / 'dmsh_vk.lib', '65883461079b', abi='228b73bd10f6', shaders=sh); (old / 'inputs.tsv').write_text('game\t040074A01BF12000\ninputs\t5dd843bed8d1\n')
+        body = (old / 'dmsh_vk.lib').read_bytes()[128:]
+        self.assertEqual((self.java('knownis', '65883461079b', '65883461079b'), self.java('knownis', 'aaaaaaaaaaaa 65883461079b', '65883461079b'), self.java('knownis', '', '65883461079b'),
+                          self.java('knownis', '65883461079b', '111111111111')), ('true', 'true', 'false', 'false'))
+        self.assertEqual(self.java('known', pack, old / 'dmsh_vk.lib', cur, abi, chain, '111111111111'), 'none', 'not a known chain')
+        self.assertTrue((old / 'dmsh_vk.lib').is_file()); self.assertFalse((pack / f'shaders/v-{cur}').exists() or (pack / f'shaders/.known-{cur}').exists())
+        self.assertEqual(self.java('known', pack, old / 'dmsh_vk.lib', cur, abi, chain, '65883461079b'), '65883461079b')
+        new = pack / f'shaders/v-{cur}'
+        self.assertFalse(old.exists(), 'moved: no second copy'); self.assertFalse((pack / f'shaders/.known-{cur}').exists() or (new / 'known-move.txt').exists())
+        L = delta.Library(str(new / 'dmsh_vk.lib'))
+        self.assertEqual((L.version, L.abi, L.chain, L.game), (cur, abi, chain, GAME)); L.close()
+        self.assertEqual((new / 'dmsh_vk.lib').read_bytes()[128:], body, 'every byte after the header is the older library\'s')
+        self.assertIn('5dd843bed8d1', (new / 'inputs.tsv').read_text())
+        m = json.loads((new / 'sampled-keep.json').read_text())
+        self.assertEqual((m['kind'], m['old'], m['from_chain'], m['version'], m['sample'], m['date']), ('known-transition', '65883461079b', '65883461079b', cur, 0, '2026-11-16'))
+        r = json.loads((pack / f'shaders/.sample-{cur}.json').read_text()); self.assertTrue(r['accepted']); self.assertEqual(r['old'], '65883461079b')
+        self.assertEqual(self.java('sampleresult', pack, cur), 'accepted 65883461079b')
+
+    def test_known_transition_crash_recovery(self):
+        """A move a crash left in shaders/.known-<V>/ (after the first rename, the header half rewritten or not) is finished at the next start; when the pack has a library of
+        this version meanwhile, the older one is put back with its header as it was"""
+        cur = '19662e4c4a25'; abi = '4fbeb79f5ab7'; chain = 'c87c663335cf'
+        sh = [('00000000000000aa', [spirv(10, 1)], b'')]
+        for case in ('finish', 'back'):
+            pack = self.tmp / f'knr_{case}'; mid = pack / f'shaders/.known-{cur}'
+            write_lib(mid / 'dmsh_vk.lib', '65883461079b', abi='228b73bd10f6', shaders=sh)
+            L = delta.Library(str(mid / 'dmsh_vk.lib')); oc = L.chain; L.close()
+            (mid / 'known-move.txt').write_text(f'65883461079b\t65883461079b\t228b73bd10f6\t{oc}\t{cur}\t{abi}\t{chain}\n')
+            if case == 'back': write_lib(pack / f'shaders/v-{cur}/dmsh_vk.lib', cur, abi=abi, shaders=sh)
+            self.assertEqual(self.java('knownrecover', pack, cur), 'true' if case == 'finish' else 'false')
+            self.assertFalse(mid.exists(), case)
+            if case == 'finish':
+                L = delta.Library(str(pack / f'shaders/v-{cur}/dmsh_vk.lib')); self.assertEqual((L.version, L.abi, L.chain), (cur, abi, chain)); L.close()
+                self.assertTrue((pack / f'shaders/v-{cur}/sampled-keep.json').is_file())
+            else:
+                L = delta.Library(str(pack / 'shaders/v-65883461079b/dmsh_vk.lib')); self.assertEqual((L.version, L.abi, L.chain), ('65883461079b', '228b73bd10f6', oc)); L.close()
+                self.assertFalse((pack / 'shaders/v-65883461079b/sampled-keep.json').exists() or (pack / 'shaders/v-65883461079b/known-move.txt').exists())
+        self.assertEqual(self.java('knownrecover', self.tmp / 'nothing', cur), 'false')
 
     def test_selection(self):
         """A profile's shader_seen.tsv: its keys that the map has, sorted, each once (the Mac's selected build: grep the keys, comm with the map's column 4)"""

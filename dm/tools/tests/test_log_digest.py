@@ -9,6 +9,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))   # the tests folder, for javatext (unittest by file name does not add it)
+import javatext  # noqa: E402
 import unittest.mock
 import zipfile
 from contextlib import redirect_stdout
@@ -49,6 +53,7 @@ def start(extra_env=()):
         '[dm] sdk: NintendoSDK nnSdk-Generic_20_5_19-Rele (major 20)',
         '[dm] stubs=0',
         '[dm] >>> nnosInitialize',
+        '[dm] vm.max_map_count: 65530 (read from /proc/sys/vm/max_map_count)',
         '[dm] guest AS 0x4000000000 +0x270000000  heap 0x4030000000 alias 0x4010000000 stack 0x4020000000',
         '[dm] >>> nninitInitializeSdkModule',
         '[dm] >>> nninitStartup',
@@ -82,6 +87,12 @@ CRASH = ['[dm] [RED] cannot open the standard shared font (point DM_SHARED_FONT 
          "[dm] thread 0x1026 'Worker' priority 55 core 0 mask 0x1 CPU 0.00s svc 2  created at tick 0 (0.0 s ago) waits:address addr=0x1 last svc 0x34 lr=sdk+0x10"]
 
 
+def setUpModule(): javatext.install()
+
+
+def tearDownModule(): javatext.uninstall()
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -101,6 +112,14 @@ class Base(unittest.TestCase):
 
 
 class Verdicts(Base):
+    def test_max_map_count_in_header(self):
+        d = self.digest(start() + frames(1))
+        self.assertEqual(d['header']['max_map_count'], '65530 (read from /proc/sys/vm/max_map_count)')
+        self.assertIn('memory maps limit: 65530', L.render(d))
+        lines = [x for x in start() if 'vm.max_map_count' not in x]
+        lines.insert(-1, '[dm] [RED] vm.max_map_count: /proc/sys/vm/max_map_count could not be read (open, errno 13): 65530, the kernel\'s default, assumed')
+        self.assertIn('errno 13', self.digest(lines + frames(1))['header']['max_map_count'])
+
     def test_crash(self):
         d = self.digest(start() + frames(1) + CRASH)
         self.assertEqual(d['verdict']['kind'], 'crashed')
@@ -206,6 +225,27 @@ class Verdicts(Base):
         self.assertNotIn('first', by['vegetation cut'])
         out = L.render(d)
         self.assertIn('-- graphics', out); self.assertIn('vegetation cut ×2, last L', out)
+
+    def test_audio_section(self):
+        a = ['[dm] audren: rendered 200 frames, 0 of them not silent (the last 200: 0 not silent, peak 0 of 32767, at 1.2 s)',
+             '[dm] [codec] AV1 decoder 1 at 12.3 s: 1920x1080, input format 3, output format 3 (MediaCodec on the host, on a decode thread of its own)',
+             '[dm] [codec] AV1 decoder 1 started at 12.4 s',
+             '[dm] [codec] Opus decoder initialized at 12.5 s (older interface, 1 decoders alive)',
+             '[dm] audren: rendered 3000 frames, 2500 of them not silent (the last 2800: 2500 not silent, peak 9000 of 32767, at 15.0 s)',
+             '[dm] [codec] AV1 decoder 1 finalized at 20.0 s: 10 packets in, 9 pictures out',
+             '[dm] audren: rendered 6000 frames, 2500 of them not silent (the last 3000: 0 not silent, peak 0 of 32767, at 30.0 s)',
+             '[dm] audren: rendered 9000 frames, 2500 of them not silent (the last 3000: 0 not silent, peak 0 of 32767, at 45.0 s)',
+             '[dm] [codec] Opus at 50.0 s, the last 10 s: 400 frames decoded (384000 samples a channel, 0 failed, 3 all zero, peak 8000 of 32767), 400 packets enqueued (0 refused, I/O buffers in use at most 3), 0 resets, 0 finalizes, 0 inits, 1 decoders alive',
+             '[dm] audio #0 OutputStream at 51.0 s, the last 5.0 s: 500 writes (240000 frames), 0 refused; the game asked for room 900 times, none left on 400; 0 purges (0 frames dropped); 0 starts, 0 stops; queued now 960 of 1920 frames (at most 1920), state 2',
+             '[dm] audren: rendered 12000 frames, 5500 of them not silent']   # the older format: a window is the difference to the line before
+        d = self.digest(start() + a + frames(1))
+        au = d['audio']; by = {e['label']: e for e in au['sections']}
+        self.assertEqual(by['renderer output']['count'], 5); self.assertIn('12000', by['renderer output']['last'])
+        self.assertEqual(by['Opus decoders']['count'], 1); self.assertEqual(by['OutputStream']['count'], 1)
+        self.assertEqual([(x['from_frame'], x['to_frame']) for x in au['silent']], [(3000, 9000)])
+        self.assertEqual(len(au['timeline']), 3); self.assertEqual(by['Opus decoder events']['count'], 1)
+        out = L.render(d)
+        self.assertIn('-- audio', out); self.assertIn('renderer silent from end to end in frames 3000–9000', out); self.assertIn('AV1 decoder 1 finalized at 20.0 s', out)
 
     def test_cut_short(self):
         d = self.digest(start()[:22])
@@ -390,7 +430,7 @@ class Tables(unittest.TestCase):
     def test_notice_sentences_are_the_launchers(self):
         java = (REPO / 'android/app/src/main/java/dev/nxnative/android/ExitNotice.java').read_text()
         for k, v in L.NOTICE.items():
-            m = re.search(rf'\b{k} = "([^"]*)"', java)
+            m = re.search(rf'\b{k}\(\) \{{ return Words\.s\("[a-z0-9_]+", "([^"]*)"\)', java) or re.search(rf'\b{k} = "([^"]*)"', java)
             assert m, k
             self.assertEqual(m.group(1), v, k)
 

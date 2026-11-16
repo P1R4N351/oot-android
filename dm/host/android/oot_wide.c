@@ -35,12 +35,11 @@
 #include "wide_shape.h"
 
 #define OOT_MAIN_BUILD "e0f3ccfaf50065ae4ea01eb5aeb13b1a"
-#define OOT_MAIN_BUILD "e0f3ccfaf50065ae4ea01eb5aeb13b1a"
 #define K169 WS_K169
 #define close_to ws_close_to
 #define rdf ws_rdf
 #define wrf ws_wrf
-enum { P_FOVY = 0xa0, P_SIN = 0xa4, P_COS = 0xa8, P_TAN = 0xac, P_ASPECT = 0xb0 };
+enum { P_NEAR = 0x98, P_FAR = 0x9c, P_FOVY = 0xa0, P_SIN = 0xa4, P_COS = 0xa8, P_TAN = 0xac, P_ASPECT = 0xb0 };
 
 static ws_cfg_t g_cfg = WS_CFG_INIT;
 static ws_seen_t g_seen;   // projections we scaled: where, and the tangent we wrote
@@ -49,13 +48,110 @@ static _Atomic unsigned g_fixes;
 static double aspect(void) { return ws_aspect(&g_cfg, OOT_MAIN_BUILD, "oot"); }
 static uint8_t *main_base(void) { return ws_main_base(); }
 
+// ---- draw distance (DM_OOT_DRAW_DISTANCE) ----
+// The main camera's sead::PerspectiveProjection also keeps its near plane at +0x98 and far plane at +0x9c (the matrix update at main+0x3485cc0 builds m22 / m23 from them
+// and the flag at +0xa; culling reads them too). The game's far plane is 25000 in play (1000 on the title screen), far beyond anything its fog shows, and the game culls and
+// clips by it. DM_OOT_DRAW_DISTANCE=<10..20000> (game units, about metres) caps the far plane at near + that distance: what lies beyond is clipped and the game's own frustum
+// culling drops it (castle market, 50: 38 % fewer draws and 26 % less GPU time, the far street fades into the fog). Read at every camera update, so the in-game panel / `nxctl.sh
+// env` changes it live; unset, 0 or a value above the game's own far plane leaves the game as it made it. The same gates and the same "16:9 camera" test as the aspect fix pick the
+// projection; shadow and light projections have other shapes. Not a general mechanism: the engine's planes are this build's (+0x98 / +0x9c are the same in every sead title, the
+// gates are fixed addresses of this build; BINDING in patches.py) and no host-side lever sees what the game decides to draw.
+static ws_seen_t g_far_seen;   // projections whose far plane we wrote, and the value
+static _Atomic unsigned g_far_logged;
+static double far_distance(void) {
+    const char *e = getenv("DM_OOT_DRAW_DISTANCE");
+    if (!e || !*e) return 0;
+    char *end;
+    double v = strtod(e, &end);
+    if (*end || !(v >= 10 && v <= 20000)) return 0;   // not a number, or below what a scene needs (the player's own feet are inside 10)
+    return v;
+}
+static void far_fix(uint64_t proj) {
+    double d = far_distance();
+    float nr = rdf(proj + P_NEAR), fr = rdf(proj + P_FAR);
+    if (!(nr >= 0.0f && nr < fr && fr < 1e8f)) return;   // no planes the game made
+    if (ws_seen_has(g_far_seen, proj, fr)) return;   // the far plane is one we wrote: not capped twice
+    unsigned k = atomic_load_explicit(&g_far_logged, memory_order_relaxed);
+    if (k < 8 && atomic_compare_exchange_strong_explicit(&g_far_logged, &k, k + 1, memory_order_relaxed, memory_order_relaxed))   // the first planes seen, with or without the cap
+        LOG("oot far: projection near %.3f far %.1f (draw distance %.0f)", nr, fr, d);
+    if (!d || fr <= nr + d) return;
+    float nf = (float)(nr + d);
+    wrf(proj + P_FAR, nf);
+    ws_seen_set(g_far_seen, proj, nf);
+}
+
+// ---- model LOD distance (DM_OOT_LOD_SCALE) ----
+// The model LOD level is picked per model and view by one function, main+0x31d4d80 (and the same code inlined at main+0x31d48b0, +0x7bb80 three times, +0x12142c0, +0x3627b20,
+// +0x36982e0), on the graphics scene manager (its ModelLodParam handle at +0xd50, the param object at handle +0x150). Its distance path (the only one: its screen-size path needs a
+// manager flag, +0xe20 bit 22, that no code of this build sets): S is the model's LOD start distance, D its distance from the camera, n its level count; for S under 50 the start
+// distance is S * model coef (GameModelController_LodStartDistCoef, model +0x40) * manager +0xd90 (the game copies LodStartDistCoefForHandheld 0.8 or ForConsole 1.0 there, by
+// the operation mode), blending to plain S at S 100; beyond the start, the level grows with (D - start) over ModelLodParam MaxLevelDistScale (+0x50, 1.0) * the model's own
+// scale (model +0x44), up to n - 1. DM_OOT_LOD_SCALE=<0.1..1> multiplies the two shared inputs, the start coefficient and MaxLevelDistScale, by k: models drop to coarser
+// levels nearer (k 0.5: about half the distance for models whose LOD starts within 50 units; the steps after the start come k times sooner for all). The game's own LOD meshes,
+// no clip. The gate is the scene manager's per-frame view update (main+0x4753c8, after it stored its LOD distance offset +0xd8c): read every frame, so the in-game panel /
+// `nxctl.sh env` changes it live; unset, invalid or 1 puts back the game's values (they are remembered; a fresh value the game writes is taken as its own). The param object is
+// only written when it is ModelLodParam (its vtable) and has no parent param (the game would read the parent's value). A per-game rule like the draw distance: the host sees no LOD.
+#define OOT_LOD_PARAM_VT 0x4b87a88   // ModelLodParam's vtable, main-relative (its constructor main+0xf7e7d0)
+enum { M_LOD_PARAM = 0xd50, M_LOD_START = 0xd90, LP_PARENT = 0x10, LP_MAXLEVEL = 0x50, LP_MAXLEVEL_OWN = 0x5d };
+typedef struct { uint64_t at; float orig, wrote; } lod_kept_t;
+static lod_kept_t g_lod_kept[8];   // fields we scaled: where, the game's value, the value we wrote
+static pthread_mutex_t g_lod_lock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned g_lod_logged;   // under g_lod_lock, with the scale last logged
+static double g_lod_k;
+static double lod_scale(void) {
+    const char *e = getenv("DM_OOT_LOD_SCALE");
+    if (!e || !*e) return 1;
+    char *end;
+    double v = strtod(e, &end);
+    return *end || !(v >= 0.1 && v <= 1) ? 1 : v;   // not a number or outside 0.1..1: the game's own
+}
+// One float field: the game's value is what we find unless it is the value we wrote; it gets the game's value times k
+static void lod_field(uint64_t at, double k) {
+    float cur = rdf(at);
+    lod_kept_t *e = NULL;
+    for (int i = 0; i < 8 && !e; i++) if (g_lod_kept[i].at == at) e = &g_lod_kept[i];
+    if (!e) {
+        if (k == 1) return;   // never written: nothing to put back
+        for (int i = 0; i < 8 && !e; i++) if (!g_lod_kept[i].at) e = &g_lod_kept[i];
+        if (!e) return;
+        e->at = at; e->wrote = cur; e->orig = cur;
+    }
+    if (ws_bits(cur) != ws_bits(e->wrote)) e->orig = cur;   // the game wrote a fresh value
+    if (!(e->orig > 0 && e->orig < 1000)) return;   // not a coefficient the game made
+    float nv = (float)(e->orig * k);
+    if (ws_bits(nv) != ws_bits(cur)) wrf(at, nv);
+    e->wrote = nv;
+}
+static void lod_fix(uint64_t mgr) {
+    if (!mgr || (mgr & 7) || strcmp(dm_main_build(), OOT_MAIN_BUILD)) return;
+    double k = lod_scale();
+    uint64_t h, p = 0, vt = 0, parent = 0, base = (uint64_t)(uintptr_t)main_base();
+    memcpy(&h, (void *)(mgr + M_LOD_PARAM), 8);
+    if (h && !(h & 7)) memcpy(&p, (void *)(h + 0x150), 8);
+    if (p && !(p & 7)) { memcpy(&vt, (void *)p, 8); memcpy(&parent, (void *)(p + LP_PARENT), 8); }
+    int param = base && p && !(p & 7) && vt == base + OOT_LOD_PARAM_VT && (!parent || (*(uint8_t *)(p + LP_MAXLEVEL_OWN) & 1));
+    pthread_mutex_lock(&g_lod_lock);
+    float s0 = rdf(mgr + M_LOD_START), m0 = param ? rdf(p + LP_MAXLEVEL) : 0;
+    lod_field(mgr + M_LOD_START, k);
+    if (param) lod_field(p + LP_MAXLEVEL, k);
+    if (g_lod_logged < 16 && (!g_lod_logged || k != g_lod_k)) {   // the first sighting and every change of the scale
+        g_lod_logged++;
+        g_lod_k = k;
+        LOG("oot lod: LOD scale %.2f: start coefficient %.3f -> %.3f, max level distance scale %.3f -> %.3f%s", k, s0, rdf(mgr + M_LOD_START), m0, param ? rdf(p + LP_MAXLEVEL) : 0.0,
+            param ? "" : " (no ModelLodParam of its own here: start coefficient only)");
+    }
+    pthread_mutex_unlock(&g_lod_lock);
+}
+
 // One projection, in place (the callbacks below; the unit test calls it through them)
 static void fix(uint64_t proj) {
     double a = aspect();
-    if (!a || !proj || (proj & 3)) return;
+    if (!proj || (proj & 3)) return;
     if (!close_to(rdf(proj + P_ASPECT), K169, 0.01)) return;
     float tn = rdf(proj + P_TAN);
     if (!(tn > 0.01f && tn < 20.0f)) return;   // not a perspective lens the game made
+    if (!strcmp(dm_main_build(), OOT_MAIN_BUILD)) far_fix(proj);
+    if (!a) return;
     if (a < K169) {
         if (!ws_seen_has(g_seen, proj, tn)) {
             double half = ws_vertplus_half(tn, a);   // under 172 degrees: a tangent past that is no lens
@@ -147,7 +243,7 @@ static void thumb(uint64_t *r) {
     }
 }
 
-// The gate number's upper bits (param): the site kind from bit 5 (0 camera, 1 HUD, 2 movie, 3 save picture), the register of a camera site in bits 0-4 (patches.py)
+// The gate number's upper bits (param): the site kind from bit 5 (0 camera, 1 HUD, 2 movie, 3 save picture, 4 model LOD: the scene manager in the register of bits 0-4), the register of a camera site in bits 0-4 (patches.py)
 static void oot_wide_gate(uint64_t *r, int param) {
     if (param < 0) return;
     switch (param >> 5) {
@@ -155,6 +251,7 @@ static void oot_wide_gate(uint64_t *r, int param) {
     case 1: hud(r); break;
     case 2: movie(r); break;
     case 3: thumb(r); break;
+    case 4: if ((param & 31) <= 28) lod_fix(r[param & 31]); break;
     }
 }
 

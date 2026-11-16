@@ -5,6 +5,10 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))   # the tests folder, for javatext (unittest by file name does not add it)
+import javatext  # noqa: E402
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
@@ -23,7 +27,7 @@ class Wiring(unittest.TestCase):
         a = (JAVA / 'GameActivity.java').read_text()
         self.assertIn('ScreenShape.CHOICE.equals(aspect)', a)   # Aspect ratio > Screen shape passes the window's shape
         self.assertIn('ScreenShape.ratio(', a)
-        self.assertIn('Prefs.rotationAuto(this)', a)   # Settings > Screen rotation: Automatic drops the orientation request
+        self.assertIn('Prefs.rotationAuto(this, titleId())', a)   # Settings > Screen rotation: Automatic drops the orientation request
         gs = (JAVA / 'GameSettings.java').read_text()
         self.assertIn('ScreenShape.CHOICE', gs)
         self.assertIn('Screen shape', gs)
@@ -59,6 +63,14 @@ class ScreenFitJvm(unittest.TestCase):
             self.assertEqual(r.stdout.strip(), 'ok')
 
     def test_overlay_inset(self): self.run_jvm('OverlayInset.java', 'OverlayInsetJvmTest.java', 'OverlayInsetJvmTest')
+
+
+def setUpModule():
+    javatext.install()   # the launcher text is in strings.xml: this module reads the Java source with its English
+
+
+def tearDownModule():
+    javatext.uninstall()
 
 
 if __name__ == '__main__':

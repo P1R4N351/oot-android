@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 ONDEVICE = REPO / 'android/app/src/ondevice/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/PrepareTextJvmTest.java'
@@ -27,7 +28,7 @@ class Words(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='preparetext_') as t:
             stub = Path(t) / 'BuildConfig.java'
             stub.write_text(STUB)
-            subprocess.run(['javac', '-Xlint:all', '-Werror', '-d', t, str(SRC / 'PrepareText.java'), str(SRC / 'Profile.java'), str(stub), str(TEST)], check=True)
+            subprocess.run(['javac', '-Xlint:all', '-Werror', '-d', t, str(WORDS), str(SRC / 'PrepareText.java'), str(SRC / 'Profile.java'), str(stub), str(TEST)], check=True)
             r = subprocess.run(['java', '-cp', t, 'dev.nxnative.android.PrepareTextJvmTest'], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertRegex(r.stdout, r'^ok \d+')

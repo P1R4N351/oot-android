@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 sys.path.insert(0, str(REPO / 'dm/tools'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import log_digest as L   # noqa: E402
@@ -44,7 +45,7 @@ class LauncherDigest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp(prefix='logdigest_'))
-        subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', str(cls.tmp / 'classes'), *map(str, SRC)], check=True, capture_output=True, text=True)
+        subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', str(cls.tmp / 'classes'), str(WORDS), *map(str, SRC)], check=True, capture_output=True, text=True)
         cls.n = 0
 
     @classmethod

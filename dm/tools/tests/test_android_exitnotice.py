@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android/ExitNotice.java'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/ExitNoticeJvmTest.java'
 NXLAUNCH = REPO / 'android/app/src/main/cpp/nxlaunch.c'
@@ -22,7 +23,7 @@ class ExitNotice(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp(prefix='exitnotice_'))
-        subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', str(cls.tmp / 'classes'), str(SRC), str(TEST)], check=True, capture_output=True, text=True)
+        subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', str(cls.tmp / 'classes'), str(WORDS), str(SRC), str(TEST)], check=True, capture_output=True, text=True)
         cls.n = 0
 
     @classmethod

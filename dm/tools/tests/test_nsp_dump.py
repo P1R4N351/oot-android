@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 
 REPO = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO / 'dm/tools')); sys.path.insert(0, str(REPO / 'dm/games'))
+sys.path.insert(0, str(REPO / 'dm/tools')); sys.path.insert(0, str(REPO / 'dm/games')); sys.path.insert(0, str(REPO / 'dm/gfx/tools'))
 import cnmt, romfs_image
 spec = importlib.util.spec_from_file_location('build_ipa_from_nsp', REPO / 'scripts/build_ipa_from_nsp.py')
 if spec is None or spec.loader is None: raise ImportError('scripts/build_ipa_from_nsp.py')
@@ -121,6 +121,21 @@ class Scan(Base):
         version(y / 'switch2/base', tid=TID + 1); version(y / f'switch2/updates/{VER}', tid=TID + 1, main=b'switch 2 code')
         self.assertEqual(pack_dump.program_dir(y, 1), (VER, y / f'switch2/updates/{VER}'))
         self.assertIsNone(pack_dump.program_dir(y, 2))
+
+    def test_program_1_splits_the_addons(self):   # BananaNative #356: a program n > 0 keeps its shaders in the application's add-ons, also when base/ is the program itself
+        self.assertEqual(pack_dump.split_addons(*pack_dump.scan(self.dump)[::2]), [])   # program 0: the game alone
+        d = self.dump.parent / 'edition-as-base'   # program 1's exefs in base/, program 0's RomFS beside it, the application's add-on under dlc/
+        version(d / 'base', tid=TID + 1)
+        (d / 'dlc/040074a01bf13001/0/romfs').mkdir(parents=True)
+        app, _, dlc = pack_dump.scan(d)
+        self.assertEqual((app, dlc), (TID + 1, {TID + 0x1001: d / 'dlc/040074a01bf13001/0/romfs'}))
+        self.assertEqual(pack_dump.dlc_index(TID + 0x1001, app), 1)
+        self.assertEqual(pack_dump.split_addons(app, dlc), [d / 'dlc/040074a01bf13001/0/romfs'])
+        with mock.patch.dict('os.environ', DM_GAME=f'{TID:016X}'): import shader_split   # it loads a profile on import
+        with mock.patch('builtins.print'):
+            self.assertEqual(shader_split.dump_addons(str(d)), [str(d / 'dlc/040074a01bf13001/0/romfs')])   # the phone's split (DM_SPLIT_DUMP)
+            self.assertEqual(shader_split.dump_addons(str(self.dump)), [])
+        self.assertEqual(shader_split.dump_addons(''), [])
 
     def test_yoink_data_patch(self):   # Yoink files an add-on's data patch as its own dlc/<data patch ID>/<version>/ (ID + 0x800): its RomFS, the patched tree, is the add-on's
         (self.dump / 'dlc/040074a01bf13801/131072/romfs').mkdir(parents=True)

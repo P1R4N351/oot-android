@@ -24,6 +24,13 @@ modules	main sdk
 romfs_marker	42
 zip_store	.metallib
 
+# ---- Frame rate ----
+# The engine counts frames (one 1/60 s step a frame, the present interval its own min(frames since the last present, 5)), so a late frame plays slow. A frame behind real time skips
+# its submit and present through the game's own draw flag (patches.py OBS rows, dm/host/android/mtf_speed.c); the launcher's Full game speed at low frame rates turns it off. Keep the
+# default present_interval (game): presentation must follow the game's interval.
+# HELD OUT of 0.3.40 (README.md "Full game speed at low frame rates"): the skip costs the game's sound and locks the screen at 30 fps. Open: put the row `fps_decouple<TAB>skip` and the
+# two _MTF_SKIP rows of patches.py back once both are fixed
+
 # ---- Memory ----
 # The Switch 2 leaves games 9 GB of its 12 GB (Donkey Kong Bananza's figure, not measured here). The NPDM declares 32 MB of system resource, so virtual address memory is on; nninitStartup asks StandardAllocator for 16 GB of address space, and this SDK keeps its 1 GB node area, so a 16 GB alias region is too small.
 # 256 MB in front + 20 GB alias region + 256 MB stack region + heap region
@@ -46,6 +53,14 @@ graphics_scale	1920x1080	0	handheld
 graphics_scale	1280x720	2	handheld
 graphics_scale	960x540	2	handheld
 android_window	original
+
+# Game settings > Aspect ratio (dm/games/README.md "Aspect ratio without a variant"; experimental): the picture is fitted at that shape (DM_VK_PICTURE_ASPECT), the gameplay camera of a
+# one-view layout takes the same ratio (wider: Hor+, the vertical field of view stays; narrower: Vert+, the horizontal reach stays) and the layouts stay in the middle 16:9
+# (nro0 1.1.1 gates, patches.py OBS rows, dm/host/android/mtf_wide.c). The world-anchored markers are not moved yet; doubles keep 16:9 views (README.md "Aspect ratio")
+aspect	21:9
+aspect	4:3
+aspect	10:9
+aspect	1:1
 
 # ---- Shader split (shader_split.py) ----
 shader_groups	/shader/=shader /model/=model /effect/=effect /layout/=layout /ssg_system/=system

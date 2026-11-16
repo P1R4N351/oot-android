@@ -90,6 +90,7 @@ typedef struct {
                                                  // end-of-stream flag and the packet's time (drain_pts)
     vpx_codec_ctx_t vpx; int vpx_on, red_dec, red_img;
     uint8_t *bgra; size_t bgra_cap;              // native-texture mode: the picture with red and blue swapped, for a BGRA8 / BGRX8 client texture (md_out_tex)
+    uint8_t *lb; size_t lb_cap;                  // the picture letterboxed for a native-aspect variant (md_letterbox)
     // Vorbis: the identification and setup headers from Configure's MediaData ("csd-0", "csd-1", as with Android's MediaCodec), the decoder (opened at the first packet), channels / rate, Ogg page sequence
     uint8_t *vhdr[2]; int vhdr_n[2]; stb_vorbis *vb; int ch, rate; uint32_t ogg_seq; int64_t ogg_gran; int red_vb;
     int16_t *hold; size_t hold_n, hold_cap; int vb_prev;   // decoded samples (interleaved values) not handed out yet, and the last packet's blocksize, 0 at a stream's start (md_vorbis)
@@ -651,7 +652,7 @@ static void md_free(void **self) {
     pthread_join(d->wk, NULL);
     for (int i = 0; i < MD_NIN; i++) free(d->in[i]);
     for (int k = 0; k < MD_NOUT; k++) free(d->out[k].frm);
-    free(d->bgra); free(d->vhdr[0]); free(d->vhdr[1]); free(d->hold);
+    free(d->bgra); free(d->lb); free(d->vhdr[0]); free(d->vhdr[1]); free(d->hold);
     pthread_mutex_destroy(&d->mu); pthread_mutex_destroy(&d->dmu); pthread_mutex_destroy(&d->wmu); pthread_cond_destroy(&d->wcv); free(d);
 }
 HLE_FORCE("_ZN5movie7DecoderD2Ev", "movie decoder destructor: frees the host object", void, h_movie_DecD2, void **self) { md_free(self); }
@@ -876,6 +877,42 @@ static int md_rendered(mdec_t *d, int i) {
     if (d->out[i].cli) d->out[i].rnd = 1;
     return n;
 }
+// A native-aspect variant (DM_PATCH_VARIANT, e.g. Fire Emblem Fortune's Weave's 4:3) lays the game out for a taller picture (DM_VK_PICTURE_ASPECT) inside its 16:9 frame,
+// which the present then shows at that shape; a movie the game draws over the whole frame would be stretched tall with it. So its pictures are handed over letterboxed: scaled
+// to the picture's 16:9 share of the height (shape x 9/16; 3/4 at 4:3), centred, black above and below, so the movie keeps its 16:9 shape with bars. The rows are picked
+// (nearest), a shrink the present's own filtering follows. DM_MOVIE_LETTERBOX=0 turns it off; without a variant or with a 16:9-or-wider picture nothing changes.
+static float md_lb_factor(void) {
+    static float f = -1;
+    if (f >= 0) return f;
+    f = 1;
+    const char *v = getenv("DM_PATCH_VARIANT"), *e = getenv("DM_VK_PICTURE_ASPECT"), *off = getenv("DM_MOVIE_LETTERBOX");
+    unsigned aw, ah; char x;
+    if (v && *v && e && sscanf(e, "%u:%u%c", &aw, &ah, &x) == 2 && aw && ah && !(off && *off == '0')) {
+        double a = (double)aw / ah;
+        if (a < 16.0 / 9.0 - 0.02) f = (float)(a * 9.0 / 16.0);
+    }
+    if (f < 1) LOG("[movie] letterboxed to %.4f of the frame height for DM_PATCH_VARIANT=%s at %s (DM_MOVIE_LETTERBOX=0: off)", f, v, e);
+    return f;
+}
+// rows of rowb bytes each, src -> dst letterboxed by f; fill(dst row) paints a bar row
+static void md_lb_rows(uint8_t *dst, const uint8_t *src, int rows, size_t rowb, float f, void (*fill)(uint8_t *, size_t)) {
+    int hc = (int)(rows * f + 0.5f), top = (rows - hc) / 2;
+    for (int r = 0; r < rows; r++) {
+        if (r < top || r >= top + hc) { fill(dst + (size_t)r * rowb, rowb); continue; }
+        int sr = (int)((r - top) / f); if (sr >= rows) sr = rows - 1;
+        memcpy(dst + (size_t)r * rowb, src + (size_t)sr * rowb, rowb);
+    }
+}
+static void md_fill_rgba(uint8_t *p, size_t n) { for (size_t k = 0; k + 3 < n; k += 4) { p[k] = p[k + 1] = p[k + 2] = 0; p[k + 3] = 255; } }
+static void md_fill_y(uint8_t *p, size_t n) { memset(p, 16, n); }
+static void md_fill_uv(uint8_t *p, size_t n) { memset(p, 128, n); }
+static int md_letterbox_tex(mdec_t *d, const uint8_t **src, int h, size_t rowb) {   // native-texture mode: *src becomes the letterboxed copy
+    float f = md_lb_factor(); if (f >= 1) return 0;
+    size_t n = rowb * h;
+    if (d->lb_cap < n) { free(d->lb); d->lb = malloc(n); d->lb_cap = n; }
+    if (!d->lb) return 0;
+    md_lb_rows(d->lb, *src, h, rowb, f, md_fill_rgba); *src = d->lb; return 1;
+}
 static int md_out_tex(mdec_t *d, int i, void *buf) {
     // SDK 4's Buffer has no sync object (Dark Souls Remastered's subsdk0 exports no GetNvnSync): the game reads the texture once GetOutputBuffer returns, which the CPU write already satisfies
     static int sync_looked; if (!sync_looked) { G.nvn_sync = guest_sym("_ZNK5movie6Buffer10GetNvnSyncEv"); sync_looked = 1; }
@@ -896,6 +933,7 @@ static int md_out_tex(mdec_t *d, int i, void *buf) {
             for (size_t k = 0; k < n; k += 4) { d->bgra[k] = src[k + 2]; d->bgra[k + 1] = src[k + 1]; d->bgra[k + 2] = src[k]; d->bgra[k + 3] = src[k + 3]; }
             src = d->bgra;
         }
+        md_letterbox_tex(d, &src, h, (size_t)d->w * 4);
         nvn_host_write_texture(tex, src, w, h, (size_t)d->w * 4, NULL, NULL);
     }
     void *sy = G.nvn_sync ? G.nvn_sync(buf) : NULL; if (sy && nvn_host_signal_sync(sy) && !d->red_dec++) LOG("[RED] movie: the buffer's sync object %p is not an NVNsync", sy);
@@ -930,7 +968,13 @@ HLE_FORCE("_ZN5movie7Decoder15GetOutputBufferEiPNS_6BufferE", "movie decoder: ge
     size_t need = (size_t)stride * slice * 3 / 2, cap = G.cap(buf);
     uint8_t *p = G.data(buf);
     if (!p || cap < need) { LOG("[RED] movie: client output buffer is %zu bytes, a frame needs %zu", cap, need); G.set_range(buf, 0, 0); return 0x100b; }
-    if (d->out[i].pic && d->out[i].frm) memcpy(p, d->out[i].frm, need);
+    if (d->out[i].pic && d->out[i].frm) {
+        float f = md_lb_factor();
+        if (f < 1) {   // NV12: the luma rows, then the interleaved chroma rows (half as many), each letterboxed (md_lb_factor)
+            md_lb_rows(p, d->out[i].frm, slice, (size_t)stride, f, md_fill_y);
+            md_lb_rows(p + (size_t)stride * slice, d->out[i].frm + (size_t)stride * slice, slice / 2, (size_t)stride, f, md_fill_uv);
+        } else memcpy(p, d->out[i].frm, need);
+    }
     else { memset(p, 16, (size_t)stride * slice); memset(p + (size_t)stride * slice, 128, need - (size_t)stride * slice); }
     G.set_range(buf, 0, (int)need);
     MD_TRACE(d, 12, "GetOutputBuffer index %d → %zu bytes%s", i, need, d->out[i].pic ? "" : " (black frame)");

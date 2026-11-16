@@ -118,7 +118,12 @@ enum { OBS_UE_MALLOC = 21,                                       // Unreal's FMa
        OBS_DKB_WIDE = 32,                                               // Donkey Kong Bananza (main v458752): the scene camera's updater about to be read (register in the parameter bits 0-4) and, by the kind in bits 5 up, the UI projection copies, a pane just sized and a layout just built (android/dkb_wide.c)
        OBS_MKW_WIDE = 33,                                               // Mario Kart World (main 1.8.0): camera aspect stores (register in the parameter bits 0-4) and the 2D layer's projection reads (kind in bits 5 up) (android/mkw_wide.c)
        OBS_MTF_SIZE = 34,                                               // Mario Tennis Fever (nro0 1.1.1): its scenes' size just computed from the graphics scale (android/mtf_size.c)
-       OBS_MAX = 35 };   // 28-30 are Pokopia's camera gates on its own branch (android/pkp_aspect.c)
+       OBS_OOT_SHADOW = 35,                                             // Ocarina of Time (main v131072): the cascade fit's entry, the depth shadow in the register of the parameter bits 0-4 (android/oot_shadow.c)
+       OBS_OOT_FOLIAGE = 36,                                            // Ocarina of Time (main v131072): the foliage update's loads of a LodSetting distance (field offset in the parameter bits; android/oot_foliage.c)
+       OBS_OOT_FOG = 37,                                                // Ocarina of Time (main v131072): the scene manager about to load its sky (register in the parameter bits 0-4), the fog pulled in to the draw distance (android/oot_fog.c)
+       OBS_MTF_WIDE = 38,                                               // Mario Tennis Fever (nro0 1.1.1): the gameplay camera's aspect store at a layout apply (kind in the parameter bits 5 up; android/mtf_wide.c)
+       OBS_MTF_SKIP = 39,                                               // Mario Tennis Fever (nro0 1.1.1): the frame function's loads of its draw flag (parameter 0 the frame's start, 1 the submit; android/mtf_speed.c)
+       OBS_MAX = 40 };   // 28-30 are Pokopia's camera gates on its own branch (android/pkp_aspect.c)
 // A gate number's bits from 8 up are a parameter for its callback (OBS_REGION_GOT: the register that holds the address). Callbacks read the registers; a write to x0–x29 takes
 // effect when the gate returns (entry.S restores them from the frame), which OBS_STDALLOC_INIT and OBS_UE_REGION do
 void gate_obs_set(int id, void (*fn)(uint64_t *regs, int param));
@@ -149,6 +154,7 @@ uint64_t crash_watch_progress_count(void);
 void crash_dump_now(const char *why);   // Dump state on demand (threads + graphics wait points), without exiting
 // Diagnostic switches: read once from environment variables when main starts (getenv takes the libc global environment lock, and on a hot path it would make all guest threads queue up)
 extern uint64_t g_t0_ns;   // Host start time (now_ns), used for relative times in the log
+static inline double dm_rel_s(void) { return (double)(now_ns() - g_t0_ns) / 1e9; }   // seconds since the host started, as the log's own relative times
 extern struct dm_flags { int thr, svc, fs, dbg, imports, bootprof; } g_flag;
 void *objmap_get(const void *guest); void objmap_put(const void *guest, void *host); void *objmap_del(const void *guest);
 void hle_signal_system_event(void *g);   // hle_thread.c: signal a service-layer SystemEvent (any thread)

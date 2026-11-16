@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/ReadinessJvmTest.java'
 PROBE = REPO / 'dm/gfx/vk_android/vka_readiness.c'
@@ -83,7 +84,7 @@ class ReadinessJvm(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.classes = Path(cls.tmp.name) / 'classes'
-        subprocess.run(['javac', '-Xlint:all', '-Werror', '-d', str(cls.classes), str(SRC / 'Readiness.java'), str(TEST)], check=True, capture_output=True, text=True)
+        subprocess.run(['javac', '-Xlint:all', '-Werror', '-d', str(cls.classes), str(WORDS), str(SRC / 'Readiness.java'), str(TEST)], check=True, capture_output=True, text=True)
 
     @classmethod
     def tearDownClass(cls):

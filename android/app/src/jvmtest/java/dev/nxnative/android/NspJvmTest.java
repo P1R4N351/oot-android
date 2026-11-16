@@ -60,6 +60,25 @@ public final class NspJvmTest {
         System.out.println("ok " + n + " (beside)");
     }
 
+    /** {@code nupbeside <folder> <game.nup> <update.nsp> <dlc.nsp>}: a .nup game with an update NSP and a DLC NSP beside it: it finds both, Add game lists the .nup alone */
+    static void nupBeside(String[] a) throws Exception {
+        File dir = new File(a[1]), game = new File(dir, a[2]), upd = new File(dir, a[3]), dlc = new File(dir, a[4]);
+        java.util.List<File> games = PackFind.gamesIn(dir);
+        check(games.size() == 1 && games.get(0).equals(game), "Add game lists " + games + ", not " + game + " alone");
+        check(Nup.companions(game).size() == 2, "companions of the .nup: " + Nup.companions(game).size());
+        java.util.List<Long> v = DumpLayout.versions(game);
+        check(v.size() == 2 && v.get(0) == 0L, "versions " + v);
+        Nup.Pkg pu = Nup.open(upd).newest();
+        check(Nup.holder(game, pu.selector()).equals(upd), "the holder of " + pu.selector());
+        check(Nup.holder(game, "base").equals(game), "the holder of the base");
+        check(DumpLayout.exists(game, pu.version, "exefs/main"), "the update's exefs/main");
+        check(DumpLayout.hasRomfs(game, pu.version), "the update's RomFS");
+        java.util.List<DumpLayout.Item> items = DumpLayout.contents(game, null);
+        check(items.stream().anyMatch(i -> i.kind.equals("dlc")), "contents has a DLC: " + items);
+        check(items.stream().anyMatch(i -> i.kind.equals("update")), "contents has the update: " + items);
+        System.out.println("ok " + n + " (nupbeside)");
+    }
+
     /** Pack.titleIdOf on an NSP the app does not read: a Refused with the sentence for the player, and the file's name in the detail */
     static void refused(String[] a) throws Exception {
         String[] plain = {Nsp.ENCRYPTED, Nsp.CUT_OFF, Nsp.NOT_NSP, Nsp.NOT_PACKAGE, Nsp.DLC_ONLY};
@@ -78,6 +97,7 @@ public final class NspJvmTest {
 
     public static void main(String[] a) throws Exception {
         if (a[0].equals("beside")) { beside(a); return; }
+        if (a[0].equals("nupbeside")) { nupBeside(a); return; }
         if (a[0].equals("refused")) { refused(a); return; }
         File nsp = new File(a[0]), folder = new File(a[2]);
         check(Nup.isNup(nsp), "isNup on a .nsp");

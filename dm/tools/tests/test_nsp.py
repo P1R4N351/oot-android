@@ -157,6 +157,23 @@ class Base(unittest.TestCase):
         self.t = tempfile.TemporaryDirectory()
         self.dir = Path(self.t.name)
     def tearDown(self): self.t.cleanup()
+    def nup_split(self, name):   # the same game as three .nup files of their own: the base, an update (a whole game of that version) and the DLC
+        d = self.dir / name
+        d.mkdir()
+        for out, tid, ver, data in (('game', TID, 0, GAME0), ('update', TID, 131072, GAME1), ('dlc', DLC, 0, DLCT)):
+            src = self.dir / f'{name}-{out}-dump'
+            nsp_extract.extract(self.write(f'{name}-{out}.nsp', build('dlc' if out == 'dlc' else 'game', tid, ver, data)), src, say=lambda *a: None)
+            subprocess.run([sys.executable, str(REPO / 'dm/tools/nup_pack.py'), str(src), str(d / f'{out}.nup'), '--raw'], check=True, capture_output=True, text=True)
+        return d
+
+    def nup_beside(self, name):   # a .nup of the base (nup_pack.py of the folder nsp_extract.py unpacks GAME0 to), the DLC and an update as NSPs beside it
+        d = self.dir / name
+        d.mkdir()
+        nsp_extract.extract(self.write('b.nsp', build('game', TID, 0, GAME0)), self.dir / (name + '-dump'), say=lambda *a: None)
+        subprocess.run([sys.executable, str(REPO / 'dm/tools/nup_pack.py'), str(self.dir / (name + '-dump')), str(d / 'game.nup'), '--raw'], check=True, capture_output=True, text=True)
+        (d / 'update.nsp').write_bytes(build('game', TID, 131072, GAME1))
+        (d / 'dlc.nsp').write_bytes(build('dlc', DLC, 0, DLCT))
+        return d
     def write(self, name, data):
         p = self.dir / name
         p.write_bytes(data)
@@ -287,6 +304,24 @@ class InPlace(Base):
         self.assertEqual(sorted(vers), [131072, 196608])
         self.assertTrue(str(vers[196608]).endswith('other.nsp:update/196608'))
 
+    def test_nup_scan_with_nup_beside(self):
+        d = self.nup_split('nn')
+        app, vers, dlc = pack_dump.scan(d / 'game.nup')
+        self.assertEqual(app, TID)
+        self.assertEqual(list(vers), [131072])
+        self.assertTrue(str(vers[131072]).endswith('update.nup:update/131072'))
+        self.assertEqual(list(dlc), [DLC])
+        self.assertEqual((dlc[DLC] / 'x/y.bin').read_bytes(), b'1')
+
+    def test_nup_scan_with_nsp_beside(self):
+        d = self.nup_beside('nb')
+        app, vers, dlc = pack_dump.scan(d / 'game.nup')
+        self.assertEqual(app, TID)
+        self.assertEqual(list(vers), [131072])
+        self.assertTrue(str(vers[131072]).endswith('update.nsp:update/131072'))
+        self.assertEqual(list(dlc), [DLC])
+        self.assertEqual((dlc[DLC] / 'x/y.bin').read_bytes(), b'1')
+
     def test_descriptor(self):
         import os
         fd = os.open(self.g, os.O_RDONLY)
@@ -333,12 +368,13 @@ public final class BuildConfig {
     public static final String NX_DMSH_VK_CHAIN = "6607c8d19abc";
     public static final String NX_DMSH_VK_ABI = "01b52a48538b";
     public static final String NX_DMSH_VK_ABI_COMPAT = "";
+    public static final String NX_DMSH_VK_ABI_SAME = "";
 }
 """
     def test_packages(self):
         src = REPO / 'android/app/src/main/java/dev/nxnative/android'
         (self.dir / 'BuildConfig.java').write_text(self.STUB)
-        subprocess.run(['javac', '-d', str(self.dir / 'classes')] + [str(src / f'{c}.java') for c in ('Nup', 'Nsp', 'Zstd', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Profile', 'ShaderLibs', 'PickedPath', 'CopyPlan', 'PackFind')]
+        subprocess.run(['javac', '-d', str(self.dir / 'classes')] + [str(src / f'{c}.java') for c in ('Nup', 'Nsp', 'Zstd', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Profile', 'ShaderLibs', 'PickedPath', 'CopyPlan', 'PackFind', 'Words')]
                        + [str(REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/NspJvmTest.java'), str(self.dir / 'BuildConfig.java')], check=True, capture_output=True, text=True)
         out = self.dir / 'dump'
         big = dict(GAME1, **{'big.bin': bytes(range(251)) * 9000, 'sub/more/e.bin': b'e' * 33})
@@ -356,6 +392,12 @@ public final class BuildConfig {
         (beside / 'newer.nsp').write_bytes(build('game', TID, 196608, GAME1))
         (beside / 'older.nsp').write_bytes(build('game', TID, 131072, GAME0))
         (beside / 'any name.nsp').write_bytes(build('dlc', DLC, 0, DLCT))
+        nb = self.nup_beside('nupbeside')
+        r = subprocess.run(['java', '-cp', str(self.dir / 'classes'), 'dev.nxnative.android.NspJvmTest', 'nupbeside', str(nb), 'game.nup', 'update.nsp', 'dlc.nsp'], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        nn = self.nup_split('nupnup')
+        r = subprocess.run(['java', '-cp', str(self.dir / 'classes'), 'dev.nxnative.android.NspJvmTest', 'nupbeside', str(nn), 'game.nup', 'update.nup', 'dlc.nup'], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         bad = self.dir / 'bad'
         bad.mkdir()
         raw = bytearray(build('game', TID, 0, GAME0))

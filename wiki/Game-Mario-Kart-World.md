@@ -7,7 +7,7 @@ Supported. It plays on a 16 GB phone: the author ran a full cup of four races (1
 | | |
 |---|---|
 | Status | Supported |
-| Version | 1.8.0 |
+| Version | 1.8.0 only. Version 1.0.0 dumps are not supported: the app calls them **Unsupported** and warns that parts of the picture are likely missing (about 110 shaders of that build are in no table). A community change adds 1.0.0 ([#37](https://git.eden-emu.dev/moceure/BananaNative/pulls/37)); it is not merged and untested here |
 | Memory | Needs a 16 GB phone (14 GiB reported); 12 GB phones run out of memory |
 | Driver | Turnip. On the system driver one run showed spreading yellow and black pixels (open in the notes) |
 | Frame rate | Not measured yet as a single figure. Title scene on the tested Honor phone: about 35 fps at 1080p and 46 fps at 720p (handheld mode), 36-37 fps at Original (docked). Races: 42-45 fps in one log, with the game switching between 60 and 30 by load; 52-60 fps on Turnip V39 with the GPU waits off (now the profile's setting). Not measured yet as one figure for a whole race |

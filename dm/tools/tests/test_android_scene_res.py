@@ -5,9 +5,14 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))   # the tests folder, for javatext (unittest by file name does not add it)
+import javatext  # noqa: E402
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/SceneResJvmTest.java'
 GRADLE = REPO / 'android/app/build.gradle'
@@ -15,6 +20,7 @@ STUB = '''package dev.nxnative.android;
 public final class BuildConfig {
     public static final String NX_PROFILES = "";
     public static final String NX_DMSH_VK_CHAIN = "c0ffee000001", NX_DMSH_VK_ABI = "abc123abc123", NX_DMSH_VK_ABI_COMPAT = "";
+    public static final String NX_DMSH_VK_ABI_SAME = "";
 }
 '''
 
@@ -82,12 +88,20 @@ class SceneResJvm(unittest.TestCase):
             (d / 'stub').mkdir(); (d / 'run').mkdir()
             (d / 'stub/BuildConfig.java').write_text(STUB)
             srcs = [SRC / f'{n}.java' for n in ('SceneRes', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Nup', 'Nsp', 'Zstd', 'Profile', 'ShaderLibs')]
-            r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-encoding', 'UTF-8', '-d', str(d / 'classes'), *map(str, srcs), str(TEST), str(d / 'stub/BuildConfig.java')],
+            r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-encoding', 'UTF-8', '-d', str(d / 'classes'), str(WORDS), *map(str, srcs), str(TEST), str(d / 'stub/BuildConfig.java')],
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             r = subprocess.run(['java', '-cp', str(d / 'classes'), 'dev.nxnative.android.SceneResJvmTest', str(d / 'run')], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(r.stdout.strip(), 'ok')
+
+
+def setUpModule():
+    javatext.install()   # the launcher text is in strings.xml: this module reads the Java source with its English
+
+
+def tearDownModule():
+    javatext.uninstall()
 
 
 if __name__ == '__main__':

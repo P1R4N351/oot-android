@@ -4,6 +4,8 @@ Each game is prepared once into a **pack**: its code rewritten for Android and i
 
 ## Phone only
 
+Since 0.3.40 a Switch 2 game's Prepare can skip the shaders: the game starts at once and the app builds the shaders it needs while you play ([Live shader building](Live-Shader-Building)). A full shader Prepare stays available.
+
 1. **Copy your dump** to the phone, for example to `Switch2/DonkeyKongBananza`.
 2. [Install the app](Installation) and allow **All files access** (or skip it, see [Saves and storage](Saves-and-Storage#storage-access)).
 3. Tap **Add game**, choose **A folder (with base/, and updates/ if any)** or **A .nup file**, and pick your dump. Without All files access the choices are **A .nup file (used where it is)** and **A dump folder (copied into the app: ...)**.
@@ -14,7 +16,7 @@ What to expect while it prepares:
 
 - It runs in the background with a notification. **Pause** and **Resume** on the game's card stop and continue it.
 - Keep the phone on the charger. If the screen going off stops it, turn on Settings > **Keep the screen on while preparing**.
-- A hot phone pauses Prepare ("Paused: the phone is too hot") and it goes on when the phone has cooled.
+- A hot phone does not pause Prepare: a step that starts hot uses one worker, so it is slower. A battery under 20 % that is not charging does pause it ("Paused: battery") and it goes on when charging.
 - **How long:** the project's pages disagree and it depends on the game: "about an hour per game" (getting-started guide) and "about 20-45 minutes, mostly translating shaders" for the first Prepare (main page). Mario Tennis Fever (`0400D4201C6EA000`) has 35,045 shaders and takes much longer. Not measured on a range of phones yet.
 - Prepare is incremental: later runs reuse existing shaders and only rewrite code when its key changes (a few minutes).
 - If it stops, the card says why and offers **Retry**. Close other apps if memory ran out; free space if storage is full.

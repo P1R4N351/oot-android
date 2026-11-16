@@ -52,6 +52,21 @@ int main(void) {
     win(&l, 9000, 1000, 0, 0, 0, 5);
     CHECK(win(&l, 50, 50, 0, 0, 0, 5) == 0 && l.s.strikes == 0, "a window with little work resets");
 
+    // shaders missing from the pack (VKS_MISSING, BananaNative #356) count, and are named first when they are the largest cause: the launcher's notice then names no driver
+    run m = {0}; m.f = 1500; vkskip_step(&m.s, m.f, 0, m.dev, 0, 5);
+    m.f += VKS_WINDOW; m.work += 1000; m.dev[VKS_MISSING] += 9000; m.dev[VKS_SHADER] += 10; vkskip_step(&m.s, m.f, m.work, m.dev, m.other, 5);
+    m.f += VKS_WINDOW; m.work += 1000; m.dev[VKS_MISSING] += 9000; m.dev[VKS_SHADER] += 10;
+    CHECK(vkskip_step(&m.s, m.f, m.work, m.dev, m.other, 5) == 1 && m.s.pct == 90, "missing shaders warn: %d percent", m.s.pct);
+    CHECK(!strcmp(m.s.causes, "shaders missing from the pack 9000, shaders refused 10"), "missing named first: '%s'", m.s.causes);
+
+    // a cold start: draws wait for pipelines still made in the background (DM_VK_PSO_ASYNC): not the driver's, so never a warning however many wait; a refused pipeline is
+    CHECK(vks_pipeline_counts(0) == 1 && vks_pipeline_counts(1) == 0, "a pipeline in the making is not counted");
+    run c = {0}; c.f = 1500; vkskip_step(&c.s, c.f, 0, c.dev, 0, 5);
+    for (int i = 0; i < 4; i++) CHECK(win(&c, 6000, 0, 0, 0, 4000, 5) == 0, "40 percent of draws waiting for pipelines never warns");
+    CHECK(!c.s.fired, "no warning on a cold start");
+    run rp = {0}; rp.f = 1500; vkskip_step(&rp.s, rp.f, 0, rp.dev, 0, 5);
+    CHECK(win(&rp, 6000, 0, 0, 4000, 0, 5) == 0 && win(&rp, 6000, 0, 0, 4000, 0, 5) == 1, "refused pipelines warn");
+
     // off
     run z = {0}; z.f = 1500; CHECK(vkskip_step(&z.s, z.f, 0, z.dev, 0, 0) == 0 && z.s.f0 == 0, "0 = off");
     for (int i = 0; i < 4; i++) CHECK(win(&z, 1000, 9000, 0, 0, 0, 0) == 0, "off never warns");

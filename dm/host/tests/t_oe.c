@@ -219,6 +219,24 @@ int main(void) {
     }
     static const char *const lang_bad[] = {"xx", "sv-SE", "", "e", "english"};
     for (unsigned i = 0; i < sizeof lang_bad / sizeof *lang_bad; i++) { char out[8]; CHECK(dm_lang_code(lang_bad[i], out) == 0 && !strcmp(out, "en-US"), "an unknown language tag gives en-US"); }
+    // a game gets only a language it lists (issue #290: Thai for Ocarina of Time, which has no Thai data): the nearest listed one, else en-US, en-GB, the first
+    {   static const char *const ootl = "ja en-US en-GB fr fr-CA de it es es-419 nl pt-BR ru ko zh-Hans zh-Hant pl";
+        static const struct { const char *list, *ask, *want; } lim[] = {
+            {"", "th", "th"}, {ootl, "th", "en-US"}, {ootl, "pl", "pl"}, {ootl, "pt", "pt-BR"}, {ootl, "fr", "fr"}, {ootl, "zh-Hans", "zh-Hans"},
+            {"ja fr", "th", "ja"}, {"fr en-GB", "th", "en-GB"}, {"fr en-GB", "en-US", "en-GB"}, {"en-US es", "es-419", "es"}, {"zh-Hant ja", "zh-Hans", "zh-Hant"}, {"de ja", "fr-CA", "de"},
+            {" ja  fr ", "th", "ja"}, {"ja", "ja", "ja"}, {"ja fr-CAx", "fr-CA", "ja"},
+        };
+        for (unsigned i = 0; i < sizeof lim / sizeof *lim; i++) {
+            char c[8] = {0}; strncpy(c, lim[i].ask, 7); int changed = dm_lang_limit(lim[i].list, c); char msg[96];
+            snprintf(msg, sizeof msg, "language %s of [%s] is %s", lim[i].ask, lim[i].list, lim[i].want);
+            int moved = strcmp(lim[i].ask, lim[i].want) != 0;
+            CHECK(!strcmp(c, lim[i].want) && changed == moved, msg);
+        }
+    }
+    if (DM_GAME_LANGUAGES[0] && !lang_listed(DM_GAME_LANGUAGES, "th")) {   // a profile with a list that lacks Thai (Ocarina of Time): the phone's Thai reaches the game as a language it has
+        setenv("DM_LANG", "th", 1); uint64_t v = h_oe_GetLang(); char c[9] = {0}; memcpy(c, &v, 8);
+        CHECK(!strcmp(c, "en-US") && h_oe_GetRegion() == 1, "GetDesiredLanguage: DM_LANG=th is en-US for a game without Thai, and its region follows");
+    }
     setenv("DM_LANG", "fr-FR", 1);
     { uint64_t v = h_oe_GetLang(); char c[9] = {0}; memcpy(c, &v, 8); CHECK(!strcmp(c, "fr"), "GetDesiredLanguage maps DM_LANG=fr-FR to fr"); }
     CHECK(h_oe_GetRegion() == 2, "fr-FR is a European console");

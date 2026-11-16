@@ -4,6 +4,10 @@ every setting row the launcher shows (a `new Ui.Setting(a, "<icon>", "<title>", 
 cannot ship without a line for the player. A setting that must not be documented goes in UNDOCUMENTED, with the reason."""
 import re
 import unittest
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))   # the tests folder, for javatext (unittest by file name does not add it)
+import javatext  # noqa: E402
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
@@ -13,6 +17,7 @@ SETTING = re.compile(r'new Ui\.Setting\(\s*\w+\s*,\s*"[^"]*"\s*,\s*"([^"]+)"')
 # Titles of rows that are not settings a player changes (testers' knobs, dialogs, or shared with another row). Each needs a reason.
 UNDOCUMENTED = {
     'Extra environment': 'testers only (env lines)',
+    'Sample games': 'a test-build switch that shows made-up tiles',
     'ADB control (debug)': 'a debug switch for developers and testers, off for players',
 }
 BAD_CHARS = set('›⋯−✕')   # > as a single quote, midline ellipsis, minus sign, multiplication X: Forgejo flags them as ambiguous
@@ -20,6 +25,12 @@ BAD_CHARS = set('›⋯−✕')   # > as a single quote, midline ellipsis, minus
 
 def pages():
     return {p.stem: p for p in WIKI.glob('*.md')}
+
+
+def setUpModule(): javatext.install()
+
+
+def tearDownModule(): javatext.uninstall()
 
 
 class WikiTest(unittest.TestCase):

@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/StorageScanJvmTest.java'
 
@@ -34,7 +35,7 @@ class StorageScanJvm(unittest.TestCase):
     def test_jvm(self):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            r = subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', str(d / 'classes'), str(SRC / 'StorageScan.java'), str(SRC / 'CopyPlan.java'),
+            r = subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', str(d / 'classes'), str(WORDS), str(SRC / 'StorageScan.java'), str(SRC / 'CopyPlan.java'),
                                 str(TEST)], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             (d / 'run').mkdir()

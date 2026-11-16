@@ -9,7 +9,7 @@ typedef struct {
     const uint8_t *base; size_t size;          // the whole file (mapped, or a caller's buffer)
     const dmsh_vk_header *h;
     const dmsh_vk_entry *ent; const dmsh_vk_bind *bind; const dmsh_vk_module *mod; const uint8_t *blob;
-    int mapped;
+    int mapped;   // 1: base is a mapping of the file (vka_shlib_open); 2: base is a malloc'd image of one entry (vka_shlib_extract); vka_shlib_close undoes either
     int by_abi;   // taken by its abi only: its chain or vk_chain is not the host's (an older library played while its update runs); 1 = the host's ABI, 2 = a compatible older one
     unsigned differs;   // taken by an older ABI of vka_abi_compat.h (by_abi too): what its modules do otherwise (VKA_ABI_*); 0 for the host's own ABI
 } vka_shlib;
@@ -22,6 +22,14 @@ int vka_shlib_check(vka_shlib *L, const void *base, size_t size, const char *cha
 // Maps path read-only and checks it as above
 int vka_shlib_open(vka_shlib *L, const char *path, const char *chain, const char *vk_chain, const char *game, const char *abi, char *err, size_t errn);
 void vka_shlib_close(vka_shlib *L);
+// Entry e of L as a library of its own: one malloc'd image of L's header (translator answers, ABI) with e (rebased), its bindings, its module records and its blob bytes (c1
+// and every module), checked like a file. The run-time shader layer's shaders keep such a copy (vka_shader.c), so no shader points into a layer file that a newer one
+// replaces and its mapping can go. Its entry hash (vka_shlib_entry_hash) is e's in L. 1 = *out usable (vka_shlib_close frees it); 0 = out of memory or a bad entry (err)
+int vka_shlib_extract(vka_shlib *out, const vka_shlib *L, const dmsh_vk_entry *e, char *err, size_t errn);
+// An empty library: no entries, its header (h, the caller's storage, which must outlive L) the host's own (chain, vk_chain, game, abi; NULL = left zero) with the translator
+// answers sg (subgroup_size) and sa (ssbo_align) the host's tools build with. Played when a pack has no library but the run-time shader layer may make every shader
+// (vka_shader.c lib_load, android/SHADERS.md "Shaders the library lacks"): every key is a miss. 1 = L usable (0 only for a header string of the wrong length)
+int vka_shlib_empty(vka_shlib *L, dmsh_vk_header *h, const char *chain, const char *vk_chain, const char *game, const char *abi, uint16_t sg, uint16_t sa, char *err, size_t errn);
 
 uint64_t vka_shlib_key(const uint8_t md[8]);   // the host's 8-byte program key (prog_key) as the library's sort key: its 16 hex digits read as one big-endian number
 const dmsh_vk_entry *vka_shlib_find(const vka_shlib *L, uint64_t key);   // NULL = not in the library

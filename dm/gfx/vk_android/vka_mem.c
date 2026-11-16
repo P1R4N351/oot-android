@@ -1350,12 +1350,15 @@ uint64_t vka_mem_placed_bytes(uint64_t *peak) { pthread_rwlock_rdlock(&g_rw); ui
 //   and DM_VK_MAPS_COMPACT_N segments (8) a round. DM_VK_MAPS_COMPACT=0 turns it off; DM_VK_MAPS=0 the whole thread.
 // Open: between the unmap and the placed map (microseconds) a system call that reads or writes the range (not through the host's pre-write hook) fails with EFAULT
 // instead of waiting, as during a give-back (unplace)
-typedef struct { long total, guest, placed, out_kgsl; } mscan;
+typedef struct { long total, guest, placed, out_kgsl, adj_same, adj_touch; } mscan;   // adj_*: neighbours inside the guest block that touch (end = start) / that touch and have the same permissions and name (the kernel would have merged them but for their flags or offsets)
 static uint64_t *g_ms_lo, *g_ms_hi; static int *g_ms_pc, *g_ms_fa, g_ms_cap;   // the segments as the scan saw them, their pieces, exported alias or not (the maps thread's own)
+static vkmb_hist g_ms_ghist;   // the maps inside the guest block by (name, permissions, size), with g_ms_hist (the maps thread's own)
 static vkmb_hist g_ms_hist;   // the maps outside the guest block by (name, permissions, size), when DM_VK_MAPS_HIST is on (the maps thread's own)
-static int maps_scan(mscan *o, int nseg, uintptr_t glo, uintptr_t ghi, vkmb_hist *hist) {
+static int maps_scan(mscan *o, int nseg, uintptr_t glo, uintptr_t ghi, vkmb_hist *hist, vkmb_hist *ghist) {
     memset(o, 0, sizeof *o); if (nseg) memset(g_ms_pc, 0, (size_t)nseg * sizeof *g_ms_pc);
     if (hist) vkmb_hist_reset(hist);
+    if (ghist) vkmb_hist_reset(ghist);
+    uint64_t pv_hi = 0; char pv_perms[5] = ""; char pv_name[VKMB_NAME] = "";   // the previous map of the guest block
     int fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC); if (fd < 0) return 0;
     static char b[131072]; size_t have = 0; ssize_t k = 0;
     for (;;) {
@@ -1366,7 +1369,16 @@ static int maps_scan(mscan *o, int nseg, uintptr_t glo, uintptr_t ghi, vkmb_hist
             uint64_t a; int kg;
             if (vkmb_line(b + s, i - s, &a, &kg)) {
                 o->total++;
-                if (a >= glo && a < ghi) { o->guest++; int g = vkmb_seg(g_ms_lo, g_ms_hi, nseg, a); if (g >= 0) { o->placed++; g_ms_pc[g]++; } }
+                if (a >= glo && a < ghi) { o->guest++; int g = vkmb_seg(g_ms_lo, g_ms_hi, nseg, a); if (g >= 0) { o->placed++; g_ms_pc[g]++; }
+                    if (ghist) {
+                        vkmb_hist_add(ghist, b + s, i - s);
+                        uint64_t lo, hi; char pm[5]; const char *nm; size_t nl; char key[VKMB_NAME];
+                        if (vkmb_fields(b + s, i - s, &lo, &hi, pm, &nm, &nl)) {
+                            vkmb_norm(nm, nl, key);
+                            if (pv_hi == lo) { o->adj_touch++; if (!strcmp(pm, pv_perms) && !strcmp(key, pv_name)) o->adj_same++; }
+                            pv_hi = hi; memcpy(pv_perms, pm, 5); memcpy(pv_name, key, VKMB_NAME);
+                        }
+                    } }
                 else { o->out_kgsl += kg; if (hist) vkmb_hist_add(hist, b + s, i - s); }
             }
             s = i + 1;
@@ -1423,6 +1435,16 @@ static void maps_hist_log(const mscan *m, int pct, int step, int hist_pct, uint6
              e->perms, vkmb_bucket_name[e->bucket], e->name);
     }
     if (h->dropped) VLOG("  maps outside: %ld maps not sorted (more than %d groups)", h->dropped, VKMB_HCAP);
+    {   // the guest block's own: what its maps are (a split from a protection, a fixed map of another flag set, a kgsl piece) and how many neighbours touch
+        const vkmb_hist *g = &g_ms_ghist; int gi[10], gn = vkmb_hist_top(g, gi, 10);
+        VLOG("memory maps inside the guest block: %ld, %.0f MiB; %ld touch the map before them, %ld of those with the same permissions and name (the kernel merges such neighbours unless their flags or file offsets differ); the largest by maps:",
+             m->guest, g->bytes / 1048576.0, m->adj_touch, m->adj_same);
+        for (int j = 0; j < gn; j++) {
+            const vkmb_hent *e = &g->e[gi[j]];
+            VLOG("  maps inside #%d: %ld maps (%.1f %%), %.1f MiB: %s %s %s", j + 1, e->n, g->lines ? e->n * 100.0 / g->lines : 0.0, e->bytes / 1048576.0, e->perms, vkmb_bucket_name[e->bucket], e->name);
+        }
+        if (g->dropped) VLOG("  maps inside: %ld maps not sorted (more than %d groups)", g->dropped, VKMB_HCAP);
+    }
     void vka_pso_builds_log(void); vka_pso_builds_log();   // the compiles running now (the driver's compiler is the suspect for the scudo secondary maps)
     armed = 0; last_step = step; last_ns = now;
 }
@@ -1437,7 +1459,7 @@ static void maps_tick(int *line_due) {
     pthread_rwlock_unlock(&g_rw);
     int hist_pct = VKA_ENV("DM_VK_MAPS_HIST", 40);
     mscan m; uint64_t t0 = mono_ns();
-    if (!maps_scan(&m, nseg, (uintptr_t)gb, (uintptr_t)gb + gs, hist_pct > 0 ? &g_ms_hist : NULL) || !m.total) { if (!nred_read++) VRED("memory maps: /proc/self/maps could not be read: the maps budget is off"); return; }
+    if (!maps_scan(&m, nseg, (uintptr_t)gb, (uintptr_t)gb + gs, hist_pct > 0 ? &g_ms_hist : NULL, hist_pct > 0 ? &g_ms_ghist : NULL) || !m.total) { if (!nred_read++) VRED("memory maps: /proc/self/maps could not be read: the maps budget is off"); return; }
     double scan_ms = (mono_ns() - t0) / 1e6;
     atomic_store(&g_maps_n, (int)m.total); atomic_store(&g_maps_max, mx);
     int pct = (int)(m.total * 100 / mx), step = pct / 10, act = 0;

@@ -86,9 +86,10 @@ static void report(void) {
     static uint64_t t[NQ];
     if (g_get(V.dev, g_qp, 0, (uint32_t)g_n, sizeof t, t, 8, VK_QUERY_RESULT_64_BIT)) { VLOG("gpu prof: frame %llu: results not ready", (unsigned long long)g_frame); return; }
     static step s[NQ]; int ns = 0; double tot = 0, pass = 0, xfer = 0, disp = 0, bare = 0, first = 0; int npass = 0, ndisp = 0;
+    double vka_ts_tick_ns(void); double tick = vka_ts_tick_ns(); if (!(tick > 0)) tick = g_tick_ns;   // (the tick measured against the host clock where the driver's period is off: vka_exec.c tick_sample)
     for (int i = 1; i < g_n; i++) {
         if (g_m[i].kind == 1 || g_m[i].kind == 2) continue;   // the gap before a submission or part: the GPU waited for recording
-        double ms = t[i] > t[i - 1] ? (t[i] - t[i - 1]) * g_tick_ns / 1e6 : 0;
+        double ms = t[i] > t[i - 1] ? (t[i] - t[i - 1]) * tick / 1e6 : 0;
         tot += ms; s[ns++] = (step){i, ms};
         // a dispatch counts neither as a draw nor as an op: its step is told by what it recorded (vka_gp_note), or it would be taken for a bare barrier
         if (g_m[i].passes > g_m[i - 1].passes) { pass += ms; npass++; } else if (g_m[i].w.nc) { disp += ms; ndisp++; }

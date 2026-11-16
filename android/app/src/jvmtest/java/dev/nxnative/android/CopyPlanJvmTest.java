@@ -18,6 +18,8 @@ public final class CopyPlanJvmTest {
         check(CopyPlan.inApp(root, root + "/packs/x") && !CopyPlan.inApp(root, root + "x/y") && !CopyPlan.inApp(root, "/sdcard/x"), "inApp");
         check("base".equals(CopyPlan.safeName(" base ")) && "a b.nup".equals(CopyPlan.safeName("a b.nup")), "plain names");
         for (String bad : new String[] {null, "", " ", ".", "..", "a/b", "a\\b", "a\0b"}) check(CopyPlan.safeName(bad) == null, "refused: " + bad);
+        check(CopyPlan.shortBy(100, 100, "x") == null && CopyPlan.shortBy(0, 5, "x") == null && CopyPlan.shortBy(-1, 5, "x") == null, "a full copy, or a provider that gave no size, passes");
+        check(CopyPlan.shortBy(100, 60, "g.nup").contains("40 bytes short") && CopyPlan.shortBy(100, 130, "g.nup").contains("30 bytes long"), "a short or long copy is named");
         check(CopyPlan.partOf(new File("/x/games/DKB")).getPath().equals("/x/games/DKB.part"), "part");
         long g = 1L << 30;
         check(CopyPlan.fits(10 * g, 13 * g) == null, "fits");

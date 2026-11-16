@@ -28,8 +28,9 @@
 # (runpy, with DM_REWRITE_J=1), and the shader library is not built here (it must be current in the cache, or --no-shaders).
 # Each module is rewritten into <out>/.rewrite-<module>/ and moved into the pack when complete, its <module>.android.key last (a module without its key is
 # unfinished: the launcher refuses it, the next run rewrites it). Libraries of other versions in the pack's shaders/ are kept.
-# --code-only rewrites the modules and stops (pack.tsv, game.tsv and the shaders untouched); --keep-code packs without rewriting (the phone's two steps).
-# Usage: pack_android.py <game folder | .nup file> [--version N] [--out DIR] [-j N] [--shader-cache DIR] [--shader-pkg DIR] [--shader-python PY] [-J N] [--no-shaders] [--code-only | --keep-code] [--in-process]   (exit 1 on error)
+# --no-shaders makes a pack without a library, a valid one (no pack.tsv shaders row); --optional-shaders takes a current library from the cache when there is one and packs without
+# otherwise. --code-only rewrites the modules and stops (pack.tsv, game.tsv and the shaders untouched); --keep-code packs without rewriting (the phone's two steps).
+# Usage: pack_android.py <game folder | .nup file> [--version N] [--out DIR] [-j N] [--shader-cache DIR] [--shader-pkg DIR] [--shader-python PY] [-J N] [--no-shaders | --optional-shaders] [--code-only | --keep-code] [--in-process]   (exit 1 on error)
 import argparse, hashlib, os, runpy, shutil, signal, subprocess, sys, time
 from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
@@ -583,7 +584,7 @@ def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: th
     tmp = pkg.with_name(pkg.name + '.tmp'); shutil.rmtree(tmp, ignore_errors=True); tmp.mkdir(parents=True)
     print(f'shaders: splitting the shaders out of {rd} into {pkg} with {py} (a few minutes)', flush=True)
     env = child_env(DM_GAME=g.id, DM_SPLIT_TARGETED='1', **({'DM_NRO_DIR': str(nros)} if nros else {}))   # as the phone: only the files the profile's map names, when the build is the profile's and the tables come out the same
-    # a program n > 0 (--program) keeps its shaders in the application's add-ons: a Switch 2 Edition's NVN2 archives are in its add-on (Wonder's 010015100B515001)
+    # a program n > 0 keeps its shaders in the application's add-ons (pack_dump.split_addons): a Switch 2 Edition's NVN2 archives are in its add-on (Wonder's 010015100B515001)
     r = subprocess.run([py, str(SPLIT), str(rd), str(ed / 'main'), str(tmp / 'pkg'),
                         *[str(tmp / f) for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv', 'pso_pairs.tsv')], *([','.join(map(str, aoc))] if aoc else [])], env=env)
     if r.returncode: raise Error(f'shader_split.py exit code {r.returncode}')
@@ -613,6 +614,9 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
     dst = out / 'shaders' / name
     stage('checking the shader library')
     if not library_current(lib, g):
+        if a.optional_shaders:   # a code-only pack (the phone's Prepare for a game the shader layer covers): the game builds its shaders while it runs (android/SHADERS.md "Prepare without shaders")
+            print(f'shaders: no current library in {cache} (--optional-shaders): the pack is made without one; the game builds its shaders at run time, or the shaders step makes the whole set')
+            return None
         if a.in_process: raise Error(f'no current shader library {lib}: --in-process does not build one yet (vk_android_build.py starts the translator and spirv-val as programs); --no-shaders packs without')
         pkg = (a.shader_pkg or work / 'android-shaders' / 'pkg').resolve()
         if not pkg.is_dir(): split_shaders(a, g, vdir, pkg, parts, aoc, collected_nros(work))   # also into a --shader-pkg folder that is not there yet
@@ -722,7 +726,8 @@ def main():
     ap.add_argument('--shader-pkg', type=Path, help='the Switch shader package to build the library from, split from the dump into it when it is not there (default: <title ID>-work/android-shaders/pkg)')
     ap.add_argument('--shader-python', help='the Python 3.14 (or one with backports.zstd) that runs vk_android_build.py')
     ap.add_argument('-J', type=int, default=8, help='shaders translated at once when the library is built (default 8)')
-    ap.add_argument('--no-shaders', action='store_true', help='make the pack without the shader library')
+    ap.add_argument('--no-shaders', action='store_true', help='make the pack without the shader library (a valid pack: the launcher\'s shader layer builds shaders while the game runs, or Prepare shaders makes the set later)')
+    ap.add_argument('--optional-shaders', action='store_true', help='pack a current library from the shader cache when there is one, else without (no error, nothing built); the phone\'s pack step of a code-only job')
     ap.add_argument('--code-only', action='store_true', help='only rewrite the modules (the phone\'s rewrite step): pack.tsv, game.tsv and the shaders stay as they are')
     ap.add_argument('--keep-code', action='store_true', help='do not rewrite: the pack\'s modules must be there with their key files (the phone\'s pack step)')
     ap.add_argument('--made-by', help='who makes this pack, written as its made_by row (the phone\'s pack step: "app <version>"; the launcher then updates the pack\'s code by itself when only the tools changed)')
@@ -800,8 +805,9 @@ def main():
             upgrade_keys(srcs | {n: coll / f'{n}.nro' for n in pack_nros(out) if coll and (coll / f'{n}.nro').is_file()}, out, g)   # before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
         shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
         place_cheats(g, out)
-        # a program n > 0 splits program 0's RomFS (its conorig) and the add-ons with its own main: its own RomFS holds no shaders (Wonder's program 1: one text file)
-        shaders = None if a.no_shaders else pack_shaders(a, g, work, out, vdir, (conorig, exe) if a.program else (romfs, exe), list(dlc.values()) if a.program else ())
+        # a program n > 0 splits program 0's RomFS (its conorig) and the add-ons with its own main: its own RomFS holds no shaders (Wonder's program 1: one text file).
+        # The add-ons go by the program's ID, not by --program: a dump whose base/ is program 1 itself (its exefs, program 0's RomFS beside it) splits them too
+        shaders = None if a.no_shaders else pack_shaders(a, g, work, out, vdir, (conorig, exe) if a.program else (romfs, exe), pack_dump.split_addons(app, dlc))
         scenes = scene_overlays(g, romfs, out)
         top = folder.parent if pack_dump.nup.is_nup(folder) else folder   # a NUP file's paths are `<name>.nup:<package>/...`, relative to its folder
         rel = lambda p: p.relative_to(top).as_posix()

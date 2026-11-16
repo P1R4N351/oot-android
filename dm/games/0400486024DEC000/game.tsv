@@ -37,6 +37,11 @@ mem_stack	0x10000000
 app_pool	0x240000000
 sys_resource	0x3000000
 
+# ---- Language ----
+# The languages the game ships (Mals/ has a message archive for each: JPja USen EUen EUfr USfr EUde EUit EUes USes EUnl USpt EUru KRko CNzh TWzh EUpl; no Thai, no European Portuguese). The host gives the game
+# one of these, as a console does (hle_oe.c dm_lang_limit): a phone set to Thai gave the game DM_LANG=th, and every log of issue #290 (a crash in the opening, main+0xa7ec18) has it; Thai is the one language of the launcher's 18 the game has no data for
+languages	ja en-US en-GB fr fr-CA de it es es-419 nl pt-BR ru ko zh-Hans zh-Hant pl
+
 # ---- Shader split (shader_split.py) ----
 shader_groups	/Shader/=shader /Effect/=effect /Lib/=lib /UI/=layout
 shader_note	Ocarina of Time shaders
@@ -48,8 +53,10 @@ shader_note	Ocarina of Time shaders
 fps_limit	60
 # Android: two pixel shaders whose draws later drawing covers (a sky-like layer: 6 draws of the first and 2 of the second cost 34 of 77 ms of GPU time at Link's house on an
 # Adreno 740 with Turnip). The launcher's Game settings offer "Speedhack: Turn off hidden layers (experimental)" for them (DM_VK_SKIP_FS), off by default: judged by eye in
-# Kokiri Forest and Link's house only
-skip_layers	5684f5e658eda176,47eb514f6d5e9faf
+# Kokiri Forest and Link's house only. 5684f5e658eda176 is out since 2026-11-16: in Castle Town it is a lit material nothing covers (stalls, barrels, stone walls, signboards),
+# and its dropped draws left white-green glowing slabs (README.md "Found on this game"; phone A/B on the system driver). 47eb514f6d5e9faf alone changed nothing in the same A/B
+# (castle gate and plaza), so it stays
+skip_layers	47eb514f6d5e9faf
 # The frame step (patches.py) in whole vsyncs decided by the host, also with no limit (the launcher's 60): left to the game's own controller, the game kept interval 1 at 25 fps on the
 # phone (0.4 of real time; its controller's frame costs, framework +0x148 / +0x150, said 60 fits). The limit above caps the step (hle_fpslock.c dm_fps_step_fold): 30 fps = 2 vsyncs a frame
 fps_target	60
@@ -200,4 +207,4 @@ mesh_vegetation_cut	839241636fce850a	4c7d6be5a7717c8d
 option	DM_OOT_MAX_RESOLUTION	Max resolution	Keeps the 3D scene at full size: sharper, more GPU work. Best with Resolution › Quality	restart	implies=DM_OOT_TEXTURE_POOL_X2	needs=OOT_PATCHES
 option	DM_OOT_TEXTURE_POOL_X2	Texture pool ×2	Twice the game's starting graphics memory. Max resolution needs it	restart	needs=OOT_PATCHES
 option	DM_OOT_FPS_UNLOCK	Unlocked frame rate	Game logic follows real time, so speed holds when fps changes. Does not raise fps	restart	needs=OOT_PATCHES
-option	DM_VK_OQ_SPLIT_PASS	Keep cave walls (Qualcomm)	Fixes walls and rocks that vanish on Death Mountain Trail with Qualcomm's driver. Costs GPU time on some phones, try it if you see holes. No effect on Turnip	restart
+option	DM_VK_OQ_SPLIT_PASS	Keep cave walls (Qualcomm)	Fixes walls and rocks that vanish on Death Mountain Trail with Qualcomm's driver. Cheap in the cave, but about 7 fps slower in the castle: switch it on in the in-game panel there and off elsewhere. No effect on Turnip	live

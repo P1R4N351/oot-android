@@ -44,14 +44,16 @@ Which games recommend what is on each game's page in [Games](Games).
 |---|---|---|
 | Updates | **Check for updates** | shows the version; see [Updates](Updates) |
 | Updates | **Player wiki** | opens this wiki in the browser; the same button is in Home's header, left of Settings |
+| Appearance | **Language** (the app's own language: Spanish, Turkish, Chinese, French, Arabic, Polish; machine translated, not yet reviewed; "System default" follows the phone), **Theme** (light, dark or the phone's), **Background**, **UI sounds**, **My sound** | the launcher's look: bananas, your own picture, a tick when the focus moves |
 | Display | **Overlay** | the text over the game: [Settings: Performance](Settings-Performance#overlay) |
 | Display | **Screen rotation** | [Settings: Controls](Settings-Controls) |
 | Controls | **On-screen controls**, **Show / hide button**, **Controller: in-game panel**, **Rumble**, **Xbox button label swap**, **Button mapping** | [Settings: Controls](Settings-Controls) |
-| Performance and picture | **Resolution**, **Frame rate cap**, **Upscaler**, **FSR sharpness**, **Dynamic resolution**, **Frame generation**, **Use fast cores** | [Settings: Performance](Settings-Performance) |
+| Defaults for all games (closed group; tap to open; each game's page can override them) | **Resolution**, **Frame rate cap**, **Use fast cores**, **Upscaler**, **FSR sharpness**, **Dynamic resolution** | [Settings: Performance](Settings-Performance) |
+| Performance and picture | **Frame generation** | [Settings: Performance](Settings-Performance) |
 | System | **GPU driver** | [GPU drivers](GPU-Drivers) |
 | | **Time of day** | [Settings: Game](Settings-Game#time-of-day) |
 | | **Advanced** | every switch with a search box: [Settings: Advanced](Settings-Advanced) |
-| | **Users**, **Folders**, **Storage**, **Keep the screen on while preparing** | [Saves and storage](Saves-and-Storage), [First start and Prepare](First-Start-and-Prepare) |
+| | **Users** (the round button with your letter at the top right of Home: **Player ID**, **Choose a picture**, **Use an icon instead**), **Folders**, **Storage**, **Keep the screen on while preparing** | [Saves and storage](Saves-and-Storage), [First start and Prepare](First-Start-and-Prepare) |
 | Help | **Readiness check**, **Graphics self-test**, **Share log**, **Tester settings** | [Troubleshooting](Troubleshooting) |
 | About | build tag, the games this build includes | the list tells you whether your game is in this app |
 

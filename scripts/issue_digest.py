@@ -21,6 +21,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dm/tools'))
 import log_digest  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import shader_harvest  # noqa: E402
 
 FORGEJO = os.environ.get('BN_FORGEJO', 'https://git.eden-emu.dev').rstrip('/')
 REPO = os.environ.get('BN_FORGEJO_REPO', 'moceure/BananaNative')
@@ -133,11 +135,19 @@ def report(n, since=0, as_json=False):
         digests.append({'file': str(p), 'source': src, 'poster': poster, 'link': link, 'digest': dg})
         o.append(f'-- log {p.name} ({src})')
         o.append(txt.rstrip('\n'))
+    miss = {}   # shaders the game's library lacked, from every log (and missing_shaders.tsv) of the issue; scripts/shader_harvest.py --apply merges them into shader_seen.tsv
+    for p, _src in logs:
+        for g, keys in shader_harvest.collect([p]).items():
+            for k, st in keys.items(): miss.setdefault(g, {})[k] = miss.get(g, {}).get(k) or st
+    if miss:
+        o.append('-- missing shaders (python3 scripts/shader_harvest.py ' + str(d) + ' to merge)')
+        for g, keys in sorted(miss.items(), key=lambda x: x[0] or ''):
+            o.append(f"  {g or 'game not known'}: {len(keys)}: " + ', '.join(f'{k} {st or "?"}' for k, st in sorted(keys.items())[:40]) + (' ...' if len(keys) > 40 else ''))
     if advs:   # what the player changed from the defaults, near the top (after the issue's title lines), once for each log
         top = []
         for name, lines in advs: top += [lines[0] + f' [{name}]'] + lines[1:]
         o[2:2] = top
-    if as_json: return json.dumps({'issue': n, 'title': iss['title'], 'dir': str(d), 'text': body, 'logs': digests}, indent=1, ensure_ascii=False) + '\n'
+    if as_json: return json.dumps({'issue': n, 'title': iss['title'], 'dir': str(d), 'text': body, 'logs': digests, 'missing_shaders': {g or '': k for g, k in miss.items()}}, indent=1, ensure_ascii=False) + '\n'
     return '\n'.join(o) + '\n'
 
 

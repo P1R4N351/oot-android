@@ -43,7 +43,7 @@ def offered(g):
     patches = g.dir / 'patches.py'
     steps = bool(g.values('fps_steps')) or (bool(ft) and ft[0] and ft[0][0] != '0' and patches.is_file() and 'FRAME_STEP' in patches.read_text(encoding='utf-8'))
     limit = g.values('fps_limit')
-    limited = bool(g.values('fps_decouple')) or bool(limit and limit[0] and limit[0][0] != '0')
+    limited = any(v[:1] == ['sead'] for v in g.values('fps_decouple')) or bool(limit and limit[0] and limit[0][0] != '0')   # fps_decouple skip keeps the game's own interval: no frame limit
     return {'presets': presets, 'options': opts, 'steps': steps, 'limited': limited, 'dlss': bool(g.values('dlss_standin')), 'drs': bool(g.values('drs_ctl')),
             'vegetation': bool(g.values('mesh_vegetation_cut')), 'skip_layers': bool(g.values('skip_layers'))}
 

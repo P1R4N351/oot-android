@@ -32,15 +32,13 @@ class Policy(unittest.TestCase):
     def reasons(self, *lines):
         return [l.split('\t')[:2] for l in self.run_on(*lines)[:-1]]
 
-    def test_heat(self):   # the documented rule: pause at SEVERE (3), hold until MODERATE (2) or better
-        self.assertEqual(self.reasons('80 0 2 - 0', '80 0 3 - 0', '80 0 3 thermal 0', '80 0 2 thermal 0', '80 1 6 - 0'),
-                         [['-', 'false'], ['thermal', 'true'], ['thermal', 'true'], ['-', 'false'], ['thermal', 'false']])
+    def test_heat_never_pauses(self):   # heat only reduces the workers (to one from SEVERE); no thermal status, with or without Go on anyway, pauses the job
+        rows = [f'80 0 {th} {was} {ov}' for th in range(7) for was in ('-', 'thermal') for ov in (0, 1)]
+        self.assertEqual(set(r[0] for r in self.reasons(*rows)), {'-'})
+        self.assertEqual(set(r[1] for r in self.reasons(*rows)), {'false'})   # no heat pause, so nothing for Go on anyway to lift
+        self.assertEqual(self.run_on('workers 6 0', 'workers 6 2', 'workers 6 3', 'workers 6 4', 'workers 0 0', 'workers 6 6')[:6], ['6', '6', '1', '1', '1', '1'])
 
-    def test_go_on_anyway(self):   # lifted at SEVERE, not at CRITICAL (4) or worse; once paused there, held until SEVERE or better
-        self.assertEqual(self.reasons('80 0 3 thermal 1', '80 0 4 - 1', '80 0 4 thermal 1', '80 0 3 thermal 1'),
-                         [['-', 'false'], ['thermal', 'false'], ['thermal', 'false'], ['-', 'false']])
-
-    def test_battery(self):   # below 20 % on battery, whatever the heat or the override
+    def test_battery(self):   # below 20 % on battery pauses, and says battery, whatever the heat
         self.assertEqual(self.reasons('19 0 0 - 0', '19 1 0 - 0', '20 0 0 - 0', '10 0 3 - 1'),
                          [['battery', 'false'], ['-', 'false'], ['-', 'false'], ['battery', 'false']])
 
@@ -55,6 +53,7 @@ class Policy(unittest.TestCase):
         self.assertIn('stepLog(j, "pausing: "', src)
         self.assertIn('stepLog(j, "going on after the "', src)
         self.assertNotIn('THERMAL_STATUS_SEVERE', src)
+        self.assertIn('PackPolicy.workers(', src)
 
     def test_every_pause_logged(self):   # every way the job pauses or stops by itself writes a [pack] line to the step's log (stepLog), not only logcat
         src = SERVICE.read_text(encoding='utf-8')

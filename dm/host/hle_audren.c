@@ -364,13 +364,23 @@ static int capture(const uint8_t *cl, size_t len, int16_t *dst) {
                 st[2 * s] = l; st[2 * s + 1] = r;
             }
             uint32_t nout = rate == 48000 ? samples : up_3_2(st, samples, st);
-            uint64_t loud = 0;
+            uint64_t loud = 0; int32_t peak = 0;
             for (uint32_t s = 0; s < 2 * nout; s++) {
                 int32_t v = st[s]; v = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
                 dst[s] = (int16_t)v; loud |= (uint64_t)v;
+                int32_t av = v < 0 ? -v : v; if (av > peak) peak = av;
             }
             atomic_fetch_add(&g_frames, 1); if (loud) atomic_fetch_add(&g_nonsilent, 1);
-            uint64_t f = atomic_load(&g_frames); if (f == 200 || f % 12000 == 0) LOG("audren: rendered %llu frames, %llu of them not silent", (unsigned long long)f, (unsigned long long)atomic_load(&g_nonsilent));
+            // The window since the last line (this runs under g_render_mu): a short run still gets lines (the first second, the fifth, then every 15 s), and the window
+            // says whether the sound is there now, not only on average since the start of the run
+            static uint64_t win_frames, win_nonsilent; static int32_t win_peak;
+            win_frames++; if (loud) win_nonsilent++; if (peak > win_peak) win_peak = peak;
+            uint64_t f = atomic_load(&g_frames);
+            if (f == 200 || f == 1000 || f % 3000 == 0) {
+                LOG("audren: rendered %llu frames, %llu of them not silent (the last %llu: %llu not silent, peak %d of 32767, at %.1f s)", (unsigned long long)f, (unsigned long long)atomic_load(&g_nonsilent),
+                    (unsigned long long)win_frames, (unsigned long long)win_nonsilent, win_peak, dm_rel_s());
+                win_frames = win_nonsilent = 0; win_peak = 0;
+            }
             return (int)nout;
         }
         c += size;

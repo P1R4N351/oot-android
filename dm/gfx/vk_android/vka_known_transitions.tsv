@@ -1,0 +1,6 @@
+# Known transitions of the Android shader library (android/SHADERS.md, "Known transitions"): an older library whose header's VK chain (the version field at 24, as
+# stamped) is the first column is kept as a library of the second column's DMSH_VK_CHAIN without a sampled check: MOVED (renamed, no copy) with its header's version, abi and chain
+# rewritten and the marker sampled-keep.json (kind known-transition); an older APK of the first column's chain then updates that pack again. The host then verifies what is played (vka_shader.c g_kept), which is how the changed entries heal.
+# Add a row only after a diff investigation of the two chains' entries (as triage entry-diff) shows that every change is of a class with no visible effect, and that the
+# interface, bindings and padding are identical, so that old and new entries mix safely. Columns: old VK chain, new VK chain, what the diff found.
+65883461079b	19662e4c4a25	2026-11-16 entry diff of OoT: equivalent raw-gmem vector loads, sin/cos argument reduction, LEA.HI.X.SX32 sign-extend, 3 rare mesh/compute entries; interface, bindings, padding identical

@@ -12,6 +12,7 @@ import zlib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/DumpMetaJvmTest.java'
 sys.path.insert(0, str(REPO / 'dm/tools'))
@@ -21,6 +22,7 @@ STUB = '''package dev.nxnative.android;
 public final class BuildConfig {
     public static final String NX_PROFILES = "040015100B514001\\tSuper Mario Bros. Wonder - Nintendo Switch 2 Edition\\t0\\tabcdef012345\\t327680 main=aa";
     public static final String NX_DMSH_VK_CHAIN = "c0ffee000001", NX_DMSH_VK_ABI = "abc123abc123", NX_DMSH_VK_ABI_COMPAT = "";
+    public static final String NX_DMSH_VK_ABI_SAME = "";
 }
 '''
 
@@ -74,7 +76,7 @@ class DumpMetaJvm(unittest.TestCase):
         (cls.tmp / 'stub').mkdir()
         (cls.tmp / 'stub/BuildConfig.java').write_text(STUB)
         srcs = [SRC / f'{n}.java' for n in ('Nacp', 'BuildCheck', 'DumpLayout', 'RomfsCheck', 'Nup', 'Nsp', 'Zstd', 'Pack', 'Profile', 'ShaderLibs')]
-        r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-encoding', 'UTF-8', '-d', str(cls.tmp / 'classes'), *map(str, srcs), str(TEST), str(cls.tmp / 'stub/BuildConfig.java')],
+        r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-encoding', 'UTF-8', '-d', str(cls.tmp / 'classes'), str(WORDS), *map(str, srcs), str(TEST), str(cls.tmp / 'stub/BuildConfig.java')],
                            capture_output=True, text=True)
         assert r.returncode == 0, r.stdout + r.stderr
 

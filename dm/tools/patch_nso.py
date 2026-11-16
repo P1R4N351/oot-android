@@ -231,13 +231,13 @@ elif ue_region_why.startswith('[RED] '): print(f'[RED] {NAME}: {ue_region_why[6:
 # row for the gate (its patches.py) is taken instead of the search, after the same checks of the place
 from nso_code import OBS_SEAD_RATE, sead_check, sead_find, sead_param
 SEAD_RATE = SEAD_REGS = None
+def profile_rows(key):
+    prof = os.path.basename(os.environ.get('DM_GAME', '').rstrip('/'))
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../games', prof, 'game.tsv'), encoding='utf-8') as f:
+            return [c[1:] for c in ([x.strip() for x in r.split('\t')] for r in f.read().splitlines()) if c[0] == key] if prof else []
+    except OSError: return []
 if NAME == 'main':
-    def profile_rows(key):
-        prof = os.path.basename(os.environ.get('DM_GAME', '').rstrip('/'))
-        try:
-            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../games', prof, 'game.tsv'), encoding='utf-8') as f:
-                return [c[1:] for c in ([x.strip() for x in r.split('\t')] for r in f.read().splitlines()) if c[0] == key] if prof else []
-        except OSError: return []
     sead_on = ['sead'] in profile_rows('fps_decouple')
     own = [(o, oid) for o, oid, _, _ in PATCHES['OBS'].get(BUILD_ID, []) if oid & 0xff == OBS_SEAD_RATE]
     for o, oid in own:
@@ -250,6 +250,14 @@ if NAME == 'main':
         if sead_why.startswith('[RED] '): print(f'[RED] {NAME}: {sead_why[6:]}: the game\'s speed keeps following its present interval' if sead_on else f'{NAME}: {sead_why[6:]}')
         elif off is not None and sead_on: SEAD_RATE, SEAD_REGS = off, regs; print(f'{NAME}: {sead_why}')
         elif off is not None: print(f'{NAME}: sead rate site found at main+{off:#x}; not used: the profile has no fps_decouple sead')
+
+# ---- A frame-counting game's own draw flag (a build's OBS rows of kind OBS_MTF_SKIP in its profile's patches.py) ----
+# For a profile that opts in (game.tsv fps_decouple skip, keyed with the build rows as above): the host skips the submit and present of frames behind real time there
+# (dm/host/android/mtf_speed.c, Mario Tennis Fever's nro0). Like sead's rows, a row without the key is refused: it would change the speed of a game nobody checked
+OBS_MTF_SKIP = 39   # dm/host/dm.h
+if any(oid & 0xff == OBS_MTF_SKIP for _, oid, _, _ in PATCHES['OBS'].get(BUILD_ID, [])):
+    assert ['skip'] in profile_rows('fps_decouple'), f'{NAME} {BUILD_ID}: OBS rows for the draw flag (OBS_MTF_SKIP), but the profile has no fps_decouple skip'
+    print(f'{NAME}: frame skip through the game\'s draw flag (the build\'s OBS rows, fps_decouple skip)')
 
 md = Cs(CS_ARCH_ARM64, CS_MODE_ARM); md.detail = True
 patch = bytearray(); fix = []; gates = []; stats = {}

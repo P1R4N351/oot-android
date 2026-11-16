@@ -525,7 +525,9 @@ def main():
                     for _, c in nup.children(stack.pop()): (stack if nup.is_dir(c) else nodes).append(c)
             for k in nodes:
                 n += 1
-                if not nup.verify(k): bad += 1; print(f'[RED] {nup.name(k).decode(errors="replace")}: content does not match its SHA-256')
+                try: ok = nup.verify(k)
+                except Error as e: ok = False; print(f'[RED] {nup.name(k).decode(errors="replace")}: {e}')   # a zeroed or cut extent does not decode: count it, go on to the rest
+                if not ok: bad += 1; print(f'[RED] {nup.name(k).decode(errors="replace")}: content does not match its SHA-256')
             print(f'{n} files, {bad} bad')
             if bad: sys.exit(1)
         else: sys.exit(f'unknown command {cmd}')

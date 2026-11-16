@@ -22,8 +22,9 @@ Each game start writes a log. To send it:
 
 - **The game is not on the list or says "Not in this app version":** your app does not include that game. Settings ›
   **About** lists the games it has.
-- **The card says the version is untested:** your dump is another version than the one the game was tested with. It
-  may still work; the app asks before it starts.
+- **The card says the version is unsupported:** your dump is another version than the one the app supports (the card
+  names it). Parts of the picture are likely to be missing and the game may crash, and such problems can't be fixed:
+  dump the supported version instead.
 - **Preparing stopped:** its card says why and offers **Retry**. Close other apps if the phone ran out of memory, and
   free space if the storage is full.
 - **The picture is wrong or the game crashes:** try the other GPU driver ([GPU drivers](gpu-drivers.md)).

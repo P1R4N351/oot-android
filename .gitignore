@@ -6,6 +6,7 @@
 __pycache__/
 # Made from each shader build's Mac outputs (c1_guard.py, cb_extent.py; the NSP script makes them), not committed
 dm/games/*/c1_full.tsv
+dm/games/*/shader_priority.tsv
 dm/games/*/cb_extent.tsv
 # coverage.py data and its JSON report (pyproject.toml, [tool.coverage.run])
 .coverage
@@ -20,3 +21,7 @@ HANDOFF*.md
 ONDEVICE*.md
 STUTTER-TEST*.md
 *.internal.md
+
+# aarch64 Linux host (linux/README.md): build output and the SDL3 headers and library copied from the device
+linux/build/
+linux/sysroot/

@@ -118,6 +118,10 @@ public final class PrepareTextJvmTest {
         plain(f.text, "shaders differ");
         check(f.fix.equals(PrepareText.FIX_ANYWAY) && f.text.contains("Try anyway"), "shaders differ: Try anyway");
 
+        // A build the profile does not list: the warning says parts of the picture are likely missing (Forgejo #258, #281), not only "untested"
+        check(PrepareText.UNSUPPORTED_WARNING().contains("not supported") && PrepareText.UNSUPPORTED_WARNING().contains("likely to be missing"), "unsupported warning: " + PrepareText.UNSUPPORTED_WARNING());
+        check(!PrepareText.UNSUPPORTED_WARNING().contains("tested"), "unsupported warning does not say untested");
+
         // The trigger: a job of a game this APK does not include gets one sentence and no Retry
         String missing = Profile.missing("0400A3A01EE4C000", "Pokemon Pokopia");
         check(missing.equals("This app version does not include Pokemon Pokopia (0400A3A01EE4C000). Install a build that includes it."), "Profile.missing: " + missing);

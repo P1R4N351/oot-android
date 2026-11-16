@@ -53,6 +53,7 @@ Keyboard in a window: J K U I are A B X Y, WASD the left stick, Shift + arrows t
 
 ## Open
 
+- **Android: aborts at start in `sndSetup` (open, [#303](https://git.eden-emu.dev/moceure/BananaNative/issues/303); 0.3.24, Turnip and PurpleVK alike).** `nn::diag abort: Result 0, call site main+0x2b3730` is the game's own: a file wrapper (`main+0x2b36e0`) calls `nn::fs::GetFileSize(&size, [this+8])` (GOT `0x2176560`; the abort is `nn::diag::detail::AbortImpl`, GOT `0x2176520`) on a file the same setup opened with `nn::fs::OpenFile` (`main+0x2b3590`, read mode) a moment before, and aborts when it returns nonzero. Not an audio service. The open did succeed (a failed open leaves through the error path, not the abort), and the host's `GetFileSize` logs every failure except a null handle, so the answer was a null handle (the guest's handle is `fd << 4`, so descriptor 0, or the game's own copy of it, is 0). Why is not proven offline. The host now logs `[RED] fs GetFileSize: null file handle` and `[RED] fs open ... returned descriptor 0`; ask the player for a log of 0.3.40 or later, with `DM_FS=1` (Advanced switches) for the `fs open` lines before the abort. Not phone-checked.
 - Nothing past the first map has been played on this build.
 - `stage 1 cb4 has no uniform buffer bound`, once a run, with no effect seen.
 - MetalFX's jitter sign and DLSS's bias mask are unchecked; the bias mask is only logged. No ghosting has been seen so far.
@@ -166,8 +167,20 @@ The game keeps its 1920x1080 window and scene; its cameras take a 4:3 aspect and
 | `_UI_V16` | Level-up window: the unit's name stays in the panel header (`N_Status` children not moved) |
 | `_UI_V17` | Unit details (X on a unit): the stat windows stay below the header (`L_UnitIn*` children not moved inside the stretched `L_UnitInfo`) |
 | `_UI_V18` | Obelisks: the darkening `Fade` (1920x856) covers the whole 4:3 screen (overlay stretch); the Flame Lord art `UnitPub` is no longer stretched 4/3 tall |
+| `_UI_V20` | Choice boxes: the choices stay together (`MenuItem*` children not moved) |
+| `_UI_V21` | The talk window's key help (Text Log / Hide UI / Auto-Advance) no longer jumps up while it slides in or out (a parent within 4 of y 0 counts as at 0) |
+| `_UI_V22` | World map spot info: not stretched, its backdrop sized to the 4:3 top edge, so the text and the ore list sit inside it |
+| `_UI_V23` | Quest panels (quest offer, Quest List, Tutorials: `L_Info`): real proportions, top level with the list beside them |
+| `_UI_V24` | Item and gift lists, Quest Complete / class mastered / ability learned, dialogue choices and history, Character Info when recruiting: not stretched; Character Info's left column moves up with the panel beside it |
+| `_UI_V25` | Battle unit icons (UI placed on 3D positions) follow their unit |
+| `_UI_V27` | Quest window: its contents stay in place in `L_Info` |
+| `_UI_V28` | Quest window (offer / turn-in): window and frame keep their 16:9 place, right above the Report buttons; only an `L_Info` under a `Right` anchor (Quest List, Tutorials) moves to the top |
+| `_UI_V30` | Checks by pane type and size, not name: a Parts pane is never stretched, and nothing inside a big panel part (>= 1080 tall, under 1896 wide: the quest window, Quest List, Tutorials) gets a layout rule, so the quest window's contents are never stretched or moved, also when the game lays them out before naming the part |
 
-Checked screens: map HUD and minimap, command menu, forecast, combat and Blaze Arts, EXP and level-up, unit details, items, quick settings, obelisks, Base Menu, shops, dialogue. Not yet checked: dungeon battles, the end-of-chapter battle report. Cave torches miss some of their light pools at a distance in both aspects (likely the game's own light culling; open).
+Checked screens: map HUD and minimap, world map, quest offer and Quest List, tutorials, dungeon battles, movie subtitles, command menu, forecast, combat and Blaze Arts, EXP and level-up, unit details, items, quick settings, obelisks, Base Menu, shops, dialogue. Not yet checked: the end-of-chapter battle report. Cave torches miss some of their light pools at a distance in both aspects (likely the game's own light culling; open).
+
+**Screen shape** (Aspect ratio › Screen shape): the same variant laid out for the game window's own shape from 1:1 to 16:9. The values that depend on the 4:3 shape (the camera's height over width, the UI's squeeze into the 16:9 frame, the 180 edge move, the full-screen stretch, the travel map's top edge, the obelisk darkening) are read from seven words of main that hold the 4:3 values (`patches.py` `_SHAPE_WORDS`); the host writes them for the window's shape at load (`game.tsv` `shape_table`, `loader.c` `shape_apply`). A window narrower than 1:1 gets 1:1, one of 16:9 or wider plays as shipped. With the words at their 4:3 values the variant is word for word the 4:3 mod checked on a PC emulator. Checked on a PC emulator (Eden-family, the same words as a .pchtxt, the picture reshaped to each shape) at 1:1, 4:3, 7:5, 3:2 and 16:10: title, world map, World Map menu, tutorials and inventory, and at 1:1 a map battle (action menu, weapon choice, forecast, combat). Not yet checked on a phone, nor in dialogue at shapes other than 4:3.
+
 
 ## Cheats
 

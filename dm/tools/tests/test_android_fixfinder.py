@@ -5,6 +5,10 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))   # the tests folder, for javatext (unittest by file name does not add it)
+import javatext  # noqa: E402
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
@@ -39,6 +43,14 @@ class Finder(unittest.TestCase):
             r = subprocess.run(['java', '-cp', t, 'dev.nxnative.android.FixFinderJvmTest', str(REPO / 'docs/advanced_settings.tsv'), str(REPO / 'dm/tools/advanced_fix.tsv')],
                                capture_output=True, text=True)
             self.assertEqual(r.stdout.strip(), 'ok', r.stdout + r.stderr)
+
+
+def setUpModule():
+    javatext.install()   # the launcher text is in strings.xml: this module reads the Java source with its English
+
+
+def tearDownModule():
+    javatext.uninstall()
 
 
 if __name__ == '__main__':

@@ -18,6 +18,11 @@ class Wiring(unittest.TestCase):
         self.assertIn("include 'advanced_settings.tsv', 'env_switches.tsv'", g)
         self.assertIn('generated/nxadvanced/assets', g)
 
+    def test_side_panel_offers_live_rows_as_sliders(self):
+        s = (JAVA / 'SidePanel.java').read_text(encoding='utf-8')
+        self.assertIn('row.live()', s)
+        self.assertIn('pushLiveEnv(row.name, v == null ? "" : v)', s)
+
     def test_game_activity_puts_advanced_before_env_txt(self):
         s = (JAVA / 'GameActivity.java').read_text(encoding='utf-8')
         self.assertLess(s.index('AdvancedSettings.lines(this, id, PROTECTED), "Advanced"'), s.index('guard(userEnv(new File(files, "env.txt")), "env.txt", false)'))

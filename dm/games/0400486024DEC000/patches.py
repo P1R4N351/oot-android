@@ -11,12 +11,13 @@ CUTS = {
   ],
 }
 
-# v131072 main: the 3D cameras and the 2D layer follow the picture's shape (Game settings > Aspect ratio; dm/host/android/oot_wide.c, GPL-3.0-or-later). Eight observation gates (five camera sites, then the HUD, movie and save picture sites), each on an
+# v131072 main: the 3D cameras and the 2D layer follow the picture's shape (Game settings > Aspect ratio; dm/host/android/oot_wide.c, GPL-3.0-or-later). Eight observation gates (five camera sites, then the HUD, movie and save picture sites; a ninth, the model LOD gate, is described at its row), each on an
 # instruction that reads a sead::PerspectiveProjection's half-angle tangent (+0xac) and aspect (+0xb0) or has just written them, the gate number's upper bits naming the register that
 # holds the projection. The callback rewrites the projection in place (aspect; for a narrower picture also fovy, sin, cos and tan, so the horizontal reach stays) before the read, and
 # does nothing unless the launcher set DM_VK_PICTURE_ASPECT to a shape other than 16:9. Every original word is position independent and checked by the rewriter. Offsets and the
 # idea: Hookshot nx2/oot_wide.py (GPL-3.0, NotRexed), after NX2navi patches-v111.txt (Ivan0xFF, MIT) and Jbuck7's GameBanana mod 737495; same game build (main e0f3ccfa...)
 _OOT_WIDE = 31   # OBS_OOT_WIDE in dm/host/dm.h
+_OOT_FOLIAGE = 36   # OBS_OOT_FOLIAGE in dm/host/dm.h
 OBS = {
   'e0f3ccfaf50065ae4ea01eb5aeb13b1a': [
     (0x4c5340, _OOT_WIDE | 20 << 8, 'f9400108', 'camera update, after it stored the camera aspect at +0xb0 (ldr x8,[x8]); x20 the projection'),
@@ -28,8 +29,37 @@ OBS = {
     (0x774368, _OOT_WIDE | 1 << 13, 'ad401041', 'UI canvas matrix product (ldp q1,q4,[x2], the projection rows; x0 the canvas, x2 pointed at a scaled copy for the full-screen UI projection)'),
     (0x3b5c758, _OOT_WIDE | (2 << 5 | 29) << 8, 'a941a269', 'movie layer draw, after its viewport struct at x29-0x28 is built (ldp x9,x8,[x19,#0x18]); the viewport pulled into the middle 16:9'),
     (0x284824, _OOT_WIDE | 3 << 13, 'f9400108', 'save picture: the viewport helper\'s SetViewport call (ldr x8,[x8]; x1..x4 = x, y, w, h); the middle 16:9 fills the texture'),
+    # model LOD distance (kind 4; DM_OOT_LOD_SCALE): the graphics scene manager's per-frame view update, just after it stored its LOD distance offset (+0xd8c); x19 the manager
+    (0x4753c8, _OOT_WIDE | (4 << 5 | 19) << 8, '38746b08', 'scene manager view update (ldrb w8,[x24,x20]); x19 the manager, whose LOD start coefficient (+0xd90) and ModelLodParam MaxLevelDistScale are scaled'),
+  ] + [
+    # Foliage distance (Game settings > Advanced > Foliage distance, DM_OOT_FOLIAGE_DISTANCE; dm/host/android/oot_foliage.c, MIT): the foliage system's per-frame, per-view update
+    # (main+0x567c80) loads each LodSetting distance from x19, the object that holds it after its inlined getter walked the parent chain; the parameter is the field offset. The callback
+    # points x19 at a thread-local copy holding the scaled value; x19 is not read again before it is written on any path after these loads
+    (0x568be8, _OOT_FOLIAGE | 0x48 << 8, 'bd404a68', 'foliage update: ldr s8,[x19,#0x48] Dist_Undergrowth0'),
+    (0x568c04, _OOT_FOLIAGE | 0x4c << 8, 'bd404e60', 'foliage update: ldr s0,[x19,#0x4c] Dist_Undergrowth1'),
+    (0x569228, _OOT_FOLIAGE | 0x44 << 8, 'bd404668', 'foliage update: ldr s8,[x19,#0x44] Dist_Ornament'),
+    (0x569244, _OOT_FOLIAGE | 0x40 << 8, 'bd404269', 'foliage update: ldr s9,[x19,#0x40] Dist_LowTreeShootLeaf'),
+    (0x569260, _OOT_FOLIAGE | 0x38 << 8, 'bd403a6b', 'foliage update: ldr s11,[x19,#0x38] Dist_LowTree'),
+    (0x56927c, _OOT_FOLIAGE | 0x3c << 8, 'bd403e6c', 'foliage update: ldr s12,[x19,#0x3c] Dist_LowTreeShadow'),
   ],
 }
+
+# v131072 main: the dynamic shadow's range (Game settings > Advanced > Shadow range, DM_OOT_SHADOW_RANGE; dm/host/android/oot_shadow.c). One observation gate on the cascade fit's first
+# load (main+0x712f60, called only from the depth shadow's view update main+0x711464, after that frame's copy of the split distances into [x0+0x330]); x0 the depth shadow. The callback
+# caps the last split and does nothing while the switch is unset
+_OOT_SHADOW = 35   # OBS_OOT_SHADOW in dm/host/dm.h
+OBS['e0f3ccfaf50065ae4ea01eb5aeb13b1a'].append(
+    (0x712f60, _OOT_SHADOW | 0 << 8, 'b9425008', 'depth shadow cascade fit (ldr w8,[x0,#0x250], the cascade count); x0 the depth shadow, its split distances at [x0+0x330]'))
+
+# v131072 main: fog at the draw-distance cut (Game settings > Advanced > Fog at the cut, DM_OOT_FOG_AT_CUT; dm/host/android/oot_fog.c, MIT). Two observation gates where the graphics
+# scene manager loads its main sky (+0xc98) before the two consumers of the sky's fog distances: its per-frame view update (the view's constant block) and the scene draw (the sky's
+# own constants, main+0x285e20); the parameter's bits 0-4 name the register that holds the manager. The callback moves the scatter and adhoc fog's near and far in to the draw
+# distance while both switches are set, and puts the game's values back otherwise
+_OOT_FOG = 37   # OBS_OOT_FOG in dm/host/dm.h
+OBS['e0f3ccfaf50065ae4ea01eb5aeb13b1a'] += [
+    (0x4747dc, _OOT_FOG | 19 << 8, 'f9464e68', 'scene manager view update, before the fog constants (ldr x8,[x19,#0xc98], the main sky); x19 the manager'),
+    (0x6428a4, _OOT_FOG | 21 << 8, 'f9464ea0', "scene draw, before the sky's constants (ldr x0,[x21,#0xc98], the main sky); x21 the manager"),
+]
 
 from nso_asm import ADRP, B
 
@@ -144,6 +174,21 @@ BINDING = [
     {'what': 'camera aspect: the 3D cameras follow the picture shape (Game settings > Aspect ratio)', 'now': 'build', 'goal': 'game', 'purpose': 'rendering',
      'why': 'sead::PerspectiveProjection is the same in every title of this engine, but the five read sites are fixed addresses of this build',
      'blocked': 'one build on hand; the projection reads are plain sead code and could be found by function fingerprint'},
+    {'what': 'draw distance: the main camera\'s far plane capped (Game settings > Advanced > Draw distance, DM_OOT_DRAW_DISTANCE)', 'now': 'build', 'goal': 'game', 'purpose': 'frame rate',
+     'why': 'a per-game rule because no general one can do it: the game decides what to draw and clips by its own camera, so the host sees only draw calls; it rides the camera aspect gates (same sites, same 16:9 test)',
+     'blocked': 'the projection reads are plain sead code and could be found by function fingerprint; fog or LOD-distance parameters (RomFS) are the other levers, see the game note'},
+    {'what': 'model LOD distance: LodStartDistCoef and MaxLevelDistScale scaled (Game settings > Advanced > Model detail distance, DM_OOT_LOD_SCALE)', 'now': 'build', 'goal': 'game', 'purpose': 'frame rate',
+     'why': 'a per-game rule because no general one can do it: the game picks each model\'s LOD level from its own distance and parameters, the host sees only draw calls; one gate on the scene manager\'s per-frame view update writes the two shared inputs',
+     'blocked': 'one build on hand; the gate and the manager offsets are this build\'s, the LOD function could be found by fingerprint (its ModelLodParam handle +0xd50)'},
+    {'what': 'shadow range: the dynamic shadow\'s last cascade split capped (Game settings > Advanced > Shadow range, DM_OOT_SHADOW_RANGE)', 'now': 'build', 'goal': 'game', 'purpose': 'frame rate',
+     'why': 'a per-game rule because no general one can do it: the host sees the depth passes\' draws, not the slices the game fits its cascades to; the split array is agl\'s, the gate a fixed address of this build',
+     'blocked': 'one build on hand; the cascade fit is plain agl code and could be found by function fingerprint'},
+    {'what': 'foliage distance: the foliage LodSetting draw distances scaled (Game settings > Advanced > Foliage distance, DM_OOT_FOLIAGE_DISTANCE)', 'now': 'build', 'goal': 'game', 'purpose': 'frame rate',
+     'why': "a per-game rule because no general one can do it: the distances are the game's own foliage data, read by its foliage update at six fixed loads of this build; the RomFS files are not changed",
+     'blocked': 'one build on hand; the six loads sit in the foliage update, which a function fingerprint could find'},
+    {'what': 'fog at the cut: the sky\'s scatter and adhoc fog distances pulled in to the draw distance (Game settings > Advanced > Fog at the cut, DM_OOT_FOG_AT_CUT)', 'now': 'build', 'goal': 'game', 'purpose': 'rendering',
+     'why': "a per-game rule because no general one can do it: the fog distances are four floats of agl's sky that the game turns into constant-buffer terms each frame; the host cannot tell them apart in the buffers, and the two gates are fixed addresses of this build",
+     'blocked': 'one build on hand; the sky layout is agl\'s and the two loads sit in the scene manager\'s view update and scene draw, which a function fingerprint could find'},
     {'what': 'Max Resolution: optional full-scale dynamic resolution path', 'now': 'build', 'goal': 'game', 'purpose': 'rendering',
      'why': 'the title has its own dynamic resolution controller and full-scale branch', 'blocked': 'one full build ID and branch verified'},
     {'what': 'Texture Pool x2: optional larger initial graphics allocation', 'now': 'build', 'goal': 'game', 'purpose': 'memory',

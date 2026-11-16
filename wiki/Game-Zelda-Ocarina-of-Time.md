@@ -12,7 +12,7 @@ Experimental. It plays, and the foliage is drawn on every driver. The first star
 | Version | 2.0 (only version 2.0 is tested; other versions get a warning, and you can try them) |
 | Frame rate | The game's own limit is 60 fps. About 30 fps in Kokiri Forest on Qualcomm's driver and about 50 indoors; Castle Town on Turnip is slow on its first visits |
 | Driver | System (Qualcomm) recommended when its version is 0x80320000 or newer; Turnip also works |
-| Game-specific settings | Resolution presets, Full vegetation, Max resolution, Texture pool x2, Unlocked frame rate, Keep cave walls, Aspect ratio, Cheats |
+| Game-specific settings | Resolution presets, Draw distance, Fog at the cut, Shadow range, Foliage distance, Model detail distance, Full vegetation, Max resolution, Texture pool x2, Unlocked frame rate, Keep cave walls, Aspect ratio, Cheats |
 
 ## Slow first starts
 
@@ -27,6 +27,11 @@ Tap **Recommended** at the top of the game's page. On Qualcomm phones it selects
 | Setting | What it does | When to toggle | What to expect | Default |
 |---|---|---|---|---|
 | Resolution | One setting, three choices, in Game settings and the in-game Display tab. **Quality**: window 1920x1080, the game's own dynamic resolution. **Balanced**: 1920x1080 window, fixed 1280x720 scene. **Performance**: 1280x720 window, fixed about 960x540 scene. | Quality if your phone has GPU headroom; Performance otherwise. | The window changes at once; the 3D scene at the next start. In Kokiri Forest on an Adreno 840 and the system driver the GPU time was 42.7 ms at Quality and 39.0 ms at Performance, so the scene size is not the main cost. | Performance (until you choose) |
+| Draw distance | Caps how far the game draws (Long 300, Medium 150, Short 80, Very short 40). A live slider in the in-game Performance tab and a row under Game settings > Advanced. | When a field or town is slow. | The biggest saving of the four: about 2,600 objects drawn a frame at Auto against about 1,400 at Medium in one field walk. Far scenery is cut off and appears as you walk; fields show a plain horizon. | Auto (the game's own) |
+| Fog at the cut | With a Draw distance set, pulls the game's own distance fog in so the cut ends in haze: Off, Light, Medium or Strong. Live slider (Auto is off). | When a short Draw distance shows a plain line at the horizon. | Light: the hard horizon band becomes a fade into the sky. Medium and Strong: thicker haze from nearer, distant hills bluish; reflections are fogged too. Tried at distance 100 on one phone; not checked on every area, driver or cutscene. | Auto (off) |
+| Shadow range | Shortens the moving shadows (Long 500, Medium 200, Short 100, Very short 50). Live slider. | When it is slow. | About 10 to 20 % fewer objects at Short and Very short. Distant shadows stop at a line at the short values. | Auto |
+| Foliage distance | Grass, bushes and small trees end at 75, 50 or 35 % of the game's distance. Live slider. | In vegetation-heavy places. | Not measured to lower the object count yet. | Auto |
+| Model detail distance | Models switch to simpler versions nearer (0.75, 0.5, 0.3). Live slider. | In towns and fields. | Does not lower the object count; any gain would be GPU time and is not confirmed. | Auto |
 | Full vegetation | Turning it off removes some grass and foliage at the next launch. | On Qualcomm phones for speed. | In one comparison, 41.0 ms against 42.7 ms of GPU time. Foliage density changes visibly. | On in the app, off in the recommendation |
 | Max resolution | Keeps the 3D scene at full size: sharper, more GPU work. Best with Quality. Switches on Texture pool x2. | If you have headroom. | More memory and GPU work. | Off |
 | Texture pool x2 | Twice the game's starting graphics memory. Max resolution needs it. | With Max resolution. | More memory. | Off |
@@ -38,7 +43,9 @@ Tap **Recommended** at the top of the game's page. On Qualcomm phones it selects
 
 <!-- TODO screenshot: Game settings page of Ocarina of Time (Resolution presets and Game options) -->
 
-Max resolution, Texture pool x2 and Unlocked frame rate patch the game's code, so after switching them on the app may say "Needs Prepare again".
+Max resolution, Texture pool x2 and Unlocked frame rate patch the game's code, so after switching them on the app may say "Needs Prepare again". The distance rows and the fog row also need the game prepared with this version: a game prepared earlier shows "Needs Prepare again" once.
+
+The distance sliders (and Fog at the cut) are independent: each changes only its own value, and none adjusts another. They are new and measured on one phone only; the phone warmed up during the tests, so frame-rate figures moved between runs. Tell us what you see on yours.
 
 ## Known issues
 
@@ -46,4 +53,7 @@ Max resolution, Texture pool x2 and Unlocked frame rate patch the game's code, s
 - **Castle Town** on Turnip is slow on its first visits (open in the notes).
 - **Frame rate** in Kokiri Forest on Qualcomm's driver is about 26-30 fps; on Turnip V39 Patched the same spot ran 18 fps (GPU 53 ms) in the same test. The notes call the game GPU-bound.
 - Other Qualcomm drivers: on 891.11 and 891.14 versions 16-49 % of draws were skipped in one test (foliage compute).
+- **Crash at the opening with a phone language the game lacks** (Thai; [#290](https://git.eden-emu.dev/moceure/BananaNative/issues/290)): in 0.3.40 the game is given only a language it ships. Not run on a phone yet.
+- **Crash with a bus error (SIGBUS) on a Snapdragon 888** ([#343](https://git.eden-emu.dev/moceure/BananaNative/issues/343)): the game does an atomic add on an odd address that older cores cannot do; 0.3.40 does it in software. Checked by a unit test only, not run on a Snapdragon 888.
+- **Crashes after a while on some phones** ([#265](https://git.eden-emu.dev/moceure/BananaNative/issues/265), [#338](https://git.eden-emu.dev/moceure/BananaNative/issues/338), [#346](https://git.eden-emu.dev/moceure/BananaNative/issues/346), [#349](https://git.eden-emu.dev/moceure/BananaNative/issues/349)): the process ran out of memory areas. 0.3.40 pauses background shader building from half of the limit; this should help and is not proven.
 - Frame generation and 60 fps: see [Getting higher FPS](Getting-Higher-FPS).

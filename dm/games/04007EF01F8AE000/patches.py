@@ -43,7 +43,7 @@ _V11 = [
     (0x0058e734, '00000000', 'aaccedf2', 'v11 camera and UI'),
     (0x0058e738, '00000000', '8c030014', 'v11 camera and UI'),
     (0x0058f568, '00000000', '7f010aeb', 'v11 camera and UI'),
-    (0x0058f56c, '00000000', 'c16efb54', 'v11 camera and UI'),
+    (0x0058f56c, '00000000', 'c1ae0954', 'v32: b.ne 0x5a2b44 (the part subtree check first; v11 had b.ne 0x586344)'),
     (0x0058f570, '00000000', 'c1fbff17', 'minimap: b 0x58e474 (N_RotCenter keeps the game rotation; v11 wrote 180 to +0x44)'),
     (0x00586344, '00000000', '890904b4', 'v11 camera and UI'),
     (0x00586348, '00000000', '101d40bd', 'v11 camera and UI'),
@@ -89,7 +89,7 @@ _V11 = [
     (0x0058e5d0, '00000000', '2022321e', 'v11 camera and UI'),
     (0x0058e5d4, '00000000', '0bf5ff54', 'v11 camera and UI'),
     (0x0058e5d8, '00000000', 'fbffff17', 'v11 camera and UI'),
-    (0x0058e464, '00000000', '3342211e', 'v11 camera and UI'),
+    (0x0058e464, '00000000', '88640114', 'v28: b 0x5e7684 (the QuestTalk Wdw check before the edge move; v11 had fneg s19, s17)'),
     (0x0058e468, '00000000', '0822201e', 'v11 camera and UI'),
     (0x0058e46c, '00000000', '31ce331e', 'v11 camera and UI'),
     (0x0058e470, '00000000', '4228311e', 'v11 camera and UI'),
@@ -173,7 +173,7 @@ _UI_V12 = [
 
     (0x005a3c88, '00000000', '6a559552', 'v12: mov w10, #0xaaab'),
 
-    (0x005a3c8c, '00000000', 'f06cff17', 'v12: b #0x57f04c'),
+    (0x005a3c8c, '00000000', '7eac0114', 'v32: b 0x60ee84 (the Parts pane check before the stretch; v12 had b #0x57f04c)'),
 
     (0x005a4544, '00000000', '2c5940f9', 'v12: ldr x12, [x9, #0xb0]'),
 
@@ -291,7 +291,7 @@ _UI_V15 = [
     (0x005c2cec, '00000000', 'ad8ceef2', 'v15: movk x13, #0x7465, lsl #48'),
     (0x005c2cf0, '00000000', '9f010aeb', 'v15: cmp x12, x10'),
     (0x005c2cf4, '00000000', '84114dfa', 'v15: ccmp x12, x13, #4, ne (N_Player or N_Target)'),
-    (0x005c2cf8, '00000000', 'e1bbe554', 'v15: b.ne 0x58e474 (other parents: leave)'),
+    (0x005c2cf8, '00000000', '611b0854', 'v21: b.ne 0x5d3064 (other parents: the footer tolerance, then leave; v15 had b.ne 0x58e474)'),
     (0x005c2cfc, '00000000', '62010014', 'v15: b 0x5c3284'),
     (0x005c3284, '00000000', '2cb940b9', 'v15: ldr w12, [x9, #0xb8] (name bytes 8..11)'),
     (0x005c3288, '00000000', '8c5d0012', 'v15: and w12, w12, #0xffffff'),
@@ -359,7 +359,7 @@ _UI_V18 = [
     (0x005cbd30, '00000000', '4a0ce0f2', 'v18: movk x10, #0x62, lsl #48'),
     (0x005cbd34, '00000000', '7f010aeb', 'v18: cmp x11, x10'),
     (0x005cbd38, '00000000', 'a0ebe154', 'v18: b.eq 0x58faac (UnitPub, the hero art: not stretched)'),
-    (0x005cbd3c, '00000000', 'da56ff17', 'v18: b 0x5a18a4 (others: overlay as before)'),
+    (0x005cbd3c, '00000000', '5a2a0014', 'v22: b 0x5d66a4 (L_SpotDetail and L_Info checks; v18 had b 0x5a18a4)'),
 ]
 
 # v20: choice boxes (Common_Choice: MenuItemList holds L_MenuItem00..03 at y 210 / 90 / -30 / -150). The edge rule moved only the
@@ -371,11 +371,256 @@ _UI_V20 = [
     (0x005d2570, '00000000', 'aaacedf2', 'v20: movk x10, #0x6d65, lsl #48'),
     (0x005d2574, '00000000', '9f010aeb', 'v20: cmp x12, x10'),
     (0x005d2578, '00000000', 'e0f7dd54', 'v20: children of MenuItem* (choice lists): leave together'),
-    (0x005d257c, '00000000', 'bb50ff17', 'v20: b 0x5a6868'),
+    (0x005d257c, '00000000', 'cb010014', 'v27: b 0x5d2ca8 (children of L_Info; v20 had b 0x5a6868)'),
 ]
 
+# v21: the footer key help (Common_Footer: N_Footer > A_KeyHelp at y -520, the talk window's Text Log / Hide UI / Auto-Advance) jumped
+# 180 up for a few frames whenever it opened or closed: Footer_In / Footer_Out move N_Footer by y -4, so its parent was off (0,0) and the
+# edge rule let go. A parent whose global y is within 4 of 0 now counts as at (0,0) (cave 0x5d3064, from the v15 parent checks' exit).
+_UI_V21 = [
+    (0x005d3064, '00000000', '0c02261e', 'v21: fmov w12, s16 (parent global y)'),
+    (0x005d3068, '00000000', '8c790012', 'v21: and w12, w12, #0x7fffffff (|y|)'),
+    (0x005d306c, '00000000', '0a10a852', 'v21: mov w10, #0x40800000 (4.0)'),
+    (0x005d3070, '00000000', '9f010a6b', 'v21: cmp w12, w10'),
+    (0x005d3074, '00000000', '89c8ce54', 'v21: b.ls 0x570984 (|y| <= 4: edge rule as under (0,0))'),
+    (0x005d3078, '00000000', 'ffecfe17', 'v21: b 0x58e474 (others: leave)'),
+]
+
+# v22: travel map spot info (Gmap_UI: N_SpotDetail > L_SpotDetail, 2548x1395, holding Gmap_UI_SpotDetail's Bg, N_Img and N_Info at y 540).
+# v10's overlay rule stretched L_SpotDetail 4/3 tall and v4's edge rule moved its children, so the info text, the level pills and the ore list
+# came out tall and off the top while the dark backdrop (Bg, sized by the game to N_DummyMargin's global y against a hard 540, the 16:9 top
+# edge) stopped short and the ore list spilled below it. L_SpotDe* is now left unscaled by the overlay rule (cave 0x5d66a4, after v18's UnitPub
+# check), and the backdrop sizing uses 720, the 4:3 top edge (0x168ed78). Checked on the device at Dagsion and Niraga Mine against 16:9.
+# v23: quest panels (Common_Quest, Common_QuestTalk: L_Info 1634x1096; Common_TutorialMenu: L_Info 1766x1080). The overlay rule caught them
+# as full-screen (>= 1080 tall) and stretched them 4/3, so the quest offer, the Quest List and the tutorials looked tall. A pane named exactly
+# L_Info is now left unscaled and moved 180 up, so its top meets the 4:3 top as the list beside it does (caves 0x5d7de4, 0x5d7988; the move
+# ends the rules for the pane, as v19's Fade does, or the edge rule would move it again). Checked on the Quest List and the Tutorials.
+_UI_V22 = [
+    (0x0168ed78, 'e880a852', '8886a852', 'v22: mov w8, #0x44340000 (720.0, the 4:3 top edge, for the spot info backdrop; was 540.0)'),
+    (0x005d66a4, '00000000', '8ae98bd2', 'v22: x10 = "L_SpotDe"'),
+    (0x005d66a8, '00000000', '6a0aaef2', 'v22: movk x10, #0x7053, lsl #16'),
+    (0x005d66ac, '00000000', 'ea8dcef2', 'v22: movk x10, #0x746f, lsl #32'),
+    (0x005d66b0, '00000000', '8aa8ecf2', 'v22: movk x10, #0x6544, lsl #48'),
+    (0x005d66b4, '00000000', '7f010aeb', 'v22: cmp x11, x10'),
+    (0x005d66b8, '00000000', 'a09fdc54', 'v22: b.eq 0x58faac (L_SpotDetail: not stretched)'),
+    (0x005d66bc, '00000000', 'ca050014', 'v23: b 0x5d7de4 (L_Info check)'),
+    (0x005d7de4, '00000000', '8ae98bd2', 'v23: x10 = "L_Info"'),
+    (0x005d7de8, '00000000', '2ac9adf2', 'v23: movk x10, #0x6e49, lsl #16'),
+    (0x005d7dec, '00000000', 'caeccdf2', 'v23: movk x10, #0x6f66, lsl #32'),
+    (0x005d7df0, '00000000', '7f010aeb', 'v23: cmp x11, x10'),
+    (0x005d7df4, '00000000', '80dcfd54', 'v28: b.eq 0x5d3984 (RootPane check; v23 had b.eq 0x5d7988)'),
+    (0x005d7df8, '00000000', 'ab78fe17', 'v24: b 0x5760a4 name checks (L_EquipL, N_Pos, MenuItem, Viewport, L_Scroll), then the v12 L_List check at 0x5a18a4; v23 had b 0x5a18a4'),
+    (0x005d7988, '00000000', '8a66a852', 'v23: mov w10, #0x43340000 (180.0)'),
+    (0x005d798c, '00000000', '5301271e', 'v23: fmov s19, w10'),
+    (0x005d7990, '00000000', '4228331e', 'v23: fadd s2, s2, s19 (L_Info: 180 up, not stretched)'),
+    (0x005d7994, '00000000', 'b8dafe17', 'v23: b 0x58e474 (no further rule)'),
+]
+
+# v24: big panels that are not full-screen layers (found from the romfs layouts, Layout/*.arc, after players' reports on 0.3.22): v10's overlay rule
+# (>= 1896x960 or >= 1080 tall under an anchored parent) stretched them 4/3 tall: the item lists (Common_SendUnitItem / Equip_*: L_EquipList*,
+# 1770x1132 under the sliding Left anchor: the gift list's top went off screen), the result telops (Common_TlpResult: N_Pos 500x1200, holding Quest
+# Complete, class mastered and ability learned), the dialogue choices (Common_Choice: MenuItemList 1920x1080), the dialogue history (Common_TalkLog:
+# the 1500x1080 Viewport scissor and its L_ScrollBar). Names starting with L_EquipL, MenuItem, Viewport, L_Scroll and the name N_Pos now skip the
+# stretch and keep the other rules (caves 0x5760a4, 0x5b4d04, 0x566484, 0x55fd44, 0x55f444: 7 words each, chained after v23's L_Info check).
+# v29: L_UnitInfo 3400x1625 (Common_UnitInfoScout, Battle_UnitInfoDetail) sits under a Left anchor at y 0 while the Right panel beside it (anchor y 446)
+# takes the edge move, so the left column stood 180 below the right one at 4:3; it now moves up by the same shape shift (v23's L_Info move, 0x5d7988).
+# v26: also L_UnitIn* (Common_UnitInfoScout's L_UnitInfo 3400x1625: Character Info when recruiting, stretched tall; v17 already keeps its children in place),
+# cave 0x55a9a4 after the L_Scroll check.
+_UI_V24 = [
+    (0x005760a4, '00000000', '8ae98bd2', 'v24: L_EquipL not stretched'),
+    (0x005760a8, '00000000', 'aa28aef2', 'v24: movk x10, #0x7145, lsl #16'),
+    (0x005760ac, '00000000', 'aa2ecdf2', 'v24: movk x10, #0x6975, lsl #32'),
+    (0x005760b0, '00000000', '0a8ee9f2', 'v24: movk x10, #0x4c70, lsl #48'),
+    (0x005760b4, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x005760b8, '00000000', 'a0cf0c54', 'v24: b.eq #0x58faac'),
+    (0x005760bc, '00000000', '12fb0014', 'v24: b #0x5b4d04'),
+    (0x005b4d04, '00000000', 'cae98bd2', 'v24: N_Pos not stretched'),
+    (0x005b4d08, '00000000', '0aeaadf2', 'v24: movk x10, #0x6f50, lsl #16'),
+    (0x005b4d0c, '00000000', '6a0ec0f2', 'v24: movk x10, #0x73, lsl #32'),
+    (0x005b4d10, '00000000', '0a00e0f2', 'v24: movk x10, #0x0, lsl #48'),
+    (0x005b4d14, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x005b4d18, '00000000', 'a06ced54', 'v24: b.eq #0x58faac'),
+    (0x005b4d1c, '00000000', 'dac5fe17', 'v24: b #0x566484'),
+    (0x00566484, '00000000', 'aaa98cd2', 'v24: MenuItem not stretched'),
+    (0x00566488, '00000000', 'caadaef2', 'v24: movk x10, #0x756e, lsl #16'),
+    (0x0056648c, '00000000', '2a89cef2', 'v24: movk x10, #0x7449, lsl #32'),
+    (0x00566490, '00000000', 'aaacedf2', 'v24: movk x10, #0x6d65, lsl #48'),
+    (0x00566494, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x00566498, '00000000', 'a0b01454', 'v24: b.eq #0x58faac'),
+    (0x0056649c, '00000000', '2ae6ff17', 'v24: b #0x55fd44'),
+    (0x0055fd44, '00000000', 'ca2a8dd2', 'v24: Viewport not stretched'),
+    (0x0055fd48, '00000000', 'aaecaef2', 'v24: movk x10, #0x7765, lsl #16'),
+    (0x0055fd4c, '00000000', '0aeecdf2', 'v24: movk x10, #0x6f70, lsl #32'),
+    (0x0055fd50, '00000000', '4a8eeef2', 'v24: movk x10, #0x7472, lsl #48'),
+    (0x0055fd54, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x0055fd58, '00000000', 'a0ea1754', 'v24: b.eq #0x58faac'),
+    (0x0055fd5c, '00000000', 'bafdff17', 'v24: b #0x55f444'),
+    (0x0055f444, '00000000', '8ae98bd2', 'v24: L_Scroll not stretched'),
+    (0x0055f448, '00000000', '6a6aacf2', 'v24: movk x10, #0x6353, lsl #16'),
+    (0x0055f44c, '00000000', '4aeecdf2', 'v24: movk x10, #0x6f72, lsl #32'),
+    (0x0055f450, '00000000', '8a8dedf2', 'v24: movk x10, #0x6c6c, lsl #48'),
+    (0x0055f454, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
+    (0x0055f458, '00000000', 'a0321854', 'v24: b.eq #0x58faac'),
+    (0x0055f45c, '00000000', '52edff17', 'v26: b 0x55a9a4 (L_UnitIn check; v24 had b 0x5a18a4)'),
+    (0x0055a9a4, '00000000', '8ae98bd2', 'v26: L_UnitIn* (Character Info) not stretched'),
+    (0x0055a9a8, '00000000', 'aacaadf2', 'v26: movk x10, #0x6e55, lsl #16'),
+    (0x0055a9ac, '00000000', '2a8dcef2', 'v26: movk x10, #0x7469, lsl #32'),
+    (0x0055a9b0, '00000000', '2ac9edf2', 'v26: movk x10, #0x6e49, lsl #48'),
+    (0x0055a9b4, '00000000', '7f010aeb', 'v26: cmp x11, x10'),
+    (0x0055a9b8, '00000000', '807e3e54', 'v29: b.eq #0x5d7988 (L_UnitIn*: not stretched and moved up by the shape shift, as the Right panel beside it; v26 had b.eq 0x58faac)'),
+    (0x0055a9bc, '00000000', 'ba1b0114', 'v26: b #0x5a18a4'),
+]
+
+# v25: UI placed on a 3D position (the unit type / status icons in battle; any pane the game anchors to a world point). The engine's world-to-screen helper
+# (main+0xb81b4c..: the point through the camera, divided by w, then x * 960 + 960, y * 540 + 540 on a 1920x1080 canvas, normalised again for the layout) used the
+# 16:9 half-height, but the 4:3 layout is 1440 high and squeezed into the frame, so the icons sat 3/4 as far from the centre as their units (players' report on
+# 0.3.22). The y half-height is now 960 x the camera's height / width (the Screen shape cam word: 720 at 4:3, 540 at 16:9), the centre stays 540 (cave 0xb785e4).
+_UI_V25 = [
+    (0x00b81c00, '0201271e', '79daff17', 'v25: b 0xb785e4 (world-to-screen y: half-height from the shape)'),
+    (0x00b785e4, '00000000', '0201271e', 'v25: fmov s2, w8'),
+    (0x00b785e8, '00000000', '70d5ec1c', 'v25: ldr s16, #0xb52094'),
+    (0x00b785ec, '00000000', '088ea852', 'v25: mov w8, #0x44700000'),
+    (0x00b785f0, '00000000', '1101271e', 'v25: fmov s17, w8'),
+    (0x00b785f4, '00000000', '100a311e', 'v25: fmul s16, s16, s17'),
+    (0x00b785f8, '00000000', '0008101f', 'v25: fmadd s0, s0, s16, s2'),
+    (0x00b785fc, '00000000', '83250014', 'v25: b #0xb81c08'),
+]
+
+# v27: quest turn-in window (Common_QuestTalk > L_Info > Common_QuestInfo's N_Body, holding the quote, Objective and Reward). v23 moves L_Info 180 up and
+# ends its rules; its children are not edge-moved while L_Info's global y is 180, but on a frame where that move was not yet in the parent's global matrix
+# they took v4's edge move too and kept it: now and then the contents sat 180 higher than the box, the quest title off the top (seen on the Nova in one of
+# four openings of the same turn-in, never at 16:9). Children of a parent named exactly L_Info now stay in place (cave 0x5d2ca8, after v20's MenuItem check).
+_UI_V27 = [
+    (0x005d2ca8, '00000000', '8ae98bd2', 'v27: children of a parent named exactly L_Info stay in place'),
+    (0x005d2cac, '00000000', '2ac9adf2', 'v27: movk x10, #0x6e49, lsl #16'),
+    (0x005d2cb0, '00000000', 'caeccdf2', 'v27: movk x10, #0x6f66, lsl #32'),
+    (0x005d2cb4, '00000000', '9f010aeb', 'v27: cmp x12, x10'),
+    (0x005d2cb8, '00000000', 'e0bddd54', 'v27: b.eq #0x58e474'),
+    (0x005d2cbc, '00000000', 'eb4eff17', 'v27: b #0x5a6868'),
+]
+
+# v28: the quest turn-in and offer window (Common_QuestTalk) has its L_Info right under RootPane, with its Report / Don't Report buttons (N_Menu >
+# MenuItemList, y -459) laid out just below it; the Quest List and the Tutorials have theirs under a Right anchor beside a list. v23's 180 up move
+# suits the list screens but left an empty band between the turn-in window and its buttons. An L_Info whose parent's name starts with Root now keeps its 16:9 place
+# (unscaled, no further rule: cave 0x5d3984 before v23's move at 0x5d7988), and so does the window's frame (Wdw, 1014x882 at y 452 under RootPane,
+# which v4's edge rule moved 180 up: a top-level Wdw about 1014 wide, caves 0x5e7684 and 0x5ec244 at the edge move itself, 0x58e464,
+# which three rule paths reach, so no frame of the opening slips past it; the Base Menu's Wdw is 520 wide).
+# The whole window then sits where 16:9 has it, with the buttons right under it. Checked on the Nova at the Behelda Axes turn-in.
+# v34: the frame is now told by its type (Window pane vtable) and layout place (y 452), not its name or width, which the game had not set yet
+# on the first layout pass of some openings (a heap dump showed the frame at y 632 = 452 + 180, contents in place). v33 used y alone: on some openings the width was not 1014 yet when the frame was first
+# laid out, so it took the edge move and kept it (the frame 180 above the contents, an empty band at its bottom).
+# v29: the L_Info test is now "parent named Right*" (the Quest List and the Tutorials) instead of "parent named Root*": on some openings (after
+# Don't Report and talking again) the quest window's L_Info had another parent name, took v23's move and its contents sat 180 above the frame.
+_UI_V28 = [
+    (0x005d3984, '00000000', '2c5940f9', 'v28: ldr x12, [x9, #0xb0] (parent name; x9 is the parent on the overlay path)'),
+    (0x005d3988, '00000000', '4a2a8d52', 'v29: w10 = "Righ"'),
+    (0x005d398c, '00000000', 'ea0cad72', 'v29: movk w10, #0x6867, lsl #16'),
+    (0x005d3990, '00000000', '9f010a6b', 'v29: cmp w12, w10'),
+    (0x005d3994, '00000000', '0157dd54', 'v29: b.ne #0x58e474 (L_Info not under a Right anchor, e.g. the quest window: in place, not stretched)'),
+    (0x005d3998, '00000000', 'fc0f0014', 'v29: b #0x5d7988 (L_Info beside a list, under Right: v23\'s move up by the shape shift)'),
+    (0x005e7684, '00000000', '0a0040f9', 'v34: the pane vtable (from the edge move at 0x58e464, which every path to it passes)'),
+    (0x005e7688, '00000000', '0dcf00f0', 'v34: x13 = the ui2d Window pane vtable (main+0x1fca0a0)'),
+    (0x005e768c, '00000000', 'ad810291', 'v34: add x13, x13, #0xa0'),
+    (0x005e7690, '00000000', '5f010deb', 'v34: cmp x10, x13'),
+    (0x005e7694, '00000000', 'e15d0254', 'v34: b.ne 0x5ec250 (not a window: the move)'),
+    (0x005e7698, '00000000', '0a6c4079', 'v34: ldrh w10, [x0, #0x36] (top half of its layout y)'),
+    (0x005e769c, '00000000', 'ea120014', 'v34: b 0x5ec244'),
+    (0x005ec244, '00000000', '4a114051', 'v34: sub w10, w10, #0x4000'),
+    (0x005ec248, '00000000', '5f890f71', 'v34: cmp w10, #0x3e2 (y 452 to 454: QuestTalk Wdw, the only window there)'),
+    (0x005ec24c, '00000000', '4011d154', 'v34: b.eq 0x58e474 (the turn-in window frame stays in place)'),
+    (0x005ec250, '00000000', '3342211e', 'v34: fneg s19, s17 (the move, as before)'),
+    (0x005ec254, '00000000', '8588fe17', 'v34: b 0x58e468'),
+]
+
+# v32 (replaces v30 and v31): the quest window's contents could come out 4/3 tall and 180 too high on an opening (now and then on the Nova,
+# never on the PC). Heap dumps of that state (DM_CTL memdump) showed L_Info with global y scale 4/3 and N_Body at 4/3 x (396 + 180): the overlay
+# stretch and the edge move, which the L_Info name checks block, so a layout pass ran while the part was built and before it had that name
+# (v31's "RootPane with a parent" test did not catch it either); the game then keeps those matrices until the window is rebuilt. The checks now
+# use the pane's type (its vtable: the ui2d Parts pane, main+0x1fc9398) and size, which are set when the pane is made:
+# - a Parts pane is never stretched by the overlay rule (cave 0x60ee84 at the stretch, 0x5a3c8c; the big parts the rule met are all exempt
+#   by name already: L_List, L_EquipList*, L_UnitInfo, L_Info);
+# - nothing below a Parts pane at least 1080 tall and under 1896 wide (the quest window, Quest List and Tutorials' L_Info) gets a rule, and
+#   nothing below a RootPane that has a parent (caves 0x5a2b44, 0x5fbb64, 0x6037c4, 0x609a64, 0x60bb84, 0x60c8e4, walking pane +0x18 parents).
+# L_Info itself keeps its own treatment by name (v23 / v29 move up under a Right anchor).
+_UI_V30 = [
+    (0x005a2b44, '00000000', 'ec0300aa', 'v32: x12 = the pane (walk the pane and its ancestors)'),
+    (0x005a2b48, '00000000', '2ed100f0', 'v32: x14 = the ui2d Parts pane vtable (main+0x1fc9398)'),
+    (0x005a2b4c, '00000000', 'ce610e91', 'v32: add x14, x14, #0x398'),
+    (0x005a2b50, '00000000', '1f2003d5', 'v32: nop '),
+    (0x005a2b54, '00000000', '4fea8dd2', 'v32: x15 = "RootPane"'),
+    (0x005a2b58, '00000000', 'ef8daef2', 'v32: movk x15, #0x746f, lsl #16'),
+    (0x005a2b5c, '00000000', '02640114', 'v32: b #0x5fbb64'),
+    (0x005fbb64, '00000000', '0f2accf2', 'v32: movk x15, #0x6150, lsl #32'),
+    (0x005fbb68, '00000000', 'cfadecf2', 'v32: movk x15, #0x656e, lsl #48'),
+    (0x005fbb6c, '00000000', '8d5940f9', 'v32: loop: x13 = name'),
+    (0x005fbb70, '00000000', 'bf010feb', 'v32: cmp x13, x15'),
+    (0x005fbb74, '00000000', '80f70654', 'v32: b.eq 0x609a64 (a RootPane: has it a parent?)'),
+    (0x005fbb78, '00000000', '131f0014', 'v32: b #0x6037c4'),
+    (0x006037c4, '00000000', '9f0100eb', 'v32: the pane itself is not tested as a big part'),
+    (0x006037c8, '00000000', '60000054', 'v32: b.eq #0x6037d4'),
+    (0x006037cc, '00000000', 'ee200014', 'v32: b 0x60bb84 (a big part above?)'),
+    (0x006037d0, '00000000', '1f2003d5', 'v32: nop '),
+    (0x006037d4, '00000000', '8c0d40f9', 'v32: next: its parent'),
+    (0x006037d8, '00000000', '6c5bc1b4', 'v32: cbz x12, 0x586344 (top reached: the rules as before)'),
+    (0x006037dc, '00000000', 'e4e0ff17', 'v32: b #0x5fbb6c'),
+    (0x00609a64, '00000000', '8a0d40f9', 'v32: the RootPane\'s parent'),
+    (0x00609a68, '00000000', '6a50c2b5', 'v32: cbnz x10, 0x58e474 (a RootPane with a parent is a part being built: no rule)'),
+    (0x00609a6c, '00000000', '56e7ff17', 'v32: b #0x6037c4'),
+    (0x0060bb84, '00000000', '8a0140f9', 'v32: ancestor vtable'),
+    (0x0060bb88, '00000000', '5f010eeb', 'v32: cmp x10, x14'),
+    (0x0060bb8c, '00000000', '41e2fb54', 'v32: b.ne 0x6037d4 (not a part)'),
+    (0x0060bb90, '00000000', '8d5540b9', 'v32: its height'),
+    (0x0060bb94, '00000000', 'ea90a852', 'v32: mov w10, #0x44870000 (1080.0)'),
+    (0x0060bb98, '00000000', 'bf010a6b', 'v32: cmp w13, w10'),
+    (0x0060bb9c, '00000000', '52030014', 'v32: b #0x60c8e4'),
+    (0x0060c8e4, '00000000', '8377fb54', 'v32: b.lo 0x6037d4 (under 1080 tall)'),
+    (0x0060c8e8, '00000000', '8d5140b9', 'v32: its width'),
+    (0x0060c8ec, '00000000', 'aa9da852', 'v32: mov w10, #0x44ed0000 (1896.0)'),
+    (0x0060c8f0, '00000000', 'bf010a6b', 'v32: cmp w13, w10'),
+    (0x0060c8f4, '00000000', '0277fb54', 'v32: b.hs 0x6037d4 (full width, e.g. L_UnitInfo 3400)'),
+    (0x0060c8f8, '00000000', 'df06fe17', 'v32: b 0x58e474 (inside a big panel part, e.g. L_Info 1634x1096: no rule)'),
+    (0x0060ee84, '00000000', '0d0040f9', 'v32: the pane vtable (from the overlay stretch, 0x5a3c8c)'),
+    (0x0060ee88, '00000000', 'cecd00f0', 'v32: x14 = the Parts pane vtable (main+0x1fc9398)'),
+    (0x0060ee8c, '00000000', 'ce610e91', 'v32: add x14, x14, #0x398'),
+    (0x0060ee90, '00000000', 'bf010eeb', 'v32: cmp x13, x14'),
+    (0x0060ee94, '00000000', 'c060c054', 'v32: b.eq 0x58faac (a Parts pane is never stretched; the other rules as before)'),
+    (0x0060ee98, '00000000', '6dc0fd17', 'v32: b 0x57f04c (the stretch)'),
+]
+
+# Screen shape (Game settings › Aspect ratio › Screen shape): every value above that depends on the 4:3 shape is read from one of seven words instead of being part of an
+# instruction, so the host can lay the UI out for any shape from 1:1 to 16:9 by writing those words at load (game.tsv shape_table, loader.c shape_apply). The words hold the
+# 4:3 values, so the variant is the 4:3 mod as before when nothing writes them (4:3 itself, or a host without shape_apply). Each site's fmov / mov becomes an `ldr` of its
+# word (one instruction, any value); the words are zero padding after a ret, out of the rule chains. Checked on a PC emulator at 1:1, 5:4 (generated only), 4:3, 7:5, 3:2
+# and 16:10: title, world map, World Map menu, tutorials, a map battle's forecast and combat (1:1) lay out against the picture's edges as the 4:3 mod does.
+#   cam      0xb52094  the 3D camera's height / width (0xb51e38; 4:3 0.75)
+#   squeeze  0x55f5b8  the UI projection's y row and the scissor's y (0x55f618, 0x574568, 0x59c550; 4:3 0.75 = shape x 9/16)
+#   shift    0x560328  the edge rule's move and L_Info's (0x58e5c4, 0x5d7988; 4:3 180 = (1920 / shape - 1080) / 2)
+#   nshift   0x560398  the obelisk Fade's move (0x5cd904; 4:3 -180)
+#   fade     0x560598  the obelisk Fade's y scale (0x5cd910; 4:3 1.5 = 1 + shift / 360)
+#   top      0x168ee28 the travel map backdrop's top edge (0x168ed78; 4:3 720 = 960 / shape)
+#   stretch  0x5605a8  the overlay rule's y scale (0x5a3c88, with 0x57f04c a nop; 4:3 4/3 = 1920 / shape / 1080)
+_SHAPE_WORDS = {'cam': 0xb52094, 'squeeze': 0x55f5b8, 'shift': 0x560328, 'nshift': 0x560398, 'fade': 0x560598, 'top': 0x168ee28, 'stretch': 0x5605a8}
+
+
+def _ldr(rt, pc, lit, base):   # ldr s<rt> (base 0x1c000000) / w<rt> (0x18000000), <literal at lit>
+    return (base | ((((lit - pc) // 4) & 0x7ffff) << 5) | rt).to_bytes(4, 'little').hex()
+
+
+def _shape(cuts):
+    import struct
+    t, s, w = _SHAPE_WORDS, 0x1c000000, 0x18000000
+    new = {0xb51e38: _ldr(1, 0xb51e38, t['cam'], s), 0x55f618: _ldr(27, 0x55f618, t['squeeze'], s), 0x574568: _ldr(1, 0x574568, t['squeeze'], s),
+           0x59c550: _ldr(21, 0x59c550, t['squeeze'], s), 0x58e5c4: _ldr(10, 0x58e5c4, t['shift'], w), 0x5d7988: _ldr(10, 0x5d7988, t['shift'], w),
+           0x5cd904: _ldr(10, 0x5cd904, t['nshift'], w), 0x5cd910: _ldr(19, 0x5cd910, t['fade'], s), 0x168ed78: _ldr(8, 0x168ed78, t['top'], w),
+           0x5a3c88: _ldr(10, 0x5a3c88, t['stretch'], w), 0x57f04c: '1f2003d5'}
+    out = [(o, orig, new[o], why + ' (Screen shape: its value from _SHAPE_WORDS)') if o in new else (o, orig, nw, why) for o, orig, nw, why in cuts]
+    assert len({c[0] for c in out} & set(new)) == len(new)
+    vals = {'cam': 0.75, 'squeeze': 0.75, 'shift': 180.0, 'nshift': -180.0, 'fade': 1.5, 'top': 720.0, 'stretch': 4 / 3}
+    return out + [(t[k], '00000000', struct.pack('<f', vals[k]).hex(), f'Screen shape table: {k} (4:3 {vals[k]:g})') for k in t]
+
+
 _MAIN = 'db93b0125f4850601d61c3edde012f8e'
-VARIANT_CUTS = {'43': {_MAIN: _V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20}}
+VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24 + _UI_V25 + _UI_V27 + _UI_V28 + _UI_V30)}}
 
 BINDING = [
     {'what': "Fire Emblem Fortune's Weave native 4:3 variant (VARIANT_CUTS['43']: camera aspect and ui2d pane rules)", 'now': 'build', 'goal': 'unreviewed', 'purpose': 'rendering',

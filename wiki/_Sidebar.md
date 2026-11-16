@@ -7,6 +7,7 @@
 - [Installation](Installation)
 - [First start and Prepare](First-Start-and-Prepare)
 - [Updates](Updates)
+- [Live shader building](Live-Shader-Building)
 
 **Playing**
 - [Playing](Playing)

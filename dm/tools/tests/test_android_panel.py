@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 JAVA = REPO / 'android/app/src/main/java/dev/nxnative/android'
 SRC = [JAVA / 'PanelLook.java', JAVA / 'PictureFit.java', JAVA / 'DlssTune.java']
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/PanelJvmTest.java'
@@ -35,7 +36,7 @@ def rows(text):
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')
 class PanelJvm(unittest.TestCase):
     def compiled(self, d):
-        subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', d, *map(str, SRC), str(TEST)], check=True, capture_output=True, text=True)
+        subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', d, *map(str, SRC), str(WORDS), str(TEST)], check=True, capture_output=True, text=True)
 
     def test_jvm(self):
         with tempfile.TemporaryDirectory() as d:

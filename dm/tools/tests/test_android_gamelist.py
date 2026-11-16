@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/GameListJvmTest.java'
 FIX_TID = '0100000000AB0000'
@@ -32,6 +33,7 @@ public final class BuildConfig {
             + "\\n%s\\tFixture Two\\t0\\tunknown\\t0 @1.8.0 main=%s sdk=%s"
             + "\\n%s\\tFixture Three\\t0\\tunknown\\t65536 main=%s sdk=%s\\t\\t\\t\\t\\t\\t%s";
     public static final String NX_DMSH_VK_CHAIN = "c0ffee000001", NX_DMSH_VK_ABI = "abc123abc123", NX_DMSH_VK_ABI_COMPAT = "";
+    public static final String NX_DMSH_VK_ABI_SAME = "";
 }
 ''' % (FIX_TID, nso_id(2), nso_id(3), *DKB, CHECK, FIX2, nso_id(11), nso_id(3), FIX3, nso_id(2), nso_id(3), CHECK)
 
@@ -44,7 +46,7 @@ class GameListJvm(unittest.TestCase):
         (cls.tmp / 'stub').mkdir()
         (cls.tmp / 'stub/BuildConfig.java').write_text(STUB)
         srcs = [SRC / f'{n}.java' for n in ('BuildCheck', 'DumpLayout', 'RomfsCheck', 'GameList', 'Frontend', 'Nup', 'Nsp', 'Zstd', 'Pack', 'Profile', 'ShaderLibs')]
-        r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-d', str(cls.tmp / 'classes'), *map(str, srcs), str(TEST), str(cls.tmp / 'stub/BuildConfig.java')],
+        r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-d', str(cls.tmp / 'classes'), str(WORDS), *map(str, srcs), str(TEST), str(cls.tmp / 'stub/BuildConfig.java')],
                            capture_output=True, text=True)
         assert r.returncode == 0, r.stdout + r.stderr
 

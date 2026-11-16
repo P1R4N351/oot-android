@@ -4,6 +4,8 @@ Banana Native runs Switch 2 games from your own dumps on Android phones. It emul
 
 ![Donkey Kong Bananza on Banana Native](images/donkey-kong-bananza.jpg)
 
+![Banana Native Home: a row of game tiles with the dock at the bottom and the round Add game button](images/home-launcher.jpg)
+
 ## Start here
 
 New? Follow the [Quick start](Quick-Start). New words are explained in the [Glossary](Glossary). The longer path:
@@ -17,7 +19,7 @@ New? Follow the [Quick start](Quick-Start). New words are explained in the [Glos
 
 | Topic | Pages |
 |---|---|
-| Setup | [Quick start](Quick-Start), [Glossary](Glossary), [Installation](Installation), [First start and Prepare](First-Start-and-Prepare), [Updates](Updates) |
+| Setup | [Quick start](Quick-Start), [Glossary](Glossary), [Installation](Installation), [First start and Prepare](First-Start-and-Prepare), [Updates](Updates), [Live shader building](Live-Shader-Building) |
 | Playing | [Playing](Playing), [Saves and storage](Saves-and-Storage), [GPU drivers](GPU-Drivers) |
 | Settings and speed | [Settings overview](Settings-Overview), [Getting higher FPS](Getting-Higher-FPS), [Heat and battery](Heat-and-Battery), [Cheats](Cheats) |
 | Games | [Games](Games) |

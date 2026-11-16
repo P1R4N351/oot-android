@@ -7,9 +7,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))   # the tests folder, for javatext (unittest by file name does not add it)
+import javatext  # noqa: E402
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 sys.path.insert(0, str(REPO / 'dm/tools')); sys.path.insert(0, str(REPO / 'dm/games'))
 import game   # noqa: E402
 import recommend   # noqa: E402
@@ -79,10 +84,10 @@ class Wiring(unittest.TestCase):
         self.assertIn('Prefs.rememberFacts(app,', (SRC / 'ReadinessActivity.java').read_text(encoding='utf-8'))
         gs = (SRC / 'GameSettings.java').read_text(encoding='utf-8')
         self.assertIn('"Recommended for this phone"', gs); self.assertIn('"Use recommended"', gs); self.assertIn('Prefs.backToRecommended(a, id)', gs)
-        self.assertIn('Recommend.line(states,', gs); self.assertIn('"Recommended: " + Prefs.recName(', gs); self.assertIn('Recommend.changedLine(', gs)
+        self.assertIn('Recommend.line(states,', gs); self.assertIn('Tx.s("Recommended: %1$s", Prefs.recName(', gs); self.assertIn('Recommend.changedLine(', gs)
         self.assertNotIn('Default · ', gs, 'rows show their value alone')
         self.assertNotIn('Recommended · ', gs)
-        self.assertIn('"Default (Settings: "', gs, "a list's first choice still says Default")
+        self.assertIn('Default (Settings: %1$s)', gs, "a list's first choice still says Default")
         for s in ('RES_PRESET', 'DRIVER', 'UPSCALER', 'HOLD60', 'FPS_CAP', 'DRS', 'VEGETATION', 'SKIP_LAYERS'):
             self.assertIn(f'track(recRows, Recommend.{s}, ', gs, f'{s}: its row carries the tag')
         for t in ('fullVegetation', 'skipLayers', 'hold60'): self.assertIn(f'Prefs.{t}(a, id, on); refresh[0].run();', gs, f'{t}: the tag follows a toggle')
@@ -134,12 +139,20 @@ class RecommendJvm(unittest.TestCase):
             (d / 'stub').mkdir()
             (d / 'stub/BuildConfig.java').write_text(STUB)
             srcs = [SRC / f'{n}.java' for n in ('Recommend', 'Readiness', 'Profile')]
-            r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-encoding', 'UTF-8', '-d', str(d / 'classes'), *map(str, srcs), str(TEST), str(d / 'stub/BuildConfig.java')],
+            r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-encoding', 'UTF-8', '-d', str(d / 'classes'), str(WORDS), *map(str, srcs), str(TEST), str(d / 'stub/BuildConfig.java')],
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             r = subprocess.run(['java', '-cp', str(d / 'classes'), 'dev.nxnative.android.RecommendJvmTest', str(FACTS), recommend.column(game.load(FE)), recommend.column(game.load(OOT))], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(r.stdout.strip(), 'ok')
+
+
+def setUpModule():
+    javatext.install()   # the launcher text is in strings.xml: this module reads the Java source with its English
+
+
+def tearDownModule():
+    javatext.uninstall()
 
 
 if __name__ == '__main__':

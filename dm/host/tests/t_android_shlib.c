@@ -132,6 +132,33 @@ static void test_entry_hash(void) {
     free(I.p); free(R.p); free(M.p);
 }
 
+// One entry as a library of its own (vka_shlib_extract: what a shader of the run-time layer keeps, so no shader points into a layer file a newer one replaces): the same entry
+// hash, bindings, c1 bytes and modules, the header's translator answers, and a copy that outlives the library it came from
+static void test_extract(void) {
+    img_t I = make_lib(); vka_shlib L; char err[256];
+    dmsh_vk_header *H = (dmsh_vk_header *)I.p; H->subgroup_size = 64; H->ssbo_align = 16;
+    CHECK(vka_shlib_check(&L, I.p, I.n, NULL, NULL, NULL, NULL, err, sizeof err), "made library refused: %s", err);
+    for (uint32_t i = 0; i < L.h->entry_count; i++) {
+        const dmsh_vk_entry *e = &L.ent[i]; uint64_t h = vka_shlib_entry_hash(&L, e);
+        vka_shlib X; CHECK(vka_shlib_extract(&X, &L, e, err, sizeof err), "entry %u not extracted: %s", i, err);
+        if (!X.h) continue;
+        CHECK(X.mapped == 2 && X.h->entry_count == 1 && X.h->subgroup_size == 64 && X.h->ssbo_align == 16, "extracted header");
+        const dmsh_vk_entry *xe = vka_shlib_find(&X, e->key);
+        CHECK(xe == &X.ent[0] && xe->stage == e->stage && xe->bind_count == e->bind_count && xe->mod_count == e->mod_count, "extracted entry");
+        CHECK(vka_shlib_entry_hash(&X, xe) == h, "entry hash %llx, extracted %llx", (unsigned long long)h, (unsigned long long)vka_shlib_entry_hash(&X, xe));
+        CHECK(!memcmp(vka_shlib_binds(&X, xe), vka_shlib_binds(&L, e), e->bind_count * sizeof(dmsh_vk_bind)), "bindings");
+        CHECK(e->c1_len == xe->c1_len && (!e->c1_len || !memcmp(vka_shlib_c1(&X, xe), vka_shlib_c1(&L, e), e->c1_len)), "c1 bytes");
+        size_t na = 0, nb = 0; uint32_t *wa = vka_shlib_spirv(&L, vka_shlib_module(&L, e, DMSH_VK_MOD_BASE), &na, err, sizeof err);
+        memset(I.p + H->blob_off, 0xee, (size_t)H->blob_size);   // the library's bytes gone (a replaced layer unmapped): the copy stands alone
+        uint32_t *wb = vka_shlib_spirv(&X, vka_shlib_module(&X, xe, DMSH_VK_MOD_BASE), &nb, err, sizeof err);
+        CHECK(wa && wb && na == nb && !memcmp(wa, wb, na), "module words: %s", err);
+        free(wa); free(wb);
+        vka_shlib_close(&X); CHECK(!X.h, "closed");
+        free(I.p); I = make_lib(); H = (dmsh_vk_header *)I.p; H->subgroup_size = 64; H->ssbo_align = 16; vka_shlib_check(&L, I.p, I.n, NULL, NULL, NULL, NULL, err, sizeof err);
+    }
+    free(I.p);
+}
+
 // ---------- The walker ----------
 static uint8_t g_mem[4096];   // "guest memory" at address 0x10000 for the read callback
 static int rd(void *ctx, uint64_t a, void *out, size_t n) { (void)ctx; if (a < 0x10000 || a + n > 0x10000 + sizeof g_mem) return 0; memcpy(out, g_mem + (a - 0x10000), n); return 1; }
@@ -328,6 +355,18 @@ static void test_real(void) {
         if (e->uint_mask) CHECK(vka_shlib_module(&L, e, DMSH_VK_MOD_UINT_MIXED) != NULL, "%016llx has uint_mask %#x and no mixed module", (unsigned long long)e->key, e->uint_mask);
         for (unsigned m = 1; m < e->mod_count; m++) { size_t nb; uint32_t *w = vka_shlib_spirv(&L, &L.mod[e->mod + m], &nb, err, sizeof err); CHECK(w != NULL, "%016llx variant: %s", (unsigned long long)e->key, err); free(w); }
     }
+    // Entries as libraries of their own (the run-time layer's shaders: vka_shlib_extract): every 50th (all with DM_VK_SHLIB_ALL), the same entry hash and base module
+    unsigned nx = 0;
+    for (unsigned i = 0; i < n; i += all ? 1 : 50) {
+        const dmsh_vk_entry *e = &L.ent[i]; vka_shlib X;
+        if (!vka_shlib_extract(&X, &L, e, err, sizeof err)) { CHECK(0, "%016llx not extracted: %s", (unsigned long long)e->key, err); continue; }
+        CHECK(vka_shlib_entry_hash(&X, &X.ent[0]) == vka_shlib_entry_hash(&L, e), "%016llx: extracted entry hash", (unsigned long long)e->key);
+        const dmsh_vk_module *ma = vka_shlib_module(&L, e, DMSH_VK_MOD_BASE), *mb = vka_shlib_module(&X, &X.ent[0], DMSH_VK_MOD_BASE);
+        size_t na = 0, nb = 0; uint32_t *wa = ma ? vka_shlib_spirv(&L, ma, &na, err, sizeof err) : NULL, *wb = mb ? vka_shlib_spirv(&X, mb, &nb, err, sizeof err) : NULL;
+        CHECK(!ma == !mb && na == nb && (!wa || !memcmp(wa, wb, na)), "%016llx: extracted base module", (unsigned long long)e->key);
+        free(wa); free(wb); vka_shlib_close(&X); nx++;
+    }
+    printf("t_android_shlib: %u entries extracted as libraries of their own\n", nx);
     vka_shlib_close(&L);
 }
 
@@ -404,7 +443,7 @@ static void test_gml(void) {
 
 int main(void) {
     test_made();
-    test_entry_hash();
+    test_entry_hash(); test_extract();
     test_compat();
     test_gml();
     test_walk();

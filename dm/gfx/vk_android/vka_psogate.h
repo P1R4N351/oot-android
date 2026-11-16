@@ -18,7 +18,8 @@ enum { VKPG_CAP = 4,                // DM_VK_PSO_SLOTS default: compiles at once
        VKPG_MEM_FREE_MB = 2048,     // MemAvailable under which only one compile runs (DM_VK_PREWARM_MEM_MB's default: the share the game and the system keep) ...
        VKPG_MEM_PER_MB = 512,       // ... and above it one more for each of these (a compile's share of the driver's memory, hundreds of MB)
        VKPG_MAPS_BUDGET_PCT = 75,   // the memory maps' budget (vka_mapbudget.h VKMB_BUDGET_PCT, where compaction starts) ...
-       VKPG_MAPS_PER = 10000 };     // ... and the maps one more compile may take below it (three long Turnip compiles took ~14,000 each outside the guest block)
+       VKPG_MAPS_PER = 10000,       // ... and the maps one more compile may take below it (three long Turnip compiles took ~14,000 each outside the guest block)
+       VKPG_SPEC_PCT = 50 };        // a speculative compile (prewarm, optimizer) starts only under this share of vm.max_map_count (vkpg_spec_ok)
 
 // Compiles that may run at once: at least 1 (the frame's pipelines must go on), at most cap; avail_mb 0 = MemAvailable not known, maps_max <= 0 or maps < 0 = the maps
 // not known: that bound is not applied
@@ -37,6 +38,13 @@ static inline int vkpg_slots(uint64_t avail_mb, long maps, long maps_max, int ca
     }
     return n < 1 ? 1 : n;
 }
+
+// Whether a speculative compile (one no draw waits for: prewarm of earlier runs' keys, the optimizer's twin) may start at maps of max (the last count; max <= 0 or maps < 0:
+// not known, allowed). Their drivers' compilers leave maps behind that do not come back (Qualcomm's: #338, Adreno 830, Ocarina of Time: prewarm of compute shaders took the
+// process from 12,000 to 49,000 maps outside the guest block while the count never fell, 13,000 blocks of ~73 KB from the allocator's own mappings; Turnip's: one long
+// compile adds up to ~28,000, 43 % of the limit, which is why the cap is half: a compile that starts under it has room to finish). The frame's own compiles are not held:
+// a draw waits for them. A cause in the driver, not the host (docs/reference/memory.md "Driver compiles leave memory maps behind"); this only stops work nobody asked for
+static inline int vkpg_spec_ok(long maps, long max, int pct) { return max <= 0 || maps < 0 || pct <= 0 || maps * 100 < (long)pct * max; }   // (pct: DM_VK_SPEC_MAPS_PCT, VKPG_SPEC_PCT by default; 0 = never held)
 
 // DM_VK_PSO_SLOTS's default by driver (driverID): one on Turnip (VK_DRIVER_ID_MESA_TURNIP), as g_pw_one ran them before 2026-11-11. With the gate at 4 slots Mario Kart
 // World lost the device on Turnip V39 twice in two runs (frames 484 and 416, `submission N: -4`), and ran on with DM_VK_PSO_SLOTS=1; the cause is not known (open in

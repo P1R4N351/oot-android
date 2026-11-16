@@ -22,6 +22,8 @@ Columns (tab separated, '#' lines and empty lines skipped, the first other line 
   games      title IDs the row is shown for (empty: every game); each must be a dm/games/ folder
   fixes      log_rules.tsv ids and symptom words (`;` separated) the fix finder matches
   reason     internal rows: why it is not shown (<= 60 chars)
+  live       `live` on a friendly or advanced choice row: the in-game panel also offers it as a slider (Auto first, then the choices in order) that sends the value to the running
+             game as an `env NAME=value` line (Auto: `env NAME=`); the host must read the switch at use. Empty otherwise
 """
 from pathlib import Path
 import re
@@ -30,7 +32,7 @@ import sys
 REPO = Path(__file__).resolve().parents[2]
 ENV = REPO / 'docs/env_switches.tsv'
 TABLE = REPO / 'docs/advanced_settings.tsv'
-COLS = ['name', 'tier', 'area', 'label', 'try_if', 'type', 'choices', 'default', 'scope', 'warn', 'owner', 'profile_key', 'games', 'fixes', 'reason']
+COLS = ['name', 'tier', 'area', 'label', 'try_if', 'type', 'choices', 'default', 'scope', 'warn', 'owner', 'profile_key', 'games', 'fixes', 'reason', 'live']
 TIERS = ('friendly', 'advanced', 'developer', 'internal')
 AREAS = ('Graphics', 'Performance', 'Memory', 'Input', 'Audio', 'Packing', 'Game', 'Diagnostics')
 TYPES = ('toggle', 'choice', 'number', 'text')
@@ -142,6 +144,8 @@ def problems(rows, env, keys=None, ids=None, java=None, wiki=None):
         cls = env.get(n, ('', ''))[0]
         if t == 'internal' and not r['reason']: no('internal needs a reason')
         if len(r['reason']) > 60: no('reason is longer than 60 characters')
+        if r.get('live', '') not in ('', 'live'): no('live is empty or `live`')
+        if r.get('live') and (r['type'] != 'choice' or t not in ('friendly', 'advanced')): no('live is for a friendly or advanced choice row')
         if t in ('friendly', 'advanced'):
             if cls in ('test', 'path') and not r['owner']: no(f'a {cls} switch cannot be {t}')
             if not r['label']: no(f'{t} needs a label')

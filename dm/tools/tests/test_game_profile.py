@@ -249,5 +249,16 @@ class LowRam(unittest.TestCase):
         self.assertIn("below the profile's app_pool (1 MiB)", out)
 
 
+class SkipLayers(unittest.TestCase):   # skip_layers (DM_VK_SKIP_FS through the launcher's Speedhack): keys found to be visible elsewhere stay out
+    def test_oot_castle_town_material_out(self):
+        sys.path.insert(0, str(REPO / 'dm/games')); sys.path.insert(0, str(REPO / 'dm/tools'))
+        import game
+        keys = [k for row in game.load('0400486024DEC000').values('skip_layers') for v in row for k in v.split(',')]
+        # 5684f5e658eda176 is a lit material in Castle Town that nothing covers: dropped, it left white-green glowing slabs (docs/reference/rendering.md
+        # "Hidden layers that are not hidden everywhere")
+        self.assertNotIn('5684f5e658eda176', keys)
+        self.assertTrue(all(len(k) == 16 and int(k, 16) >= 0 for k in keys))
+
+
 if __name__ == '__main__':
     unittest.main()

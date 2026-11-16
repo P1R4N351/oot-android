@@ -65,6 +65,7 @@ public final class PackZipJvmTest {
         wrongTitle(new File(t, "title"));
         damaged(new File(t, "damaged"));
         swap(new File(t, "swap"));
+        layerLeftOut(new File(t, "layer"));
         System.out.println("ok " + n);
     }
 
@@ -101,6 +102,25 @@ public final class PackZipJvmTest {
         check(Pack.libraryOf(p3.dir) == null && Pack.libraryVersions(p3.dir).contains("0123456789ab"), "a pack with an older library stages");
         SaveStore.deleteTree(p3.dir);
         check(error(() -> PackZip.stage(target, packs, ID)) != null, "the app's own pack is not imported onto itself");
+    }
+
+    /** An export leaves out the shader layer (shaders/layer, built while playing) and half-written files; the pack's own files all go */
+    static void layerLeftOut(File t) throws Exception {
+        File src = pack(new File(t, "src"), ID, "c0ffee", "a"), out = new File(t, "out");
+        write(new File(src, "shaders/layer/req/0000000000000001.ctl"), "req");
+        write(new File(src, "shaders/layer/lib/v-c0ffee/dmsh_vk.lib"), "layer library");
+        write(new File(src, "shaders/layer/lib/v-c0ffee/dmsh_vk.lib.tmp"), "half");
+        write(new File(src, "shaders/layer/.building"), "");
+        write(new File(src, "shaders/v-c0ffee/dmsh_vk.lib.tmp"), "half");
+        write(new File(src, "shaders/layered.txt"), "not the layer");
+        File z = PackZip.export(src, out);
+        try (ZipFile zf = new ZipFile(z)) {
+            java.util.Set<String> names = new java.util.TreeSet<>();
+            for (java.util.Enumeration<? extends ZipEntry> e = zf.entries(); e.hasMoreElements(); ) names.add(e.nextElement().getName());
+            check(names.equals(new java.util.TreeSet<>(java.util.List.of("pack.tsv", "main.patched.bin", "main.android.key", "shaders/v-c0ffee/dmsh_vk.lib", "shaders/v-c0ffee/inputs.tsv",
+                    "shaders/layered.txt"))), "the export holds the pack without its shader layer and half-written files: " + names);
+        }
+        check(PackZip.exported("shaders/v-x/dmsh_vk.lib") && !PackZip.exported("shaders/layer") && !PackZip.exported("shaders/layer/built.tsv") && !PackZip.exported("a.partial"), "exported()");
     }
 
     static void slip(File t) throws Exception {
@@ -155,8 +175,10 @@ public final class PackZipJvmTest {
         check(e != null && e.contains("unfinished"), "unfinished code refused: " + e);
         new File(src, "main.android.key").createNewFile();
         SaveStore.deleteTree(new File(src, "shaders"));
-        e = error(() -> PackZip.stage(src, packs, ID));
-        check(e != null && e.contains("no shader library"), "no library refused: " + e);
+        // a pack without a shader library is valid (a code-only Prepare, pack_android.py --no-shaders): the game builds its shaders while it plays
+        Pack nl = PackZip.stage(src, packs, ID);
+        check(Pack.libraryOf(nl.dir) == null && Pack.libraryVersions(nl.dir).isEmpty(), "a pack with no library stages");
+        SaveStore.deleteTree(nl.dir);
         File junk = new File(t, "junk.zip");
         write(junk, "not a zip");
         e = error(() -> PackZip.stage(junk, packs, ID));

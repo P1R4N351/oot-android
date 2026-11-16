@@ -15,6 +15,23 @@ Each game start writes a log.
 
 A shared log lists the settings you changed from the defaults (the Advanced switches, and any lines of your own env.txt or Extra environment), so a helper sees them without asking. Folders and secrets are left out of that list. Nothing is sent unless you share.
 
+Attach the log (a `.zip` is best) to your issue, with your phone model, the app version and the game's version. Do not send game files. Share the log from the run that went wrong, before you start the game again.
+
+### Lines worth knowing in a log (0.3.40)
+
+You do not need to read the log. These lines help us, and an issue is easier to answer when it contains them:
+
+| Line starts with | What it says |
+|---|---|
+| `memory maps: N of M (vm.max_map_count ...` | how close the process is to Android's limit on memory areas. Games that crash after a while on some phones ran into this limit |
+| `speculative pipeline compiles ... wait` | the app paused background shader work because the map count was high |
+| `GPU hang: ... part P of Q started and did not finish` | the GPU stopped answering; names the part of the frame it was in. Run again with `DM_VK_PARTLOG=1` if we ask |
+| `[shaders-missing] <key>` | a shader the pack does not have ([Updates](Live-Shader-Building)) |
+| `language: the game has no <xx> ... ` | the game does not ship your phone's language, so it was given the nearest one |
+| `fs GetFileSize: null file handle` or `fs open ... returned descriptor 0` | a file the game tried to open was not there; names the problem instead of failing silently |
+| `audren: rendered N frames`, Opus and movie decoder lines | what the game's sound did, for sound reports |
+| `zstd: the frame does not decode ... all zeros there` | a `.nup` that was copied incompletely or has holes |
+
 ## Common problems
 
 | What you see | What to try |
@@ -22,7 +39,7 @@ A shared log lists the settings you changed from the defaults (the Advanced swit
 | The game is not on the list, or says "Not in this app version" | Your app does not include it. Settings > **About** lists the games. Update the app ([Updates](Updates)). |
 | The card says the version is untested | Your dump is another version than the tested one. It may still work; the app asks before starting. |
 | Preparing stopped | Read the card, tap **Retry**. Close other apps if memory ran out; free space if storage is full. |
-| Prepare says "Paused: the phone is too hot" | Let the phone cool; it goes on by itself. |
+| Prepare says "Paused: battery" | Plug the phone in; it goes on by itself. (A hot phone only slows Prepare down; it does not pause it.) |
 | Prepare seems stuck at 1 % ("Rewriting the game code") or at "Finding the shaders" | These steps can run for minutes without a count (reported on 0.2.1 and with large `.nup` files); check it is still working before stopping it. |
 | Prepare stops with a "shaders did not build" or "is cut short" message | Tap **Retry**; if it stops the same way, report it with the log. |
 | **Add game** on a dump with no `updates/` does not offer Prepare | Known in some versions: only a pack made on a Mac worked; report your version and see [First start and Prepare](First-Start-and-Prepare). |
@@ -32,6 +49,8 @@ A shared log lists the settings you changed from the defaults (the Advanced swit
 | "Game file gone" or "Save folder gone" | See [Saves and storage](Saves-and-Storage). |
 | A `.nup` stops right after boot with a "cannot be used as a NUP package" error | Reported on v0.2.2 for games with DLC (add-on) mounts; update the app and report if it persists. |
 | A game sees no DLC | Reported on Android with a `dlc/` folder in the dump; update the app and report with the log. |
+| A `.nup` game shows white or missing textures, or the log has `all zeros there` | The package file is damaged or was copied incompletely. Copy it again and compare its size or hash with the original. The app's **Copy into the app** now refuses a copy whose size differs from what the file provider reported |
+| Ocarina of Time crashes at the opening and your phone is set to a language the game lacks (for example Thai) | Fixed in 0.3.40: the game now gets the nearest language it has. Not yet confirmed on a phone ([#290](https://git.eden-emu.dev/moceure/BananaNative/issues/290)) |
 | A frontend starts the game but Home opens instead | Something needs you (no pack, Prepare, shaders, All files access); fix it, start again ([Playing](Playing)). |
 
 These entries come from the project's symptom index; a fix may already be in your version, so update first.

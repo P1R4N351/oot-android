@@ -12,6 +12,7 @@
 #include "../nvn/dmsh_chain_vk.h"
 #include "game_profile.h"
 #include "vka_spvpatch.h"
+#include "vka_layerreq.h"
 #include "plat/plat.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +23,14 @@
 #include <time.h>
 
 static vka_shlib g_lib; static int g_lib_state;   // 0 not tried, 1 loaded, -1 none
+static int g_lib_empty; static dmsh_vk_header g_lib_empty_h;   // no library in the pack: an empty one played, every shader from the run-time layer (lib_load)
+static const char *layer_root(void); static void layer_map(const char *root);
+static void layer_drop(void *obj) { vka_shlib_close(obj); free(obj); }
+static vka_lylife g_ly = VKA_LYLIFE_INIT(layer_drop);   // the run-time layer's mappings (vka_layerreq.h): the current one, and replaced ones while a lookup still holds them
+static _Atomic unsigned g_layer_gen; static time_t g_layer_mt, g_layer_polled; static off_t g_layer_sz; static unsigned g_layer_n;
 static char g_lib_path[1024];                       // the library loaded (vka_shader_lib_path)
+static int g_kept;                                  // the library is one a sample kept (sampled-keep.json beside it, lib_load): the layer verifies the shaders played (vka_prog_shaders)
+static _Atomic int g_check_due;                     // DM_VK_SHLIB_CHECK: the check is to run (lib_ready)
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 
 // How each stage runs the subgroup operations of a library built for sg lanes (DMSH_VK_F_SUBGROUP shaders). A module built for 64 lanes splits ballots and shuffles into
@@ -151,29 +159,63 @@ static int lib_load(void) {
             VRED("shader library %s: this host's version %s is %s; playing version %s, made before versioned shader updates (no ABI in its header, this host's is %s): "
                  "it may draw wrong. Update the shaders once in the app; later updates are then partial", path, DMSH_VK_CHAIN, why, v, DMSH_VK_ABI);
             snprintf(path, sizeof path, "%s", old); have = 1;
+        } else if (layer_root()) {
+            // No library at all, but the run-time layer may make every shader the game asks for (android/SHADERS.md "Shaders the library lacks"): an empty library of this
+            // host's header, so every key is a miss (noted, requested, its draws skipped until the layer has it). Its translator answers are the ones this host's tools build
+            // the layer with (DMSH_VK_SUBGROUP_SIZE, DMSH_VK_SSBO_ALIGN), so the subgroup plan below is the layer's
+            char e2[256];
+            if (!vka_shlib_empty(&g_lib, &g_lib_empty_h, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, DMSH_VK_SUBGROUP_SIZE, DMSH_VK_SSBO_ALIGN, e2, sizeof e2)) {
+                VRED("no shader library at %s and no empty one made (%s): nothing is drawn", path, e2); return 0; }
+            VRED("no shader library at %s (the pack's shaders/" DMSH_VK_DIR_PREFIX "%s: %s) and none of another version with this host's ABI %s: playing with an empty one; the shader "
+                 "layer (%s) makes each shader the game asks for while it runs, and the draws and dispatches that need one are skipped until it has it", path, DMSH_VK_CHAIN, why, DMSH_VK_ABI, layer_root());
+            g_lib_empty = 1; have = 1;
         } else { VRED("no shader library at %s (the pack's shaders/" DMSH_VK_DIR_PREFIX "%s: %s) and none of another version with this host's ABI %s: nothing is drawn", path, DMSH_VK_CHAIN, why, DMSH_VK_ABI); return 0; }
     }
     if (!have) { VRED("shader library %s refused: %s; nothing is drawn", path, access(path, R_OK) ? "missing" : err); return 0; }
-    snprintf(g_lib_path, sizeof g_lib_path, "%s", path);
+    if (!g_lib_empty) snprintf(g_lib_path, sizeof g_lib_path, "%s", path);   // (empty: none named, vcap_shlib_path)
+    if (!g_lib_empty) {   // a library a sample kept (android/SHADERS.md "Sampled keep"): one stat at the load, never in a draw
+        char kp[1100]; const char *sl = strrchr(path, '/');
+        if (sl && snprintf(kp, sizeof kp, "%.*s/sampled-keep.json", (int)(sl - path), path) < (int)sizeof kp) g_kept = !access(kp, R_OK);
+    }
     // The translator's answers in the header against this device: modules built for 64-lane subgroups split ballots and shuffles into 32-lane halves, so they are right on
     // 32 or 64 lanes; storage buffers are bound rounded down to ssbo_align, which the device's alignment must divide (android/SHADERS.md "Translator answers")
     unsigned sg = g_lib.h->subgroup_size ? g_lib.h->subgroup_size : 32, sa = g_lib.h->ssbo_align;
     sg_plan(sg); shuffle_plan();
     if (sa && (sa % V.sb_align)) { VRED("shader library %s refused: built for storage buffers at %u-byte boundaries, the device needs %llu; nothing is drawn", path, sa, (unsigned long long)V.sb_align); vka_shlib_close(&g_lib); return 0; }
     char inputs[17]; vka_shlib_str(g_lib.h->inputs, inputs);
-    VLOG("shader library %s: %u shaders, %u modules, %.1f MB (chain %s, Vulkan chain %s, inputs %s; %u-lane subgroups, storage buffers at %u)", path, g_lib.h->entry_count, g_lib.h->mod_count,
-         g_lib.size / 1e6, DMSH_CHAIN, DMSH_VK_CHAIN, inputs, sg, sa ? sa : 1);
+    VLOG("shader library %s: %u shaders, %u modules, %.1f MB (chain %s, Vulkan chain %s, inputs %s; %u-lane subgroups, storage buffers at %u)", g_lib_empty ? "(none: empty, the shader layer only)" : path,
+         g_lib.h->entry_count, g_lib.h->mod_count, g_lib.size / 1e6, DMSH_CHAIN, DMSH_VK_CHAIN, inputs, sg, sa ? sa : 1);
     g_lib_state = 1;
+    if (g_lib_empty) layer_map(layer_root());   // an earlier run's layer at once, not at the first present's poll (the prewarm threads take their shaders from it: vka_shader_by_key)
     const char *ck = getenv("DM_VK_SHLIB_CHECK");
-    if (ck && atoi(ck)) vka_shlib_check_all(&g_lib);
+    if (ck && atoi(ck)) atomic_store(&g_check_due, 1);   // (run by lib_ready without g_mu: the check makes shaders, which take it)
     return 1;
 }
-// The library played as one number: FNV-1a of its header (chains, game, profile inputs, table sizes, blob size, ABI), which every rebuild or shader update changes. 0 = none
+// lib_load under g_mu, then DM_VK_SHLIB_CHECK's check once the library is in (on the caller's thread, g_mu released). 1 = a library is played
+static int lib_ready(void) {
+    pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
+    if (ok && atomic_exchange(&g_check_due, 0)) vka_shlib_check_all(&g_lib);
+    return ok;
+}
+// The library played as one number: FNV-1a of its header (chains, game, profile inputs, table sizes, blob size, ABI), which every rebuild or shader update changes. 0 = none.
+// With no library (the empty one, every shader from the run-time layer) the empty header is the same in every run, so the layer's header is hashed after it (its inputs
+// digest, entry count and blob size change whenever the packer adds or rebuilds a shader); without a layer yet, the empty header alone, as before. The pipeline cache reads
+// the id once, when it opens at the start (vka_pso.c pc_open_once, after lib_load mapped an earlier run's layer), and stamps its file with it: a later start whose layer
+// changed compares the shaders the stamp lists (vka_pckeep.h vka_pck_decide, by vka_shader_content) instead of reading the file as the same library's, so the pipelines of
+// layer entries rebuilt since are counted stale. A layer mapped while the game runs does not change the run's stamp
+static uint64_t fnv(const void *p, size_t n, uint64_t h) { const uint8_t *b = p; for (size_t i = 0; i < n; i++) h = (h ^ b[i]) * 1099511628211ull; return h; }
 uint64_t vka_shader_lib_id(void) {
-    if (!lib_load()) return 0;
-    const uint8_t *p = (const uint8_t *)g_lib.h; uint64_t h = 1469598103934665603ull;
-    for (size_t i = 0; i < sizeof *g_lib.h; i++) h = (h ^ p[i]) * 1099511628211ull;
-    return h ? h : 1;
+    pthread_mutex_lock(&g_mu);   // (lib_load and layer_map change g_lib and the layer under g_mu)
+    uint64_t h = 0;
+    if (lib_load()) {
+        h = fnv(g_lib.h, sizeof *g_lib.h, 1469598103934665603ull);
+        vka_lyh *LH = g_lib_empty ? vka_ly_get(&g_ly) : NULL;
+        if (LH) { const vka_shlib *LY = LH->obj; h = fnv("layer", 5, h); h = fnv(LY->h, sizeof *LY->h, h); }
+        vka_ly_put(&g_ly, LH);
+        if (!h) h = 1;
+    }
+    pthread_mutex_unlock(&g_mu);
+    return h;
 }
 
 // ---------- Static memory: buffers that live as long as the process ----------
@@ -272,21 +314,24 @@ VkShaderModule vka_shader_pfb_pick(VkShaderModule m, int a2c, int alpha_func) {
 }
 
 // ---------- Shaders by key ----------
-typedef struct { uint64_t key; vka_shader *sh; const vka_shlib *lib; } shent;
+// By key and library; a shader of the run-time layer by key and entry hash under g_ly_tag instead: it keeps its own copy of the entry (vka_shlib_extract), so a new layer
+// whose entry for the key is byte for byte the same finds the same shader (its modules and pipelines are not made again) and the replaced layer's mapping can go
+typedef struct { uint64_t key; vka_shader *sh; const vka_shlib *lib; uint64_t ch; } shent;
 static shent *g_sh; static size_t g_shcap, g_shn;
+static const vka_shlib g_ly_tag;   // (never read: the layer's shaders' lib in the table)
 static size_t hslot(uint64_t k, size_t cap) { return (size_t)((k * 0x9E3779B97F4A7C15ull) >> 17) & (cap - 1); }
-static shent *sh_find(uint64_t key, const vka_shlib *L) {
+static shent *sh_find(uint64_t key, const vka_shlib *L, uint64_t ch) {
     if (!g_shcap) return NULL;
-    for (size_t i = hslot(key, g_shcap);; i = (i + 1) & (g_shcap - 1)) { if (!g_sh[i].sh) return NULL; if (g_sh[i].key == key && g_sh[i].lib == L) return &g_sh[i]; }
+    for (size_t i = hslot(key, g_shcap);; i = (i + 1) & (g_shcap - 1)) { if (!g_sh[i].sh) return NULL; if (g_sh[i].key == key && g_sh[i].lib == L && g_sh[i].ch == ch) return &g_sh[i]; }
 }
-static void sh_put(uint64_t key, const vka_shlib *L, vka_shader *s) {
+static void sh_put(uint64_t key, const vka_shlib *L, uint64_t ch, vka_shader *s) {
     if (2 * (g_shn + 1) > g_shcap) {
         size_t nc = g_shcap ? 2 * g_shcap : 1024; shent *n = calloc(nc, sizeof *n);
         for (size_t i = 0; i < g_shcap; i++) if (g_sh[i].sh) { size_t j = hslot(g_sh[i].key, nc); while (n[j].sh) j = (j + 1) & (nc - 1); n[j] = g_sh[i]; }
         free(g_sh); g_sh = n; g_shcap = nc;
     }
     size_t j = hslot(key, g_shcap); while (g_sh[j].sh) j = (j + 1) & (g_shcap - 1);
-    g_sh[j] = (shent){key, s, L}; g_shn++;
+    g_sh[j] = (shent){key, s, L, ch}; g_shn++;
 }
 
 static const char *stage_name(int s) { static const char *n[] = {"vertex", "tess control", "tess evaluation", "geometry", "fragment", "compute", "task", "mesh"}; return s >= 0 && s < 8 ? n[s] : "?"; }
@@ -672,12 +717,10 @@ int vka_shader_fout_retyped(vka_shader *s, uint32_t umask, uint32_t smask) {
     VkShaderModule m = vka_shader_fout_module(s, umask, smask);
     return m && m != vka_shader_module(s, DMSH_VK_MOD_BASE);
 }
-vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key) {
-    pthread_mutex_lock(&g_mu);
-    shent *h = sh_find(key, L);
-    if (h) { vka_shader *s = h->sh; pthread_mutex_unlock(&g_mu); return s->bad ? NULL : s; }
-    pthread_mutex_unlock(&g_mu);
-    vka_shader *s = calloc(1, sizeof *s); s->key = key; s->lib = L;
+// A new shader of key from L (not in the table yet)
+static vka_shader *make_new(const vka_shlib *L, uint64_t key) {
+    vka_shader *s = calloc(1, sizeof *s); if (!s) return NULL;
+    s->key = key; s->lib = L;
     const dmsh_vk_entry *e = vka_shlib_find(L, key);
     const char *why = NULL; char err[256] = "";
     if (!e) why = "not in the shader library";
@@ -703,27 +746,64 @@ vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key) {
         s->bad = 1;
         static _Atomic int n; if (atomic_fetch_add(&n, 1) < 64) VRED("shader %016llx (%s): %s; its draws are skipped", (unsigned long long)key, e ? stage_name(e->stage) : "?", why);
     }
+    return s;
+}
+// s into the table under (key, tag, ch), unless another thread put one there meanwhile: then s is undone and that one returned. own: s's own library (a layer shader's), freed with s
+static vka_shader *sh_settle(uint64_t key, const vka_shlib *tag, uint64_t ch, vka_shader *s, vka_shlib *own) {
     pthread_mutex_lock(&g_mu);
-    h = sh_find(key, L);
-    if (h) { if (s->mods[0]) vk.vkDestroyShaderModule(V.dev, s->mods[0], NULL); free(s); s = h->sh; }   // another thread made it meanwhile
-    else sh_put(key, L, s);
+    shent *h = sh_find(key, tag, ch);
+    if (h) { if (s->mods[0]) vk.vkDestroyShaderModule(V.dev, s->mods[0], NULL); free(s); s = h->sh; if (own) { vka_shlib_close(own); free(own); } }
+    else sh_put(key, tag, ch, s);
     pthread_mutex_unlock(&g_mu);
     return s->bad ? NULL : s;
+}
+vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key) {
+    pthread_mutex_lock(&g_mu);
+    shent *h = sh_find(key, L, 0);
+    if (h) { vka_shader *s = h->sh; pthread_mutex_unlock(&g_mu); return s->bad ? NULL : s; }
+    pthread_mutex_unlock(&g_mu);
+    vka_shader *s = make_new(L, key);
+    return s ? sh_settle(key, L, 0, s, NULL) : NULL;
+}
+// A shader of the run-time layer LY (held by the caller: vka_ly_get): found by key and entry hash, else made from a copy of its entry, so it never points into LY.
+// NULL = LY lacks key, the copy failed (logged), or the shader is refused
+static vka_shader *layer_make(const vka_shlib *LY, uint64_t key) {
+    const dmsh_vk_entry *e = vka_shlib_find(LY, key);
+    if (!e) return NULL;
+    uint64_t ch = vka_shlib_entry_hash(LY, e);
+    pthread_mutex_lock(&g_mu);
+    shent *h = sh_find(key, &g_ly_tag, ch);
+    if (h) { vka_shader *s = h->sh; pthread_mutex_unlock(&g_mu); return s->bad ? NULL : s; }
+    pthread_mutex_unlock(&g_mu);
+    char err[256]; vka_shlib *own = calloc(1, sizeof *own);
+    if (!own || !vka_shlib_extract(own, LY, e, err, sizeof err)) {
+        static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("shader %016llx of the shader layer not copied (%s): its draws are skipped", (unsigned long long)key, own ? err : "out of memory");
+        free(own); return NULL;
+    }
+    vka_shader *s = make_new(own, key);
+    if (!s) { vka_shlib_close(own); free(own); return NULL; }
+    return sh_settle(key, &g_ly_tag, ch, s, own);
 }
 
 // A shader of the game's library by key, the library loaded if it is not yet (the prewarm threads, vka_pso.c); NULL = no library, not in it, or refused
 int vka_shader_variant_key(uint64_t key) {
-    pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
+    int ok = lib_ready();
     return ok && !vka_shlib_find(&g_lib, key) && vka_shlib_find(&g_lib, key ^ VKA_INST_KEY_XOR);
 }
 vka_shader *vka_shader_by_key(uint64_t key) {
-    pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
+    int ok = lib_ready();
     if (ok && V.memu && !vka_shlib_find(&g_lib, key)) { vka_shader *d = vka_memu_by_key(key); if (d) return d; }   // a task / mesh shader's compute or vertex form (the prewarm list's)
+    if (ok && g_lib_empty) {   // no library: the layer's shader, as every stage of every program comes from it (vka_prog_shaders); NULL while the layer lacks it
+        vka_lyh *LH = vka_ly_get(&g_ly);
+        vka_shader *s = LH ? layer_make(LH->obj, key) : NULL;
+        vka_ly_put(&g_ly, LH);
+        return s;
+    }
     return ok ? vka_shader_make(&g_lib, key) : NULL;
 }
-int vka_shader_lib_has(uint64_t key) { pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu); return ok && vka_shlib_find(&g_lib, key) != NULL; }
+int vka_shader_lib_has(uint64_t key) { int ok = lib_ready(); return ok && vka_shlib_find(&g_lib, key) != NULL; }
 int vka_shader_memu_key(uint64_t key) {
-    pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
+    int ok = lib_ready();
     if (!ok || vka_shlib_find(&g_lib, key)) return 0;
     static const uint64_t tag[3] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS};
     for (int i = 0; i < 3; i++) {
@@ -732,20 +812,28 @@ int vka_shader_memu_key(uint64_t key) {
     }
     return 0;
 }
-// The pipeline cache's stamp (vka_pso.c, vka_pckeep.h): key's entry in the game's library as a hash of its bytes (vka_shlib_entry_hash), 0 = not in it or no library
+// The pipeline cache's stamp (vka_pso.c, vka_pckeep.h): key's entry in the game's library as a hash of its bytes (vka_shlib_entry_hash); with no library (the empty one),
+// its entry in the run-time layer mapped now (lib_load maps an earlier run's before the cache opens). 0 = not there, or no library. With a real library the layer's
+// shaders are not counted, as before (its layer is mapped only at the first poll, after the cache opened)
 uint64_t vka_shader_content(uint64_t key) {
-    pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
+    int ok = lib_ready();
     const dmsh_vk_entry *e = ok ? vka_shlib_find(&g_lib, key) : NULL;
-    return e ? vka_shlib_entry_hash(&g_lib, e) : 0;
+    if (e || !ok || !g_lib_empty) return e ? vka_shlib_entry_hash(&g_lib, e) : 0;
+    vka_lyh *LH = vka_ly_get(&g_ly); const vka_shlib *LY = LH ? LH->obj : NULL;
+    e = LY ? vka_shlib_find(LY, key) : NULL;
+    uint64_t h = e ? vka_shlib_entry_hash(LY, e) : 0;
+    vka_ly_put(&g_ly, LH);
+    return h;
 }
-// The game library's shaders this run made (refused ones and instanced variants left out), with their entry hashes: malloc'd, *n of them (NULL, 0 = none)
+// The shaders of the game's library this run made (refused ones and instanced variants left out), and with no library the run-time layer's (vka_shader_content), with
+// their entry hashes: malloc'd, *n of them (NULL, 0 = none). A key the layer rebuilt during the run may be listed twice, once per entry made
 vka_pck_ent *vka_shader_made(size_t *n) {
     *n = 0;
     pthread_mutex_lock(&g_mu);
     vka_pck_ent *out = g_lib_state > 0 && g_shn ? malloc(g_shn * sizeof *out) : NULL;
     for (size_t i = 0; out && i < g_shcap; i++) {
         const shent *h = &g_sh[i];
-        if (h->sh && h->lib == &g_lib && !h->sh->bad && h->sh->e && h->sh->e->key == h->key && h->sh->chash) out[(*n)++] = (vka_pck_ent){h->key, h->sh->chash};
+        if (h->sh && (h->lib == &g_lib || (g_lib_empty && h->lib == &g_ly_tag)) && !h->sh->bad && h->sh->e && h->sh->e->key == h->key && h->sh->chash) out[(*n)++] = (vka_pck_ent){h->key, h->sh->chash};
     }
     pthread_mutex_unlock(&g_mu);
     return out;
@@ -807,20 +895,222 @@ static int mem_read(uint64_t addr, void *out, size_t n) {
     return !plat_mem_read(addr, out, n);
 }
 
+// A shader the library lacks, noted once per key: one `[shaders-missing] <key><TAB><stage>` log line (the game's log carries it, so a log attached to an issue carries the list)
+// and a row of $DM_TEMP/missing_shaders.tsv (rows key<TAB>stage, as shader_seen.tsv; kept across runs, each key once). The stage is read from the shader as shader_split.py
+// does (nvn2_stage, sph_stage; "?" when the code cannot be read): NVN2 control +0x56 says compute / task / mesh, else the code's SPH type; a Maxwell compute area has a header.
+// Nothing leaves the phone: the file is the player's to attach (android/SHADERS.md "Shaders the library lacks")
+static const char *miss_stage(const prog_t *p, unsigned i) {
+    const uint8_t *c = nvn_prog_ctl(p, i);   // (the guest's section is valid only inside nvnProgramSetShaders: the host's copy of an NVN2 one)
+    if (!c) return "?";
+    static const char *by[8] = {NULL, NULL, NULL, NULL, NULL, "compute", "task", "mesh"}; uint8_t b = c[0x56];
+    if (b < 8 && by[b]) return by[b];
+    uint8_t w[4];
+    if (!p->sd[i].data || !mem_read(p->sd[i].data, w, 4)) return "?";   // NVN2: the SPH's word 0 starts the code area
+    uint32_t sw; memcpy(&sw, w, 4);
+    unsigned ty = sw >> 10 & 0xf;
+    if (ty == 0 && (sw & 0x1f) == 1) return "vertex";
+    static const char *g[6] = {NULL, "vertex", "hull", "domain", "geometry", "pixel"};
+    return ty < 6 && g[ty] ? g[ty] : "?";
+}
+#define PROG_CTL_LEN_HOST 0xd8   // (hle_nvn.c PROG_CTL_LEN)
+#define MISS_CAP 16384   // keys noted per run (open addressing, power of two, twice the keys)
+static uint64_t g_miss[2 * MISS_CAP]; static unsigned g_miss_n; static int g_miss_init; static char g_miss_path[1024];
+static unsigned miss_slot(uint64_t k) { return (unsigned)((k * 0x9E3779B97F4A7C15ull) >> 40) & (2 * MISS_CAP - 1); }
+static int miss_add(uint64_t k) {   // 1 = new
+    unsigned i = miss_slot(k); while (g_miss[i]) { if (g_miss[i] == k) return 0; i = (i + 1) & (2 * MISS_CAP - 1); }
+    if (g_miss_n >= MISS_CAP) return 0;
+    g_miss[i] = k; g_miss_n++; return 1;
+}
+static int miss_note(const prog_t *p, unsigned i, uint64_t key) {   // 1 = a key not noted before
+    static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
+    if (!key) return 0;   // (0 is the empty slot)
+    int isnew;
+    pthread_mutex_lock(&mu);
+    if (!g_miss_init) {   // the file's rows from earlier runs count as noted (no second row), and are not logged again
+        g_miss_init = 1; const char *t = getenv("DM_TEMP");
+        if (t && *t) { snprintf(g_miss_path, sizeof g_miss_path, "%s/missing_shaders.tsv", t);
+            FILE *f = fopen(g_miss_path, "r"); char ln[128];
+            while (f && fgets(ln, sizeof ln, f)) { if (ln[0] == '#' || strlen(ln) < 16) continue; char *e; uint64_t k = strtoull(ln, &e, 16); if (e == ln + 16 && k) miss_add(k); }
+            if (f) fclose(f); }
+    }
+    if ((isnew = miss_add(key))) {
+        const char *st = miss_stage(p, i);
+        LOG("[shaders-missing] %016llx\t%s", (unsigned long long)key, st);
+        if (g_miss_path[0]) {
+            int fresh = access(g_miss_path, F_OK); FILE *f = fopen(g_miss_path, "a");
+            if (f) { if (fresh) fputs("# Shaders this game asked for that its shader library lacks (rows key<TAB>stage, as shader_seen.tsv). Attach this file to an issue: it is only ever sent by you.\n", f);
+                     fprintf(f, "%016llx\t%s\n", (unsigned long long)key, st); fclose(f); }
+        }
+    }
+    pthread_mutex_unlock(&mu);
+    return isnew;
+}
+
+// ---- The run-time layer (android/SHADERS.md "Shaders the library lacks"): a second, small library of the shaders the game asked for and the prepared one lacks, made while
+// the game runs by the app's packer (dm/gfx/tools/shader_layer.py) in $DM_TEMP/shader_layer/. Requests: for a program with a shader the library lacks, each stage's control section
+// (nvn_prog_ctl) and code as req/<key>.ctl and .code (.ctl last: it says the pair is whole), and the program's (vertex, pixel) pairs as req/pairs.tsv. The layer is
+// lib/v-<DMSH_VK_CHAIN>/dmsh_vk.lib, polled once a second (vka_layer_poll, from the present path). A new layer is a new mapping; the one it replaces is unmapped as soon as
+// no lookup holds it (g_ly, vka_layerreq.h), which frees the disk space of the file the packer replaced: a shader made from a layer keeps a copy of its entry (layer_make,
+// vka_shlib_extract) and is found again by key and entry hash, so a rebuilt layer whose entry is unchanged gives the same shader, modules and pipelines. DM_VK_LAYER=0:
+// neither requests nor layer; the draws of a missing shader stay skipped. The prepared library is never changed, and an entry it has wins over the layer's.
+// DM_VK_LAYER_DROP=<n> (a test): the prepared library is taken to lack the keys whose value mod 1000 is below n, so the layer's whole path runs on a game that lacks nothing
+static const dmsh_vk_entry *main_find(uint64_t key) {
+    static int drop = -1; if (drop < 0) { const char *e = getenv("DM_VK_LAYER_DROP"); drop = e ? atoi(e) : 0; }
+    const dmsh_vk_entry *en = vka_shlib_find(&g_lib, key);
+    return en && drop > 0 && (int)(key % 1000) < drop ? NULL : en;
+}
+// DM_VK_LAYER_DIR=<folder> (restart): the layer's folder instead of $DM_TEMP/shader_layer (the launcher may keep it in the pack, past the game's temp files being cleared)
+static const char *layer_root(void) {
+    static char root[1024]; static int init;
+    if (!init) { init = 1; vka_layer_root_of(root, sizeof root, getenv("DM_VK_LAYER_DIR"), getenv("DM_TEMP"), VKA_ENV("DM_VK_LAYER", 1) != 0); }
+    return root[0] ? root : NULL;
+}
+unsigned vka_layer_gen(void) { return atomic_load(&g_layer_gen); }
+int vka_layer_on(void) { return layer_root() != NULL; }   // the run-time layer can supply missing shaders (the skipped-work notice counts them only when it cannot: vka_draw.c SKIP_COUNT)
+// The requests (vka_layerreq.h): each key once a run (g_req) and each (vertex, pixel) pair once (g_pairs), the stages' control sections and code copied here and written
+// by the writer thread, so the program's first draw (the submit thread) does no file work. A key or pair is marked when its request is queued and unmarked when the writer
+// could not write it (req_unwritten: the disk full, the folder removed by Storage while the game runs); a request the queue refuses (full: 256 requests or 64 MB waiting)
+// leaves its keys and pairs unmarked. Either way the programs that lack a shader are resolved again (req_retry: at the next poll once the queue has room after a refusal;
+// after a write failure 1 s later, the wait doubling up to 64 s while writes keep failing), so they ask again. g_req holds VKA_KEYSET_CAP keys: past that a key is not
+// marked, and a stage whose request file is there already is not copied again (one stat)
+static vka_keyset g_req, g_pairs; static pthread_mutex_t g_req_mu = PTHREAD_MUTEX_INITIALIZER;
+static _Atomic int g_req_refused, g_req_failed; static time_t g_req_retry_at; static int g_req_wait = 1; static unsigned long long g_req_written;
+static void req_unwritten(void *ctx, int pair, uint64_t a, uint64_t b, int err) {
+    (void)ctx;
+    pthread_mutex_lock(&g_req_mu); vka_keyset_del(pair ? &g_pairs : &g_req, pair ? vka_lreq_pair_id(a, b) : a); pthread_mutex_unlock(&g_req_mu);
+    atomic_store(&g_req_failed, 1);
+    static _Atomic unsigned n; unsigned k = atomic_fetch_add(&n, 1);
+    if (k < 16) {
+        if (pair) VRED("shader layer request pair %016llx %016llx not written: %s (asked again later)", (unsigned long long)a, (unsigned long long)b, strerror(err));
+        else VRED("shader layer request %016llx not written: %s (asked again later)", (unsigned long long)a, strerror(err));
+    } else if (k == 16) VRED("shader layer requests: more not written, not logged");
+}
+static vka_lrq g_lrq = {.mu = PTHREAD_MUTEX_INITIALIZER, .cv = PTHREAD_COND_INITIALIZER, .idle = PTHREAD_COND_INITIALIZER, .max_n = 256, .max_bytes = 64u << 20, .unwritten = req_unwritten};
+// A program that lacks a shader or takes one from the layer (LY: held by the caller, or NULL): each of its stages the layer lacks (not asked for this run yet), and its pairs
+static void layer_request(const prog_t *p, const vka_shlib *LY) {
+    const char *root = layer_root(); if (!root) return;
+    vka_lreq *r = calloc(1, sizeof *r); if (!r) return;
+    uint64_t kk[6] = {0}; const char *st[6] = {0};
+    pthread_mutex_lock(&g_req_mu);
+    for (unsigned i = 0; i < p->nstage && i < 6; i++) {
+        const uint8_t *ctl = nvn_prog_ctl(p, i); uint8_t md[8]; uint32_t nctl = 0, ncode = 0;
+        if (!ctl || !prog_key(p, i, md)) continue;
+        kk[i] = vka_shlib_key(md); st[i] = miss_stage(p, i);
+        if ((LY && vka_shlib_find(LY, kk[i])) || vka_keyset_has(&g_req, kk[i])) continue;
+        if (g_req.n >= VKA_KEYSET_CAP) {   // (not marked any more: the request file says it was asked for)
+            VRED_ONCE("shader layer: %u shaders asked for this run, more than the key set holds; a request on disk is not copied again (one stat a stage)", g_req.n);
+            char f[1200]; snprintf(f, sizeof f, "%s/req/%016llx.ctl", root, (unsigned long long)kk[i]);
+            if (!access(f, F_OK)) continue;
+        }
+        nvn_ctl_lens(ctl, &nctl, &ncode);
+        if (!p->sd[i].data || !ncode || ncode >= (1u << 24)) continue;
+        void *code = malloc(ncode); if (!code) continue;
+        if (mem_read(p->sd[i].data, code, ncode)) vka_lreq_add(r, kk[i], ctl, PROG_CTL_LEN_HOST, code, ncode);
+        free(code);
+    }
+    for (unsigned a = 0; a < 6; a++) for (unsigned b = 0; b < 6; b++)   // (pairs already recorded this run: not again)
+        if (kk[a] && kk[b] && st[a] && st[b] && !strcmp(st[a], "vertex") && !strcmp(st[b], "pixel") && !vka_keyset_has(&g_pairs, vka_lreq_pair_id(kk[a], kk[b]))) vka_lreq_pair(r, kk[a], kk[b]);
+    uint64_t ks[VKA_LREQ_STAGES], pv[VKA_LREQ_STAGES * VKA_LREQ_STAGES], pp[VKA_LREQ_STAGES * VKA_LREQ_STAGES]; unsigned nk = r->ns, np = r->np;
+    for (unsigned i = 0; i < nk; i++) ks[i] = r->st[i].key;
+    for (unsigned i = 0; i < np; i++) { pv[i] = r->pr[i].vs; pp[i] = r->pr[i].ps; }
+    if ((nk || np) && vka_lrq_push(&g_lrq, root, r)) {   // (r is the writer's now)
+        for (unsigned i = 0; i < nk; i++) vka_keyset_add(&g_req, ks[i]);
+        for (unsigned i = 0; i < np; i++) vka_keyset_add(&g_pairs, vka_lreq_pair_id(pv[i], pp[i]));
+        r = NULL;
+    } else if (nk || np) {
+        atomic_store(&g_req_refused, 1);
+        static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VRED("shader layer: the request queue is full; the program's %u shaders and %u pairs are asked for again once it has room", nk, np);
+    }
+    pthread_mutex_unlock(&g_req_mu);
+    vka_lreq_free(r);
+}
+// The cached programs that lacked a shader resolved again (they are asked for again, or take the layer's shaders): vka_draw.c's g_pm follows vka_layer_gen. g_mu held
+static void missing_stale(void) {
+    for (size_t i = 0; i < g_prcap; i++) if (g_pr[i].serial && g_pr[i].serial != ~0ull && (g_pr[i].ps.bad & VKA_BAD_MISSING)) { g_pr[i].serial = ~0ull; memset(&g_pr[i].ps, 0, sizeof g_pr[i].ps); }
+    atomic_fetch_add(&g_layer_gen, 1);
+}
+// A layer file that changed, mapped as a new layer; the programs whose draws were skipped for a missing shader are resolved again. g_mu held (or lib_load's first call).
+// A layer built for other translator answers than the main library's (its subgroup size: sg_plan ran for the main one's), or for storage buffers this device cannot bind, is refused
+static void layer_map(const char *root) {
+    if (!root || g_lib_state <= 0) return;
+    char path[1200]; struct stat sb;
+    snprintf(path, sizeof path, "%s/lib/" DMSH_VK_DIR_PREFIX "%s/" DMSH_VK_LIB_FILE, root, DMSH_VK_CHAIN);
+    if (stat(path, &sb) || (sb.st_mtime == g_layer_mt && sb.st_size == g_layer_sz)) return;
+    g_layer_mt = sb.st_mtime; g_layer_sz = sb.st_size;
+    vka_shlib *n = calloc(1, sizeof *n); char err[256];
+    if (n && vka_shlib_open(n, path, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, err, sizeof err)) {
+        unsigned lsg = n->h->subgroup_size ? n->h->subgroup_size : 32, msg = g_lib.h->subgroup_size ? g_lib.h->subgroup_size : 32, lsa = n->h->ssbo_align;
+        if (lsg != msg || (lsa && (lsa % V.sb_align))) {
+            VRED("shader layer %s not used: built for %u-lane subgroups and storage buffers at %u, the shader library for %u-lane subgroups, the device's storage buffers at %llu",
+                 path, lsg, lsa ? lsa : 1, msg, (unsigned long long)V.sb_align);
+            vka_shlib_close(n); free(n); return;
+        }
+        unsigned cnt = n->h->entry_count;
+        if (!vka_ly_set(&g_ly, n)) { VRED("shader layer %s not used: out of memory", path); vka_shlib_close(n); free(n); return; }
+        g_layer_n = cnt;
+        missing_stale();
+        pthread_mutex_lock(&g_ly.mu); unsigned live = g_ly.live; unsigned long long dropped = g_ly.dropped; pthread_mutex_unlock(&g_ly.mu);
+        VLOG("shader layer %s: %u shaders (the draws and dispatches that lacked a shader are resolved again; %u layer mapping%s, %llu replaced ones unmapped)", path, g_layer_n,
+             live, live == 1 ? "" : "s", dropped);
+    } else { VRED("shader layer %s not used: %s", path, n ? err : "out of memory"); free(n); }
+}
+// Requests the queue refused or the writer could not write are asked for again (see g_req). g_mu held
+static void req_retry(time_t now) {
+    unsigned long long w = vka_lrq_written(&g_lrq);
+    if (w != g_req_written) { g_req_written = w; g_req_wait = 1; }   // (writes go through again: no more waiting)
+    int want = 0;
+    if (atomic_load(&g_req_refused) && vka_lrq_room(&g_lrq)) { atomic_store(&g_req_refused, 0); want = 1; }
+    if (atomic_load(&g_req_failed)) {
+        if (!g_req_retry_at) g_req_retry_at = now + g_req_wait;
+        else if (now >= g_req_retry_at) { atomic_store(&g_req_failed, 0); g_req_retry_at = 0; want = 1; if (g_req_wait < 64) g_req_wait *= 2; }
+    }
+    if (want) missing_stale();
+}
+// Once a second (the present path)
+void vka_layer_poll(void) {
+    const char *root = layer_root(); if (!root) return;
+    time_t now = time(NULL); if (now == g_layer_polled) return;
+    pthread_mutex_lock(&g_mu);
+    g_layer_polled = now;
+    layer_map(root);
+    if (g_lib_state > 0) req_retry(now);
+    pthread_mutex_unlock(&g_mu);
+}
+
+// A missing compute shader skips its dispatches, whose results later work may read (a wrong picture until the layer has it, never a wait: vka_dispatch returns at once).
+// A line for each of the first 32 keys a run, then one at every 1,000th
+static void miss_compute(const prog_t *p, unsigned i, uint64_t key) {
+    static vka_keyset seen; static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER; static unsigned nkeys;
+    pthread_mutex_lock(&mu); int fresh = vka_keyset_add(&seen, key) == 1; pthread_mutex_unlock(&mu);
+    if (!fresh || strcmp(miss_stage(p, i), "compute")) return;
+    pthread_mutex_lock(&mu); unsigned k = ++nkeys; pthread_mutex_unlock(&mu);
+    if (k > 32) { if (k % 1000 == 0) VRED("compute shaders missing: %u this run (their dispatches skipped; the first 32 logged by key)", k); return; }
+    if (layer_root()) VRED("compute shader %016llx missing: its dispatch is skipped until the shader layer has it%s", (unsigned long long)key, k == 32 ? " (the last one logged by key)" : "");
+    else VRED("compute shader %016llx missing: its dispatch is skipped (no shader layer: DM_VK_LAYER=0, or neither DM_VK_LAYER_DIR nor DM_TEMP)%s", (unsigned long long)key, k == 32 ? " (the last one logged by key)" : "");
+}
 int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
     memset(out, 0, sizeof *out);
     if (!p || !p->serial) return 0;
     pthread_mutex_lock(&g_mu); prent *e = pr_find(p->serial); if (e) *out = e->ps; pthread_mutex_unlock(&g_mu);
     if (e) return 1;
-    pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
+    int ok = lib_ready();
     if (!ok) return 0;
+    // A program with a shader the prepared library lacks takes its other stages from the layer too, where the layer has them: the layer built the program's vertex shader padded for
+    // the program's pixel shader (the requests carry the pairs), which the prepared library's own vertex shader is not. The layer is held (g_ly) while it is looked up in
+    // A kept library (g_kept): every program takes the layer's entry of a stage when the layer has one, and asks for the stages it lacks, so the launcher's verify step translates the
+    // shaders played, in the background, and compares them with the kept entries; a differing one is then the layer's. Once for a program (cached below), not per draw
+    vka_lyh *LH = vka_ly_get(&g_ly); const vka_shlib *LY = LH ? LH->obj : NULL; int ly = g_kept && (LY || layer_root()) ? 1 : 0, missing = 0;
+    for (unsigned i = 0; i < p->nstage && i < 6; i++) { uint8_t md[8]; if (prog_key(p, i, md) && !main_find(vka_shlib_key(md))) ly = 1; }
     for (unsigned i = 0; i < p->nstage && i < 6; i++) {   // (a program has at most 6 shaders: hle_nvn.c nvnProgramSetShaders)
         uint8_t md[8];
         if (!prog_key(p, i, md)) continue;
         uint64_t key = vka_shlib_key(md);
-        const dmsh_vk_entry *en = vka_shlib_find(&g_lib, key);
+        const dmsh_vk_entry *en = ly && LY ? vka_shlib_find(LY, key) : NULL; const vka_shlib *L = LY;
+        if (!en) { en = main_find(key); L = &g_lib; }
         if (!en) {
-            out->bad |= VKA_BAD_MISSING;
+            out->bad |= VKA_BAD_MISSING; missing = 1;
+            miss_note(p, i, key);
+            miss_compute(p, i, key);
             static _Atomic int n;
             if (atomic_fetch_add(&n, 1) < 32)
                 VRED("shader %016llx (program stage %u) is not in the shader library", (unsigned long long)key, i);
@@ -846,9 +1136,13 @@ int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
         int st = vka_nvn_stage(en->stage);
         if (st < 0) { out->bad |= VKA_BAD_MISSING; continue; }   // (vka_shlib_open refuses a stage past DMSH_VK_STAGE_MS)
         if (out->sh[st]) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("program serial %llu has two %s shaders (%016llx, %016llx): the second is used", (unsigned long long)p->serial, stage_name(en->stage), (unsigned long long)out->sh[st]->key, (unsigned long long)key); }
-        out->sh[st] = vka_shader_make(&g_lib, key);
+        out->sh[st] = L == LY ? layer_make(LY, key) : vka_shader_make(L, key);
         if (!out->sh[st]) out->bad |= 1u << st;
     }
+    // Once for the program, when it lacks a shader or takes one from the layer: the stages the layer lacks and its pairs (a vertex shader of the layer is padded for the
+    // pixel shaders it is paired with, so a new pairing of shaders asked for before is recorded too)
+    if (missing || ly) layer_request(p, LY);
+    vka_ly_put(&g_ly, LH);
     vka_prog_put(p->serial, out);
     return 1;
 }

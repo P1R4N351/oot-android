@@ -173,7 +173,126 @@ static void ui_check(int which) {   // 0..3: no change (unset, 16:9, another bui
     assert(r[1] == 0 && r[2] == 0 && r[3] == 1920 && r[4] == 1080);
 }
 
+// ---- draw distance: DM_OOT_DRAW_DISTANCE caps the main camera's far plane, once, live, and only on the game's own 16:9 lens ----
+static void far_check(int which) {   // 0 unset, 1 "0", 2 junk, 3 "5" (below 10), 4 "100", 5 "100" with 21:9, 6 "100" on another build, 7 "100" and a 1:1 shadow-like lens, 8 "5000" (above the far plane)
+    static const char *val[] = {NULL, "0", "abc", "5", "100", "100", "100", "100", "5000"};
+    _Alignas(16) unsigned char p[0x100];
+    uint64_t a = (uintptr_t)p;
+    g_nmod = 1;
+    strcpy(g_mod[0].name, "main");
+    strcpy(g_mod[0].build_id, which == 6 ? "0000" : OOT_MAIN_BUILD);
+    if (which == 5) setenv("DM_VK_PICTURE_ASPECT", "21:9", 1); else unsetenv("DM_VK_PICTURE_ASPECT");
+    if (val[which]) setenv("DM_OOT_DRAW_DISTANCE", val[which], 1); else unsetenv("DM_OOT_DRAW_DISTANCE");
+    make(p, 60, which == 7 ? 1.0 : K169);
+    wrf(a + P_NEAR, 0.5f); wrf(a + P_FAR, 1000.0f);
+    for (int reg = 0; reg < 29; reg += 7) gate(a, reg);
+    int cut = which == 4 || which == 5;
+    assert(rdf(a + P_NEAR) == 0.5f);
+    assert(cut ? rdf(a + P_FAR) == 100.5f : rdf(a + P_FAR) == 1000.0f);
+    // five sites, every frame: the far plane is capped once
+    for (int i = 0; i < 1000; i++) gate(a, i % 29);
+    assert(cut ? rdf(a + P_FAR) == 100.5f : rdf(a + P_FAR) == 1000.0f);
+    if (!cut) return;
+    // the camera update writes a fresh far plane: capped again; a live change takes the next fresh value; a plane inside the cap stays
+    wrf(a + P_ASPECT, (float)K169); wrf(a + P_FAR, 2000.0f); gate(a, 20); gate(a, 20);
+    assert(rdf(a + P_FAR) == 100.5f);
+    setenv("DM_OOT_DRAW_DISTANCE", "250", 1);
+    wrf(a + P_ASPECT, (float)K169); wrf(a + P_FAR, 2000.0f); gate(a, 20);
+    assert(rdf(a + P_FAR) == 250.5f);
+    wrf(a + P_ASPECT, (float)K169); wrf(a + P_FAR, 200.0f); gate(a, 20);
+    assert(rdf(a + P_FAR) == 200.0f);
+    unsetenv("DM_OOT_DRAW_DISTANCE");
+    wrf(a + P_ASPECT, (float)K169); wrf(a + P_FAR, 2000.0f); gate(a, 20);
+    assert(rdf(a + P_FAR) == 2000.0f);
+    // planes that are not the game's (far below near, absurd, zero) are left alone
+    setenv("DM_OOT_DRAW_DISTANCE", "100", 1);
+    wrf(a + P_FAR, 0.25f); gate(a, 0); assert(rdf(a + P_FAR) == 0.25f);
+    wrf(a + P_FAR, 1e9f); gate(a, 0); assert(rdf(a + P_FAR) == 1e9f);
+    wrf(a + P_NEAR, 0.0f); wrf(a + P_FAR, 0.0f); gate(a, 0); assert(rdf(a + P_FAR) == 0.0f);
+}
+
+// ---- model LOD distance: DM_OOT_LOD_SCALE scales the scene manager's start coefficient and ModelLodParam's MaxLevelDistScale, live, and puts the game's values back ----
+static void lod_check(int which) {   // 0 unset, 1 junk, 2 "0.05" (below 0.1), 3 "1.5" (above 1), 4 "0.5", 5 "0.5" on another build, 6 "0.5" with a parent param, 7 "0.5" and a param of another type
+    static const char *val[] = {NULL, "abc", "0.05", "1.5", "0.5", "0.5", "0.5", "0.5"};
+    static _Alignas(16) unsigned char fake_main[16];
+    _Alignas(16) unsigned char mgr[0x1000], handle[0x200], param[0x60], parent[0x60];
+    memset(mgr, 0, sizeof mgr); memset(handle, 0, sizeof handle); memset(param, 0, sizeof param);
+    uint64_t m = (uintptr_t)mgr, h = (uintptr_t)handle, p = (uintptr_t)param, vt = (uintptr_t)fake_main + (which == 7 ? 0x10 : OOT_LOD_PARAM_VT), par = which == 6 ? (uintptr_t)parent : 0;
+    memcpy(mgr + M_LOD_PARAM, &h, 8); memcpy(handle + 0x150, &p, 8); memcpy(param, &vt, 8); memcpy(param + LP_PARENT, &par, 8);
+    wrf(m + M_LOD_START, 0.8f); wrf(p + LP_MAXLEVEL, 1.0f);   // the handheld start coefficient, the constructor's MaxLevelDistScale
+    g_nmod = 1;
+    strcpy(g_mod[0].name, "main");
+    strcpy(g_mod[0].build_id, which == 5 ? "0000" : OOT_MAIN_BUILD);
+    g_mod[0].base = fake_main;
+    if (val[which]) setenv("DM_OOT_LOD_SCALE", val[which], 1); else unsetenv("DM_OOT_LOD_SCALE");
+    uint64_t r[31] = {0};
+    r[19] = m;
+    for (int i = 0; i < 100; i++) callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);   // every frame: scaled once, not again
+    int on = which >= 4 && which != 5, own = which == 4;
+    assert(rdf(m + M_LOD_START) == (on ? 0.4f : 0.8f));
+    assert(rdf(p + LP_MAXLEVEL) == (own ? 0.5f : 1.0f));
+    if (which == 6) {   // a parent param, and this one has a value of its own: written after all
+        param[LP_MAXLEVEL_OWN] = 1;
+        callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);
+        assert(rdf(p + LP_MAXLEVEL) == 0.5f);
+    }
+    if (!own) return;
+    // a live change takes the game's value times the new scale
+    setenv("DM_OOT_LOD_SCALE", "0.25", 1);
+    callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);
+    assert(rdf(m + M_LOD_START) == 0.2f && rdf(p + LP_MAXLEVEL) == 0.25f);
+    // the game writes a fresh start coefficient (the console's 1.0 after the operation mode changed): that value, scaled
+    wrf(m + M_LOD_START, 1.0f);
+    callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);
+    assert(rdf(m + M_LOD_START) == 0.25f && rdf(p + LP_MAXLEVEL) == 0.25f);
+    // back to Auto (unset, then a value outside the range): the game's values come back, and stay
+    unsetenv("DM_OOT_LOD_SCALE");
+    callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);
+    assert(rdf(m + M_LOD_START) == 1.0f && rdf(p + LP_MAXLEVEL) == 1.0f);
+    setenv("DM_OOT_LOD_SCALE", "7", 1);
+    callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);
+    assert(rdf(m + M_LOD_START) == 1.0f && rdf(p + LP_MAXLEVEL) == 1.0f);
+    // a null manager, an unaligned one, a manager without a param handle: nothing is read past them or written
+    r[19] = 0; callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);
+    r[19] = m + 1; callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);
+    setenv("DM_OOT_LOD_SCALE", "0.5", 1);
+    _Alignas(16) unsigned char bare[0x1000];
+    memset(bare, 0, sizeof bare);
+    wrf((uintptr_t)bare + M_LOD_START, 1.0f);
+    r[19] = (uintptr_t)bare; callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);
+    assert(rdf((uintptr_t)bare + M_LOD_START) == 0.5f);   // the start coefficient is the manager's own: scaled
+    // a start coefficient that is no coefficient (0, absurd) is left alone
+    _Alignas(16) unsigned char odd[0x1000];
+    memset(odd, 0, sizeof odd);
+    r[19] = (uintptr_t)odd; callbacks[OBS_OOT_WIDE](r, 4 << 5 | 19);
+    assert(rdf((uintptr_t)odd + M_LOD_START) == 0.0f);
+}
+
 int main(void) {
+    for (int i = 0; i < 8; i++) {
+        pid_t child = fork();
+        assert(child >= 0);
+        if (!child) { lod_check(i); _exit(0); }
+        int status;
+        assert(waitpid(child, &status, 0) == child);
+        if (!WIFEXITED(status) || WEXITSTATUS(status)) {
+            fprintf(stderr, "oot lod case %d failed\n", i);
+            return 1;
+        }
+    }
+    puts("oot lod: 8 model LOD distance cases passed");
+    for (int i = 0; i < 9; i++) {
+        pid_t child = fork();
+        assert(child >= 0);
+        if (!child) { far_check(i); _exit(0); }
+        int status;
+        assert(waitpid(child, &status, 0) == child);
+        if (!WIFEXITED(status) || WEXITSTATUS(status)) {
+            fprintf(stderr, "oot far case %d failed\n", i);
+            return 1;
+        }
+    }
+    puts("oot far: 9 draw distance cases passed");
     for (int i = 0; i < 10; i++) {
         pid_t child = fork();
         assert(child >= 0);

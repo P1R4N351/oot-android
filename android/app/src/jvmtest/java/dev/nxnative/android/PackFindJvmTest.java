@@ -132,6 +132,22 @@ public final class PackFindJvmTest {
         check(PackFind.shaderTier(st, DKB, false) == PackFind.UPDATE, "a library a stamp row names: update tier, dump or not");
         check(PackFind.shaderTier(new File(t, "nothing"), DKB, true) == -1, "no pack: no tier");
 
+        // The shader layer covers the game: a pack with no library of this version plays (on demand); with the layer off it does not; other tables are no gap the layer fills
+        File none = pack(new File(t, "none-pack"), DKB, "aa", null);
+        check(PackFind.shaderTier(none, DKB, true) == -1 && PackFind.shaderTier(none, DKB, true, false) == -1, "no library at all: no tier without the layer");
+        check(PackFind.shaderTier(none, DKB, false, true) == PackFind.ON_DEMAND, "no library at all, the layer covers the game: plays on demand, dump or not");
+        check(PackFind.shaderTier(older, DKB, true, true) == PackFind.UPDATE, "an older library a delta knows stays the update tier");
+        check(PackFind.shaderTier(older, DKB, false, true) == PackFind.ON_DEMAND, "an older library with no delta (not a dump): plays on demand");
+        check(PackFind.shaderTier(inputs, DKB, true, true) == -1, "this version's library of other tables: not on demand (the host loads it)");
+        check(PackFind.shaderTier(new File(t, "nothing"), DKB, true, true) == -1, "no pack: no tier, layer or not");
+        PackFind.Found nf = PackFind.best(java.util.Arrays.asList(none), DKB, false, BUILD_AA, true);
+        check(nf != null && nf.dir.equals(none) && nf.tier == PackFind.ON_DEMAND, "the only pack has no library: chosen, on demand");
+        check(PackFind.best(java.util.Arrays.asList(none), DKB, false, BUILD_AA, false) == null, "the same without the layer: none");
+        PackFind.Found nf2 = PackFind.best(java.util.Arrays.asList(none, older, xlate), DKB, true, BUILD_AA, true);
+        check(nf2 != null && nf2.dir.equals(xlate) && nf2.tier == PackFind.READY, "a pack with the library wins over on demand and update");
+        PackFind.Found nf3 = PackFind.best(java.util.Arrays.asList(none, older), DKB, true, BUILD_AA, true);
+        check(nf3 != null && nf3.dir.equals(older) && nf3.tier == PackFind.UPDATE, "an update beats on demand");
+
         // Never above the volume root, never past LEVELS
         File deep = new File(root, "a/b/c/d/e");
         File g2 = new File(deep, "Game.nup");

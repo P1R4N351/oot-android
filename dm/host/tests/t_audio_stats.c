@@ -38,7 +38,7 @@ static int checked_fprintf(FILE *f, const char *fmt, ...) {
 #undef flockfile
 __thread _Atomic int dm_host_work;
 int dm_guest_as_contains(uintptr_t a) { (void)a; return 0; } // No guest address space: the real big-stack entry keeps the calling host stack.
-uint64_t now_ns(void) { return 0; }
+uint64_t g_t0_ns; uint64_t now_ns(void) { return 0; }
 static void *key, *value;
 void *objmap_get(const void *k) { return k == key ? value : NULL; }
 void objmap_put(const void *k, void *v) { key = (void *)k; value = v; }

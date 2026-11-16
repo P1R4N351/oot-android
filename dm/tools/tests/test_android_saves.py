@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+WORDS = REPO / 'android/app/src/main/java/dev/nxnative/android/Words.java'   # the pure classes' text (Words), compiled with them
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/LauncherJvmTest.java'
 RES = REPO / 'android/app/src/main/res/values/strings.xml'   # the labels LauncherJvmTest checks (Profile.renderOutLabel)
@@ -112,7 +113,7 @@ class LauncherJvm(unittest.TestCase):
         (d / 'stub').mkdir()
         (d / 'stub/BuildConfig.java').write_text(STUB)
         cls.classes = d / 'classes'
-        subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-d', str(cls.classes), str(SRC / 'SaveStore.java'), str(SRC / 'SaveMigrate.java'), str(SRC / 'Profile.java'), str(TEST), str(d / 'stub/BuildConfig.java')],
+        subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-d', str(cls.classes), str(WORDS), str(SRC / 'SaveStore.java'), str(SRC / 'SaveMigrate.java'), str(SRC / 'Profile.java'), str(TEST), str(d / 'stub/BuildConfig.java')],
                        check=True, capture_output=True, text=True)
 
     @classmethod

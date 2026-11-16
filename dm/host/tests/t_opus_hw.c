@@ -4,6 +4,8 @@
 // buffer as a decoder: Ocarina of Time's sound streams decoded to silence), and a manager's decoder (SDK 21) still enqueues, decodes, dequeues, resets and finalizes.
 #include "../hle_codec.c"
 #include <assert.h>
+uint64_t g_t0_ns;
+uint64_t now_ns(void) { static uint64_t t; return t += 3000000000ull; }   // each call 3 s on: the 10 s window lines come within a test
 
 static int checks, fails;
 #define CHECK(c, msg) do { checks++; if (!(c)) { fails++; fprintf(stderr, "FAIL: %s\n", msg); } } while (0)
@@ -84,6 +86,8 @@ int main(void) {
     CHECK(finis == f0 + 1 && !opus_mdec_find(gd, 0), "manager: Finalize finalizes its decoder and forgets it");
     h_codec_HwOpusMgrFini(gm);
 
+    CHECK(atomic_load(&g_op_live) == 0, "the live decoder count of the log lines returns to 0 after both interfaces finalized");
+    CHECK(atomic_load(&g_op_peak) <= 32767 && atomic_load(&g_op_fail) == 0, "the window figures hold no failure and no peak past 16 bits");
     printf("opus_hw: %d checks, %d failed\n", checks, fails);
     return fails != 0;
 }

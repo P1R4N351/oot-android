@@ -395,15 +395,52 @@ static int dm_lang_code(const char *tag, char out[8]) {
     return c != NULL;
 }
 
-// The language the game is given: DM_LANG through dm_lang_code (en-US when unset), logged once with what it was mapped from
+// Whether the space separated list has the code
+static int lang_listed(const char *list, const char *code) {
+    size_t n = strlen(code);
+    for (const char *p = list; *p; ) {
+        while (*p == ' ') p++;
+        const char *q = p; while (*q && *q != ' ') q++;
+        if ((size_t)(q - p) == n && !strncmp(p, code, n)) return 1;
+        p = q;
+    }
+    return 0;
+}
+
+// The language a console gives a game: oe::GetDesiredLanguage returns one of the languages in the game's control data (its NACP), never the system's own when the game does not list it. A game
+// handed a language it has no data for is on its own: Ocarina of Time, given Thai (the table of its message archives has THth, its romfs has no Mals/THth), crashed in its opening reading a resource
+// that was not there (null object, main+0xa7ec18; issue #290; phone check of the link open). The profile's `languages` names what the game ships (a .nup has no control data). The nearest
+// listed one wins: the same language's other variant (en-GB for en-US, fr-CA for fr, es-419 for es, pt-BR for pt, the other Chinese script), else en-US, else en-GB, else the first of the list.
+// No list: no limit.
+// The profile's list is `list`; the language in `code` is replaced when the list does not have it. Returns 1 when it was replaced
+static int dm_lang_limit(const char *list, char code[8]) {
+    if (!*list || lang_listed(list, code)) return 0;
+    static const char *const near[][2] = {{"en-US", "en-GB"}, {"en-GB", "en-US"}, {"fr", "fr-CA"}, {"fr-CA", "fr"}, {"es", "es-419"}, {"es-419", "es"}, {"pt", "pt-BR"}, {"pt-BR", "pt"},
+                                           {"zh-Hans", "zh-Hant"}, {"zh-Hant", "zh-Hans"}};
+    const char *pick = NULL;
+    for (unsigned i = 0; i < sizeof near / sizeof *near && !pick; i++) if (!strcmp(code, near[i][0]) && lang_listed(list, near[i][1])) pick = near[i][1];
+    if (!pick && lang_listed(list, "en-US")) pick = "en-US";
+    if (!pick && lang_listed(list, "en-GB")) pick = "en-GB";
+    char first[8] = {0};
+    if (!pick) { size_t n = strcspn(list + strspn(list, " "), " "); memcpy(first, list + strspn(list, " "), n < 7 ? n : 7); pick = first; }
+    memset(code, 0, 8); strncpy(code, pick, 7);
+    return 1;
+}
+
+// The language the game is given: DM_LANG through dm_lang_code (en-US when unset), limited to the game's own languages (profile `languages`), logged once with what it was mapped from
 static void dm_lang(char out[8]) {
     const char *e = getenv("DM_LANG");
-    if (!e || !*e) { memset(out, 0, 8); strcpy(out, "en-US"); return; }
-    int ok = dm_lang_code(e, out);
+    char asked[8];
+    int ok = 1;
+    if (!e || !*e) { memset(out, 0, 8); strcpy(out, "en-US"); }
+    else ok = dm_lang_code(e, out);
+    memcpy(asked, out, 8);
+    int limited = dm_lang_limit(DM_GAME_LANGUAGES, out);
     static int once;
     if (!once++) {
-        if (!ok) LOG("[RED] DM_LANG=%s: no console language for it: en-US (the codes: ja, en-US, en-GB, fr, fr-CA, de, it, es, es-419, nl, pt, pt-BR, ru, ko, zh-Hans, zh-Hant, pl, th)", e);
-        else if (strcmp(e, out)) LOG("language: DM_LANG=%s is %s", e, out);
+        if (e && *e && !ok) LOG("[RED] DM_LANG=%s: no console language for it: en-US (the codes: ja, en-US, en-GB, fr, fr-CA, de, it, es, es-419, nl, pt, pt-BR, ru, ko, zh-Hans, zh-Hant, pl, th)", e);
+        else if (e && *e && strcmp(e, asked)) LOG("language: DM_LANG=%s is %s", e, asked);
+        if (limited) LOG("language: the game has no %s (profile languages: %s): %s, as a console gives a game only a language it lists", asked, DM_GAME_LANGUAGES, out);
     }
 }
 

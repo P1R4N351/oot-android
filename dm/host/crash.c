@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <stdatomic.h>
 #include <time.h>
+#include "lse_unaligned.h"
 
 static _Atomic uint64_t g_watch_last_ns;
 static _Atomic uint64_t g_watch_count;
@@ -212,6 +213,22 @@ static void on_crash(int sig, siginfo_t *si, void *uc_) {
             case 0xDAC10000u: case 0xDAC10400u: case 0xDAC10800u: case 0xDAC10C00u:
             case 0xDAC11000u: case 0xDAC11400u: case 0xDAC11800u: case 0xDAC11C00u:
                 PLAT_UC_PC(uc) += 4;
+                return;
+            }
+        }
+    }
+    // An atomic read-modify-write at an address that is not a multiple of its size, on a core without FEAT_LSE2 (Armv8.2: Snapdragon 888): the game's code is built for a CPU that does it as
+    // one access (lse_unaligned.h; issue #343). Done again here, atomically, and the game goes on after it
+    if (sig == SIGBUS && si->si_code == BUS_ADRALN) {
+        uint32_t insn = 0;
+        if (!plat_mem_read(PLAT_UC_PC(uc), &insn, sizeof insn)) {
+            lse_regs r; for (int i = 0; i < 31; i++) r.x[i] = PLAT_UC_X(uc, i);
+            r.x[31] = 0; r.sp = PLAT_UC_SP(uc);
+            if (lse_emulate(insn, &r, (uint64_t)(uintptr_t)si->si_addr)) {
+                for (int i = 0; i < 31; i++) PLAT_UC_X(uc, i) = r.x[i];
+                PLAT_UC_PC(uc) += 4;
+                static _Atomic unsigned n_lse; unsigned n = atomic_fetch_add(&n_lse, 1);
+                if (n == 0 || n == 999 || n == 99999) fprintf(stderr, "[dm] unaligned atomic %#x at %#llx (pc %#llx) done in software: this CPU has no FEAT_LSE2; %u so far\n", insn, (unsigned long long)(uintptr_t)si->si_addr, (unsigned long long)PLAT_UC_PC(uc) - 4, n + 1);
                 return;
             }
         }

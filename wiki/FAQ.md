@@ -26,6 +26,8 @@ Short answers, with links to the page that has the detail.
 
 **Where do I download the app?** Only from the [official releases](https://git.eden-emu.dev/moceure/BananaNative/releases). The project has no Discord, subreddit or social media, and nobody will ask for money, keys or game files.
 
+**Is there a Linux version?** An experimental aarch64 Linux host is in the repository's `linux/` folder (community change #335 by titooo7, tested by the author on an AYN Odin 2 Pro). It is not part of the APK and not run by the maintainers.
+
 **Does it work on iPhone or Mac?** The Mac and iOS code is upstream nxnative's. This wiki covers the Android app only; a Mac is used only to prepare packs.
 
 **How do I report a bug?** [Troubleshooting](Troubleshooting#opening-an-issue).

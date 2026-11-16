@@ -993,7 +993,10 @@ NVN(nvnProgramFinalize, void, NVNprogram *p) {
     mtl_prog_release((prog_t *)p); ((prog_t *)p)->magic = 0; pk_drop(p);
 }
 // a program's per-stage keys (side table: guest NVNprogram address → host object; bit i of ok = stage i computed)
-typedef struct { uint8_t key[6][8]; uint8_t ok; } prog_keys_t;
+// ctl: an NVN2 stage's control section (its first 0xd8 bytes), copied at nvnProgramSetShaders (the guest's section is valid only during that call), for the Android shader layer
+// (vka_shader.c: a shader the library lacks is built from its control section and code); ctl_ok bit i = stage i has one
+#define PROG_CTL_LEN 0xd8
+typedef struct { uint8_t key[6][8]; uint8_t ok; uint8_t ctl_ok; uint8_t ctl[6][PROG_CTL_LEN]; } prog_keys_t;
 static pthread_mutex_t g_pk_mu = PTHREAD_MUTEX_INITIALIZER; static plat_ptrmap_t *g_pk;   // a dedicated table (keys not shared with other side tables)
 static prog_keys_t *pk_get(const void *p, int make) {
     pthread_mutex_lock(&g_pk_mu);
@@ -1050,6 +1053,7 @@ int prog_key(const prog_t *p, unsigned st, uint8_t key[8]) {
     memcpy(key, k->key[st], 8);
     return 1;
 }
+const uint8_t *nvn_prog_ctl(const prog_t *p, unsigned st) { prog_keys_t *k = st < 6 ? pk_get(p, 0) : NULL; return k && (k->ctl_ok >> st & 1) ? k->ctl[st] : NULL; }
 // The Android frame replayer (vka_replay.c): a captured program's stage keys (its shader data is not in the capture)
 void nvn_prog_keys_set(const prog_t *p, const uint8_t key[6][8], uint8_t ok) { prog_keys_t *k = pk_get(p, 1); memcpy(k->key, key, sizeof k->key); k->ok = ok; }
 NVN(nvnProgramSetShaders, NVNboolean, NVNprogram *p, int n, const NVNshaderData *sd) {
@@ -1061,9 +1065,10 @@ NVN(nvnProgramSetShaders, NVNboolean, NVNprogram *p, int n, const NVNshaderData 
     static const char *trace; static int trace_init;
     if (!trace_init) { trace = getenv("DM_NVN_PROGTRACE"); trace_init = 1; }
     prog_keys_t *k = pk_get(p, 1);
-    k->ok = 0;
+    k->ok = 0; k->ctl_ok = 0;
     for (int i = 0; i < n; i++) {
         if (keys_hash(&sd[i], 1, k->key[i])) k->ok |= (uint8_t)(1u << i);
+        if (sd[i].control && nvn2_ctl(sd[i].control)) { memcpy(k->ctl[i], sd[i].control, PROG_CTL_LEN); k->ctl_ok |= (uint8_t)(1u << i); }
         // Diagnostic: trace the loader of selected shader keys (comma-separated hex).
         if (trace && (k->ok & (1u << i))) {
             char key[17]; for (int j = 0; j < 8; j++) snprintf(key + j * 2, 3, "%02x", k->key[i][j]);

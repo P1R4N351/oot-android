@@ -8,6 +8,7 @@ public final class PackPolicyJvmTest {
     public static void main(String[] a) {
         for (String line : a) {
             String[] f = line.split(" ");
+            if (f[0].equals("workers")) { System.out.println(PackPolicy.workers(Integer.parseInt(f[1]), Integer.parseInt(f[2]))); continue; }
             int pct = Integer.parseInt(f[0]), th = Integer.parseInt(f[2]);
             boolean ch = f[1].equals("1"), ov = f[4].equals("1");
             String r = PackPolicy.reason(pct, ch, th, f[3].equals("-") ? null : f[3], ov);

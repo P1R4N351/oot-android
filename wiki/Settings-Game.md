@@ -13,6 +13,11 @@ Rows appear only when the game's profile has them. If this app has no profile fo
 - **What to expect:** the edition needs a dump folder that holds it; a `.nup` has only the original program (see [First start and Prepare](First-Start-and-Prepare)).
 - **Default:** off.
 
+## Shaders while playing
+- **What it does:** a Switch 2 game builds missing shaders on the phone while you play, with a "Building shaders" label ([Live shader building](Live-Shader-Building)). It is on the game's page under **Advanced** and applies at the next start.
+- **When to toggle:** off if you want the game to wait for a complete shader library (a Prepare of all shaders, or an imported library) before it starts.
+- **Default:** on.
+
 ## Game options
 
 ### Full vegetation

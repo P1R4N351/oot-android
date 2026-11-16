@@ -39,7 +39,7 @@ There is no game-specific patch and no rewriter cut. Everything else it needed i
 
 - In the doubles match on the M6 (window, 2026-11-12): frame time p50 16.67 / p95 17.3-17.9 ms, NVN submit and present about 3.4 ms, CPU about 92% of one core.
 - bymaxmarc's measurements on the M2 Max (scene loads of 110-225 ms, a 250 ms GPU frame at boot) are in [PR #2387](https://github.com/seedds/nxnative/pull/2387)'s note.
-- Out of focus the game pauses and its GPU queues wait on it for 6-10 s at a time (`[RED] queue 4: an event wait has held it …`); runs set `DM_FOCUS_KEEP=1`.
+- Out of focus the game pauses and its GPU queues wait on it for 6-10 s at a time (`[RED] queue 4: an event wait has held it …`); runs once set `DM_FOCUS_KEEP=1` (that switch was removed; nothing reads it now).
 
 ## Motion controls
 
@@ -60,7 +60,7 @@ The work folder `04008E001F098000-work` beside the dump has `run/boot.sh <log> <
 
 - A point played on the Mac in this tree (needs a motion controller, or scripted moves that serve).
 - Sports other than tennis.
-- Mii heads need the player's own console files: without the system data the game mounts as `MiiResource` (`0400000000000849`) the host's stand-in for it draws none ([Miis](#miis)). With that archive and the console's Mii database under `DM_SYSTEM_DIR` (A console's own Mii database and system data) it lists the player's Miis and draws their heads (FifteenPen, PR #2274, M4 Pro); not run in this tree, which has no console files.
+- Mii heads need the player's own console files: without the system data the game mounts as `MiiResource` (`0400000000000849`) the host's stand-in for it draws none ([Miis](#miis)). With that archive and the console's Mii database under the removed `DM_SYSTEM_DIR` (A console's own Mii database and system data) it lists the player's Miis and draws their heads (FifteenPen, PR #2274, M4 Pro); not run in this tree, which has no console files.
 - The 6 refused mesh shaders, above.
 - iPhone and iPad: no IPA built.
 

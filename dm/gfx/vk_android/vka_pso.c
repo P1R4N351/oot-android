@@ -809,7 +809,7 @@ static int pw_heavy_hold(uint64_t key, uint64_t heavy_ns) {
 static uint64_t mem_avail_mb(void);
 int plat_maps_count(int *max);
 static pthread_mutex_t g_gate_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_gate_cv = PTHREAD_COND_INITIALIZER;
-static vkpg_state g_gate; static _Atomic int g_gate_slots = 1, g_gate_slots_logged; static _Atomic uint64_t g_gate_t, g_gate_frame_wait_ns, g_gate_spec_wait_ns;
+static vkpg_state g_gate; static _Atomic int g_gate_slots = 1, g_gate_slots_logged, g_gate_maps = -1, g_gate_mx; static _Atomic uint64_t g_gate_spec_held; static _Atomic uint64_t g_gate_t, g_gate_frame_wait_ns, g_gate_spec_wait_ns;
 // DM_VK_PSO_SLOTS's default: 1 on Turnip (driverID), 4 elsewhere (vka_psogate.h vkpg_cap_default)
 static int gate_cap(void) { return VKA_ENV("DM_VK_PSO_SLOTS", vkpg_cap_default(V.driver_id == VK_DRIVER_ID_MESA_TURNIP)); }
 static int gate_slots(void) {
@@ -818,6 +818,7 @@ static int gate_slots(void) {
         int mx = 0, maps = plat_maps_count(&mx);
         uint64_t av = mem_avail_mb();
         int cap = gate_cap(), n = vkpg_slots(av, maps, mx, cap), was = atomic_exchange(&g_gate_slots, n);
+        atomic_store(&g_gate_maps, maps); atomic_store(&g_gate_mx, mx);
         if ((n != was || !last) && atomic_fetch_add(&g_gate_slots_logged, 1) < 32)
             VLOG("background pipeline compiles: %d at once (was %d): MemAvailable %llu MiB, memory maps %d of %d (DM_VK_PSO_SLOTS at most %d%s)", n, was, (unsigned long long)av, maps, mx,
                  cap, getenv("DM_VK_PSO_SLOTS") ? "" : V.driver_id == VK_DRIVER_ID_MESA_TURNIP ? ", 1 on Turnip by default" : "");
@@ -833,7 +834,12 @@ static int gate_enter(int frame, int heavy) {
         pthread_mutex_lock(&g_gate_mu);
         vkpg_state o = g_gate;   // the others: this thread's own wait left out
         if (waited) { if (frame) { if (heavy) o.frame_heavy_wait--; else o.frame_wait--; } else { if (heavy) o.spec_heavy_wait--; else o.spec_wait--; } }
-        if (vkpg_may_enter(&o, slots, frame, heavy)) break;   // (with the lock held)
+        // a speculative compile waits while the maps are over vkpg_spec_ok's share (the count is the slots' own, read every 0.5 s); the frame's never does
+        int held = !frame && !vkpg_spec_ok(atomic_load(&g_gate_maps), atomic_load(&g_gate_mx), VKA_ENV("DM_VK_SPEC_MAPS_PCT", VKPG_SPEC_PCT));
+        if (held && !atomic_exchange(&g_gate_spec_held, 1))
+            VLOG("speculative pipeline compiles (prewarm, optimizer) wait: memory maps %d of %d (from %d %% of vm.max_map_count; the driver's compiles leave maps behind), the frame's compiles go on",
+                 atomic_load(&g_gate_maps), atomic_load(&g_gate_mx), VKA_ENV("DM_VK_SPEC_MAPS_PCT", VKPG_SPEC_PCT));
+        if (!held && vkpg_may_enter(&o, slots, frame, heavy)) break;   // (with the lock held)
         if (!waited) { waited = 1; if (frame) { if (heavy) g_gate.frame_heavy_wait++; else g_gate.frame_wait++; } else { if (heavy) g_gate.spec_heavy_wait++; else g_gate.spec_wait++; } }
         struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_nsec += 250000000; if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
         pthread_cond_timedwait(&g_gate_cv, &g_gate_mu, &ts);   // (timed: memory freed elsewhere raises the slots without a gate_leave)
@@ -1382,11 +1388,13 @@ static void gfx_build(gval *g, size_t len, vka_shader *const sh[VKA_NSTAGE], con
     pthread_mutex_unlock(&g_mu);
     if (linked) opt_queue(g, sh, lay, k);
 }
+_Thread_local int vka_pso_wait;   // set by the pipeline calls of a draw or dispatch: the NULL they return is a pipeline still being made on the asynchronous threads (not a refusal), vka.h
 static inline VkPipeline gval_use(gval *g) {
+    vka_pso_wait = 0;
     if (!g) return VK_NULL_HANDLE;
     if (__atomic_load_n(&g->linked, __ATOMIC_ACQUIRE)) atomic_fetch_add_explicit(&g_hy_draws, 1, memory_order_relaxed);
     VkPipeline p = __atomic_load_n(&g->p, __ATOMIC_ACQUIRE);
-    if (!p && __atomic_load_n(&g->busy, __ATOMIC_ACQUIRE)) atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed);
+    if (!p && __atomic_load_n(&g->busy, __ATOMIC_ACQUIRE)) { atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed); vka_pso_wait = 1; }
     return p;
 }
 VkPipeline vka_gfx_pipeline(vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k) {
@@ -1425,7 +1433,7 @@ static void cs_queue(gval *g, vka_shader *cs, const vka_layout *lay) {
     pthread_mutex_lock(&g_as_mu); *g_as_tail = j; g_as_tail = &j->next; pthread_cond_signal(&g_as_cv); pthread_mutex_unlock(&g_as_mu);
 }
 static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask, int frame) {
-    *made = 0;
+    *made = 0; vka_pso_wait = 0;
     if (VKA_ENV("DM_VK_SKIP_NDVE", 1) && vka_is_ndve_key(cs->key)) return VK_NULL_HANDLE;
     VkShaderModule csm = umask | smask ? vka_shader_img_module(cs, umask, smask) : vka_shader_cs_module(cs);
     if (!csm) return VK_NULL_HANDLE;   // (a retyped module that cannot be made: the caller takes the base pipeline)
@@ -1437,7 +1445,7 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, 
     if (g) {
         if (g->busy && (prewarm || async)) {   // (a frame dispatch: skipped while another thread makes it)
             pthread_mutex_unlock(&g_mu);
-            if (async) atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed);
+            if (async) { atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed); vka_pso_wait = 1; }
             return VK_NULL_HANDLE;
         }
         if (g->busy) busy_wait(g);
@@ -1467,7 +1475,7 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, 
             if (p) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); return p; }
         }
         cs_queue(g, cs, lay);
-        atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed);
+        atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed); vka_pso_wait = 1;
         return VK_NULL_HANDLE;
     }
     cs_build(g, cs, lay, csm, umask, smask, prewarm, 0);

@@ -121,6 +121,17 @@ static void nup_tests(const char *root) {
         h_fs_CloseFile(h);
         CHECK(a->z[0].refs == 0 && a->z[0].buf, "closed, the bytes stay cached within the budget");
     }
+    // Forgejo #291, #342: a copy of the .nup with zeros where a file's extent is (a cut or sparse copy) is read as it is: the zstd file does not decode and the
+    // red line says its extent is all zeros (the decoder's own error strings are stripped); a raw file reads as zeros
+    {   nup_aux *a = g_mnt[0].img->aux; uint64_t zo = a->z[0].off, zs = a->z[0].stored; static uint8_t zb[8192]; char zp[1100];
+        memcpy(zb, b, n); CHECK(zo + zs <= n, "the zstd extent is inside the fixture"); memset(zb + zo, 0, (size_t)zs);
+        snprintf(zp, sizeof zp, "%s/zeroed.nup", root); nup_write(zp, zb, n);
+        g_nmnt = 0; snprintf(spec, sizeof spec, "%s:update/65536/romfs", zp); setenv("DM_ROMFS", spec, 1);
+        CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK && g_mnt[0].img, "a .nup whose zstd extent is zeros still mounts (the TOC is intact)");
+        char why[400] = ""; const uint8_t *r = nup_z_get(g_mnt[0].img, 0, why, sizeof why);
+        CHECK(!r && strstr(why, "all zeros") && strstr(why, "begins 00 00 00 00") && !strstr(why, "stripped"), "a zeroed zstd extent fails and says it is all zeros: %s", why);
+        uint64_t h; CHECK(h_fs_OpenFile(&h, "rom:/data/z", MODE_READ) != RES_OK, "the game's open of it fails");
+    }
     g_nmnt = 0; setenv("DM_NUP_CACHE_MB", "0", 1);
     snprintf(spec, sizeof spec, "%s:base", np); setenv("DM_ROMFS", spec, 1);
     CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK && read_fs("rom:/top.txt", got, sizeof got) && !strcmp(got, "base-top"), ":base selects the base");
@@ -232,6 +243,7 @@ int main(void) {
         uint64_t h; size_t n = 0; int64_t sz = 0; char b[16] = {0};
         CHECK(h_fs_OpenFile(&h, "rom:/data/a", MODE_READ) == RES_OK && h_fs_ReadFile(&n, h, 3, b, 10) == RES_OK && n == 2 && !memcmp(b, "lo", 2), "a read stops at the end of the file (got %zu)", n);
         CHECK(h_fs_GetFileSize(&sz, h) == RES_OK && sz == 5 && h_fs_GetFileOpenMode(h) == MODE_READ, "size 5, open for reading"); h_fs_CloseFile(h);
+        CHECK(h_fs_GetFileSize(&sz, 0) == RES_FAIL, "a null handle fails (the log names it)");
         // entry 4: its index has low bits set, which Metroid Prime 4's file device masks off (handle & ~7) as it may of a Horizon pointer
         CHECK(h_fs_OpenFile(&h, "rom:/data/c", MODE_READ) == RES_OK && !(h & 15) && h_fs_ReadFile(&n, h & ~7ull, 0, b, 10) == RES_OK && n == 2 && !memcmp(b, "xy", 2), "entry 4 still reads after its handle's low bits are masked off (%#llx)", (unsigned long long)h);
         CHECK(h_fs_GetFileSize(&sz, h & ~7ull) == RES_OK && sz == 2, "and is 2 bytes"); h_fs_CloseFile(h & ~7ull);

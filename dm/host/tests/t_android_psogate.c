@@ -74,6 +74,10 @@ static int qnth(const qjob *j, int n, int pct) {   // the tick by which pct % of
 }
 
 int main(void) {
+    // Speculative compiles hold from half the memory maps' limit (the frame's never: the caller does not ask); unknown counts hold nothing
+    CHECK(vkpg_spec_ok(11645, 65530, 50) && vkpg_spec_ok(32764, 65530, 50), "speculative compiles start under half of the limit (a compile adds up to 28,000 maps: 43 %%)");
+    CHECK(!vkpg_spec_ok(32765, 65530, 50) && !vkpg_spec_ok(57807, 65530, 50) && !vkpg_spec_ok(66276, 65530, 50) && !vkpg_spec_ok(11645, 65530, 10), "and not from half of it on (#338 ran prewarm on at 57,807 and 64,529)");
+    CHECK(vkpg_spec_ok(-1, 65530, 50) && vkpg_spec_ok(60000, 0, 50) && vkpg_spec_ok(60000, -1, 50) && vkpg_spec_ok(60000, 65530, 0), "an unknown count or limit holds nothing");
     // The default cap by driver
     CHECK(vkpg_cap_default(1) == 1 && vkpg_cap_default(0) == VKPG_CAP, "one compile at a time on Turnip, the cap elsewhere");
     CHECK(vkpg_slots(6430, 10616, 65530, vkpg_cap_default(1)) == 1, "Turnip with memory and maps to spare: still one");

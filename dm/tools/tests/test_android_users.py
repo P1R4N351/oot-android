@@ -1,6 +1,7 @@
 """Settings › Users (android/app Users.java with android/app/src/jvmtest's UsersJvmTest): the stored list, the first user always the host's fixed one, at most 8 users, the host's
 DM_USERS / DM_USER lines (dm/host/hle_account.c reads them) with the names percent-encoded, nothing for the one default user, names cut to 32 bytes, each user's save folder.
 javac compiles Users.java with stand-ins for Android's Context and SharedPreferences and for Prefs. Skipped without a JDK."""
+import re
 import shutil
 import subprocess
 import tempfile
@@ -12,8 +13,8 @@ SRC = REPO / 'android/app/src/main/java/dev/nxnative/android/Users.java'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/UsersJvmTest.java'
 STUBS = {
     'android/content/Context.java': 'package android.content;\npublic class Context {}\n',
-    'android/content/SharedPreferences.java': 'package android.content;\npublic interface SharedPreferences {\n  String getString(String k, String d);\n'
-                                              '  Editor edit();\n  interface Editor { Editor putString(String k, String v); void apply(); }\n}\n',
+    'android/content/SharedPreferences.java': 'package android.content;\npublic interface SharedPreferences {\n  String getString(String k, String d);\n  int getInt(String k, int d);\n'
+                                              '  Editor edit();\n  interface Editor { Editor putString(String k, String v); Editor putInt(String k, int v); void apply(); }\n}\n',
     'dev/nxnative/android/Prefs.java': 'package dev.nxnative.android;\nfinal class Prefs {\n  static android.content.SharedPreferences of(android.content.Context c) { return null; }\n}\n',
 }
 
@@ -31,6 +32,15 @@ class UsersJvm(unittest.TestCase):
             r = subprocess.run(['java', '-cp', str(t / 'classes'), 'dev.nxnative.android.UsersJvmTest'], capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(r.stdout.strip(), 'ok')
+
+
+class UsersScreen(unittest.TestCase):
+    def test_profile_pictures(self):   # the picker offers as many round pictures as Users counts, each an emoji on a colour
+        ui = (SRC.parent / 'UsersUi.java').read_text(encoding='utf-8')
+        n = int(re.search(r'AVATARS = (\d+)', SRC.read_text(encoding='utf-8')).group(1))
+        emoji = re.search(r'EMOJI = \{(.*?)\};', ui, re.S).group(1).count('"') // 2
+        color = re.search(r'COLOR = \{(.*?)\};', ui, re.S).group(1).count('0xFF')
+        self.assertEqual((emoji, color), (n, n))
 
 
 if __name__ == '__main__':

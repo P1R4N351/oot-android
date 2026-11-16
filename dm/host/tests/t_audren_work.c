@@ -88,7 +88,7 @@ void dm_guest_thread_join(void *tt) {
     assert(((uint8_t *)sdk_work)[SDK_WORK - 1] == 0x5a);   // storage also survives the render thread
     joins++;
 }
-uint64_t now_ns(void) { return 0; }
+uint64_t g_t0_ns; uint64_t now_ns(void) { return 0; }
 void *dm_pcmout_open(int ch) { (void)ch; return NULL; }
 void dm_pcmout_close(void *k) { (void)k; }
 void dm_pcmout_start(void *k) { (void)k; }

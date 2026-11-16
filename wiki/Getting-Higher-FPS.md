@@ -18,7 +18,7 @@ Honest limits: the numbers below were measured on a few phones (mainly a Snapdra
 | 2 | **Resolution** one step down (or the Performance preset) | a softer picture | the GPU is the limit |
 | 3 | **Upscaler**: a cheaper one | sharpness | the game has a neural upscaler that the app replaces |
 | 4 | **Dynamic resolution** (Donkey Kong Bananza) or a game's Graphics quality | sharpness in heavy scenes | heavy scenes drop frames |
-| 5 | **Game options**: Full vegetation off, Hidden layers off (experimental) | less foliage or a few layers | the game has the option |
+| 5 | **Game options**: Full vegetation off, Hidden layers off (experimental); Ocarina of Time: **Draw distance** and **Shadow range** | less foliage or a few layers; far scenery and shadows end sooner | the game has the option; see [the Ocarina of Time page](Game-Zelda-Ocarina-of-Time) |
 | 6 | **GPU driver**: try the other | a new shader cache to build, and it can behave differently | the game runs better on one driver |
 | 7 | **Frame generation** | needs a `Lossless.dll` you own; costs GPU; the picture is one game frame behind | you want more displayed frames from a game that already holds its rate |
 | 8 | **Advanced** rows | see below | testers |

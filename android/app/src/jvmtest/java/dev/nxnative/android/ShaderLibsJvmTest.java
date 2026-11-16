@@ -10,6 +10,10 @@ import java.util.List;
  * <pre>
  * header &lt;dmsh_vk.lib&gt;                                → "header chain vk_chain game inputs abi" (fields tab-separated; "null" when not a library)
  * playable &lt;pack&gt; &lt;title ID&gt; &lt;current&gt; &lt;abi&gt; [compat]   → "playable &lt;the v-V folder's name&gt;" or "playable none" (compat: older ABIs, space-separated)
+ * optional &lt;pack&gt; &lt;title ID&gt; &lt;current&gt; &lt;abi&gt; &lt;inputs&gt; [env]  → "optional &lt;the v-V folder's name&gt;" or "optional none" (ShaderLibs.optionalUpdate)
+ * samplecand &lt;pack&gt; &lt;title ID&gt; &lt;current&gt; &lt;abi&gt; &lt;inputs&gt; [env]  → "samplecand &lt;v-V folder&gt;" or "samplecand none" (ShaderLibs.sampleCandidate); samplesize [env]; sampleresult &lt;pack&gt; &lt;current&gt;
+ * layer &lt;title ID&gt; [env]                               → "layer true|false" (ShaderLibs.layerCovers)
+ * ondemand &lt;pack&gt; &lt;title ID&gt; &lt;current&gt; &lt;abi&gt; [compat|-] [env]  → "ondemand true|false" (ShaderLibs.onDemand)
  * legacy &lt;pack&gt; &lt;title ID&gt; &lt;current&gt;                   → "legacy &lt;the v-V folder's name&gt;" or "legacy none"
  * older &lt;pack&gt; &lt;title ID&gt; &lt;current&gt;                    → "older &lt;versions, sorted, comma-separated&gt;"
  * translate &lt;delta rows&gt; &lt;versions, comma-separated&gt;   → "translate &lt;n&gt;"
@@ -36,6 +40,29 @@ public final class ShaderLibsJvmTest {
                 System.out.println("playable " + (f == null ? "none" : f.getParentFile().getName()));
                 break;
             }
+            case "optional": {
+                File f = ShaderLibs.optionalUpdate(new File(a[1]), a[2], a[3], a[4], a[5], a.length > 6 ? a[6] : null);
+                System.out.println("optional " + (f == null ? "none" : f.getParentFile().getName()));
+                break;
+            }
+            case "samplecand": {   // samplecand <pack> <title ID> <current> <abi> <inputs> [env] → the older library a sampled keep may take over (ShaderLibs.sampleCandidate)
+                File f = ShaderLibs.sampleCandidate(new File(a[1]), a[2], a[3], a[4], a[5], a.length > 6 ? a[6] : null);
+                System.out.println("samplecand " + (f == null ? "none" : f.getParentFile().getName()));
+                break;
+            }
+            case "samplesize": System.out.println("samplesize " + ShaderLibs.sampleSize(a.length > 1 ? a[1] : null)); break;
+            case "samplefirst": System.out.println("samplefirst " + ShaderLibs.sampleFirst(a.length > 1 ? a[1] : null)); break;
+            case "sampleresult": {
+                String[] r = ShaderLibs.sampleResult(new File(a[1]), a[2]);
+                System.out.println("sampleresult " + (r == null ? "none" : r[0] + " " + r[1]));
+                break;
+            }
+            case "ondemand":
+                System.out.println("ondemand " + ShaderLibs.onDemand(new File(a[1]), a[2], a[3], a[4], a.length > 5 && !a[5].equals("-") ? a[5] : null, a.length > 6 ? a[6] : null));
+                break;
+            case "layer":
+                System.out.println("layer " + ShaderLibs.layerCovers(a[1], a.length > 2 ? a[2] : null));
+                break;
             case "legacy": {
                 File f = ShaderLibs.legacy(new File(a[1]), a[2], a[3]);
                 System.out.println("legacy " + (f == null ? "none" : f.getParentFile().getName()));
@@ -58,6 +85,13 @@ public final class ShaderLibsJvmTest {
                 System.out.println("minutes " + m[0] + " " + m[1] + " " + ShaderLibs.minutesText(Integer.parseInt(a[1])));
                 break;
             }
+            case "known": {   // known <pack> <older library> <current> <abi> <chain> <known older chains> → the older version kept by a known transition (ShaderLibs.knownKeep)
+                String v = ShaderLibs.knownKeep(new File(a[1]), new File(a[2]), a[3], a[4], a[5], a[6], 1794787200000L);
+                System.out.println("known " + (v == null ? "none" : v));
+                break;
+            }
+            case "knownrecover": System.out.println("knownrecover " + ShaderLibs.knownRecover(new File(a[1]), a[2], 1794787200000L)); break;
+            case "knownis": System.out.println("knownis " + ShaderLibs.knownTransition(a[1], a[2])); break;
             case "restamp": {
                 String v = ShaderLibs.restamp(new File(a[1]), a[2], a[3], a[4], a[5]);
                 System.out.println("restamp " + (v == null ? "none" : v));

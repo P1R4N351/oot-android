@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Shared parts of the wide-picture callbacks (oot_wide.c, dkb_wide.c, mkw_wide.c): the picture's shape, a table of the projections already converted, and the 2D layer's squeeze.
+// Shared parts of the wide-picture callbacks (oot_wide.c, dkb_wide.c, mkw_wide.c, mtf_wide.c): the picture's shape, a table of the projections already converted, and the 2D layer's squeeze.
 //
 // The game draws a 16:9 frame whatever the screen; the present fits that frame into DM_VK_PICTURE_ASPECT=<w>:<h> (vka_present.c). A game's callback makes its 3D cameras use that
 // aspect (wider: Hor+, the vertical field of view stays; narrower: Vert+, the tangent of the half angle grows by (16/9) / aspect, so the horizontal reach stays) and keeps its 2D layer
 // in the middle 16:9 by scaling a copy of the UI projection's x row (wider) or y row (narrower), never the game's own matrix. Header only (static functions): each game's file keeps its own
-// state, so the games share no variable. A callback does nothing on an unset, invalid or 16:9 (within 0.02) shape, and on a main NSO whose build ID is not the one it was verified on.
+// state, so the games share no variable. A callback does nothing on an unset, invalid or 16:9 (within 0.02) shape, and on a main NSO (or, ws_aspect_nro, an NRO) whose build ID is not
+// the one it was verified on.
 #pragma once
 #include "hle.h"
 #include "dm.h"
@@ -37,9 +38,11 @@ static inline double ws_parse_aspect(const char *e) {
 typedef struct { pthread_mutex_t lock; _Atomic int ready; double aspect; } ws_cfg_t;
 #define WS_CFG_INIT { PTHREAD_MUTEX_INITIALIZER, 0, 0 }
 
-// The shape for a main NSO of build ID `build` (0 on any other build or when nothing is to change); `tag` names the game in the one log line.
-static inline double ws_aspect(ws_cfg_t *c, const char *build, const char *tag) {
-    if (strcmp(dm_main_build(), build)) return 0;
+// The build ID of the loaded NRO named `name` ("" when none is loaded), for a game whose code is an NRO that a boot stub main loads (Mario Tennis Fever's nro0)
+static inline const char *ws_nro_build(const char *name) { for (int i = 0; i < g_nmod; i++) if (g_mod[i].nro && !strcmp(g_mod[i].name, name)) return g_mod[i].build_id; return ""; }
+
+// DM_VK_PICTURE_ASPECT, read once under the lock; `tag` names the game in the one log line
+static inline double ws_aspect_read(ws_cfg_t *c, const char *tag) {
     if (!atomic_load_explicit(&c->ready, memory_order_acquire)) {
         pthread_mutex_lock(&c->lock);
         if (!atomic_load_explicit(&c->ready, memory_order_relaxed)) {
@@ -51,6 +54,11 @@ static inline double ws_aspect(ws_cfg_t *c, const char *build, const char *tag) 
     }
     return c->aspect;
 }
+
+// The shape for a main NSO of build ID `build` (0 on any other build or when nothing is to change)
+static inline double ws_aspect(ws_cfg_t *c, const char *build, const char *tag) { return strcmp(dm_main_build(), build) ? 0 : ws_aspect_read(c, tag); }
+// The same for a game whose code is the NRO `name` of build ID `build` (main is then a boot stub, so its build says nothing about the code the gates sit in)
+static inline double ws_aspect_nro(ws_cfg_t *c, const char *name, const char *build, const char *tag) { return strcmp(ws_nro_build(name), build) ? 0 : ws_aspect_read(c, tag); }
 
 static inline uint8_t *ws_main_base(void) { for (int i = 0; i < g_nmod; i++) if (!strcmp(g_mod[i].name, "main")) return g_mod[i].base; return NULL; }
 

@@ -11,6 +11,8 @@ How to start a game, stop it, start it from a launcher or frontend, and where it
 
 ## Settings
 
+- **Order of the games**: press and hold a game on Home (on a controller, press Y on it) and choose **Move left** or **Move right**. The order is kept.
+- **App language**: Settings > Appearance > Language (the app's own text; the game's language is set per game).
 - **Settings** (the gear at the top of Home) holds the defaults for every game: overlay, on-screen controls, resolution, frame rate cap, frame generation, button mapping and more.
 - A game's own settings (its ... button: **Performance** and **Game** tabs) override them. See [Settings overview](Settings-Overview).
 

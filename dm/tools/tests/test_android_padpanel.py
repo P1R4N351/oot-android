@@ -27,7 +27,7 @@ class Wiring(unittest.TestCase):
             self.assertIn(s, t)
 
     def test_settings(self):
-        self.assertIn('PadPanel.OPEN_NAMES', (JAVA / 'MainActivity.java').read_text())
+        self.assertIn('R.array.arr_pad_open', open(JAVA / 'MainActivity.java', encoding='utf-8').read(), 'the launcher shows the translated names of PadPanel.OPEN_NAMES')
         self.assertIn('panel_pad', (JAVA / 'Prefs.java').read_text())
 
 

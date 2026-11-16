@@ -35,6 +35,8 @@ Later versions come through the app's own updater ([Updates](Updates)).
 
 Home shows an **Allow file access** card with an **Allow** button. It opens Android's settings, where you turn on **All files access** for Banana Native; then come back. With it on, the app reads your dump where it is.
 
+A game's update and add-on content can sit in the same folder as the game: **update and DLC `.nup` files** (a `.nup` with a base game stays a game of its own), or **`.nsp` files** beside a `.nup` game. The app finds them by title and adds them to that game; **Add game** lists only the game. (New in 0.3.40, not phone-checked.)
+
 You can skip it: a `.nup` file is then used where it is, and a dump folder is copied into the app's own storage (needs the dump's size again, plus 2 GB). See [Saves and storage](Saves-and-Storage#storage-access) for the three ways and what each means on uninstall.
 
 ## Check the phone

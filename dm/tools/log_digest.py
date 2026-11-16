@@ -531,6 +531,73 @@ def gfx_lines(g):
     return o
 
 
+# ---------------------------------------------------------------- the audio section
+# What a sound report needs from a log without reading it: the renderer's windows (the lines say how many of the last frames were not silent), the Opus decoders' windows and events, the
+# movie decoders' starts / stops / finalizes (a movie's sound is the game's own, so these times are what to line the sound up with), and the SDK 21 OutputStream's write lines.
+# Each label keeps its count, its first and its last line; the timeline keeps up to AUDIO_TIMELINE movie decoder events in order; the renderer's silent stretches are listed.
+AUDIO = (
+    ('renderer output', r'\[dm\] audren: rendered \d+ frames', True),
+    ('Opus decoders', r'\[dm\] \[codec\] Opus at ', False),
+    ('Opus decoder events', r'\[dm\] \[codec\] Opus decoder ', True),
+    ('OutputStream', r'\[dm\] audio #\d+ OutputStream at ', True),
+)
+AUDIO_RX = [(label, re.compile(p), first) for label, p, first in AUDIO]
+AUDIO_TIMELINE = 40
+TIMELINE_RX = re.compile(r'^\[dm\] \[codec\] (?:(?:AV1|VP8|VP9|H\.264) decoder \d+ (?:at [\d.]+ s:|started at|stopped or flushed at|finalized at|: end of stream))')
+RENDERED_RX = re.compile(r'^\[dm\] audren: rendered (\d+) frames, (\d+) of them not silent(?: \(the last (\d+): (\d+) not silent, peak (\d+) of 32767, at ([\d.]+) s\))?')
+
+
+class Audio:
+    def __init__(self):
+        self.seen = {}; self.timeline = []; self.more = 0; self.silent = []; self.prev = (0, 0)   # prev: (frames, not silent) at the last renderer line
+
+    def feed(self, n, line):
+        if not line.startswith(('[dm] audren: rendered ', '[dm] [codec] ', '[dm] audio #')): return
+        if TIMELINE_RX.match(line):
+            if len(self.timeline) < AUDIO_TIMELINE: self.timeline.append((n, line))
+            else: self.more += 1
+            return
+        m = RENDERED_RX.match(line)
+        if m:
+            f, ns = int(m.group(1)), int(m.group(2))
+            w, wns = (int(m.group(3)), int(m.group(4))) if m.group(3) else (f - self.prev[0], ns - self.prev[1])
+            if w > 0 and wns == 0 and f > 200:   # a window of the renderer that was silent from end to end (the first second is the game's start-up)
+                if self.silent and self.silent[-1][2] == self.prev[0]: self.silent[-1][2] = f; self.silent[-1][3] = n   # a stretch: windows next to each other join
+                else: self.silent.append([self.prev[0], n, f, n])
+            self.prev = (f, ns)
+        for label, rx, first in AUDIO_RX:
+            if rx.match(line):
+                st = self.seen.get(label)
+                if st is None: self.seen[label] = [1, (n, line) if first else None, (n, line)]
+                else: st[0] += 1; st[2] = (n, line)
+                return
+
+    def summary(self):
+        out = []
+        for label, _p, _f in AUDIO:
+            st = self.seen.get(label)
+            if not st: continue
+            e = {'label': label, 'count': st[0], 'last_line': st[2][0], 'last': redact(st[2][1], 300)}
+            if st[1] and st[1][0] != st[2][0]: e['first_line'], e['first'] = st[1][0], redact(st[1][1], 300)
+            out.append(e)
+        tl = [{'line': n, 'text': redact(t, 260)} for n, t in self.timeline]
+        sl = [{'from_frame': a, 'to_frame': c, 'line': n} for a, _n0, c, n in self.silent[:12]]
+        return {'sections': out, 'timeline': tl, 'timeline_more': self.more, 'silent': sl} if out or tl else {}
+
+
+def audio_lines(a):
+    o = []
+    strip = lambda t: re.sub(r'^\[dm\] (?:\[codec\] )?', '', t)
+    for e in a.get('sections', []):
+        if 'first' in e: o.append(f"{e['label']} ×{e['count']}, first L{e['first_line']}: {strip(e['first'])}")
+        o.append(f"{e['label']}" + ('' if 'first' in e else f" ×{e['count']}") + f", last L{e['last_line']}: {strip(e['last'])}")
+    for x in a.get('silent', []):
+        o.append(f"renderer silent from end to end in frames {x['from_frame']}–{x['to_frame']} (up to L{x['line']}; 5 ms a frame, so {(x['to_frame'] - x['from_frame']) * 0.005:.0f} s)")
+    for t in a.get('timeline', []): o.append(f"L{t['line']}: {strip(t['text'])}")
+    if a.get('timeline_more'): o.append(f"+{a['timeline_more']} more movie decoder events")
+    return o
+
+
 # ---------------------------------------------------------------- the digest
 
 ADV_RX = re.compile(r'^(?:\[nxlaunch\] )*\[adv\] (.*)$')   # GameActivity's [adv] lines (AdvancedSettings.notes): KEY=value (source), or "none: ..."
@@ -555,6 +622,7 @@ HDR = [
     ('game', re.compile(r'^\[nxlaunch\] nxnative .*?; (.+ [0-9A-F]{16} version \d+)')),
     ('device', re.compile(r'^\[nxlaunch\] device ([^;]+)')),
     ('host_build', re.compile(r'^\[dm\] build: (commit .+)$')),
+    ('max_map_count', re.compile(r'^\[dm\] (?:\[RED\] )?vm\.max_map_count: (.+)$')),
     ('readiness', re.compile(r'^\[nxlaunch\] (?:\[nxlaunch\] )?\[readiness\] [0-9A-F]{16}: (.+)$')),
     ('gpu_driver_picked', re.compile(r'^\[nxlaunch\] GPU driver: (.+?) \(picked in the launcher')),
     ('vk_driver', re.compile(r'^\[dm\] \[vk\] driver: (.+)$')),
@@ -595,6 +663,7 @@ class Digest:
         self.flags = collections.Counter()
         self.perf = Perf()
         self.gfx = Gfx()
+        self.audio = Audio()
         self.tomb = None
 
     # -- the run log
@@ -632,6 +701,7 @@ class Digest:
             if m: self.last_time = float(m.group(1) or m.group(2))
         self.perf.feed(n, line)
         self.gfx.feed(n, line)
+        self.audio.feed(n, line)
         if 'graceful exit' in line: self.flags['graceful'] += 1
         i = self.rules_rx.search(line)
         if i >= 0: self._hit(i, n, line, 'log')
@@ -791,7 +861,7 @@ class Digest:
         header = {'app_build': h.get('app_build'), 'app_version': h.get('app_version'), 'app_id': self.app_id, 'device': h.get('device'),
                   'gpu': rd.split('; driver ')[0].split('; ', 1)[-1] if rd else None, 'driver': (h.get('vk_driver') or (rd.split('; driver ', 1)[1].split(', driver ID')[0] if '; driver ' in rd else None)),
                   'driver_kind': drv, 'driver_id': int(did.group(1)) if did else None, 'readiness': rd.split(';')[0] if rd else None,
-                  'game': h.get('game'), 'game_build_id': self.build_id, 'host_build': h.get('host_build'), 'sdk': h.get('sdk'), 'shader_library': h.get('shader_library'),
+                  'game': h.get('game'), 'game_build_id': self.build_id, 'host_build': h.get('host_build'), 'sdk': h.get('sdk'), 'max_map_count': h.get('max_map_count'), 'shader_library': h.get('shader_library'),
                   'switches': switches(self.env)}
         header = {k: (redact(v) if isinstance(v, str) else [redact(x) for x in v] if isinstance(v, list) else v) for k, v in header.items()}
         header = {k: v for k, v in header.items() if v not in (None, [], '')}
@@ -826,7 +896,7 @@ class Digest:
         rules = sorted((self._rule(i) for i in self.rule_hits), key=lambda r: (r['first_line'] or 10 ** 12, r['id']))
         return {'file': name, 'bytes': size, 'lines': self.n, 'key_lines_dropped': self.dropped_keys, 'header': header, 'stage': stage,
                 'verdict': self.verdict(rec), 'crash': crash, 'errors': errors, 'symptoms': self.symptom_matches(), 'rules': rules,
-                'adv': self.adv if self.adv_seen else None, 'perf': self.perf.summary(), 'graphics': self.gfx.summary(), 'tail': [{'line': n, 'text': redact(t)} for n, t in self.tail]}
+                'adv': self.adv if self.adv_seen else None, 'perf': self.perf.summary(), 'graphics': self.gfx.summary(), 'audio': self.audio.summary(), 'tail': [{'line': n, 'text': redact(t)} for n, t in self.tail]}
 
 
 ADV_TITLE = 'Settings changed from the defaults'
@@ -846,7 +916,7 @@ def render(d):
         o.append('-- header')
         for k, label in (('app_build', 'app'), ('app_version', 'version'), ('app_id', 'app id'), ('device', 'device'), ('gpu', 'GPU'), ('driver', 'driver'),
                          ('driver_kind', 'driver kind'), ('driver_id', 'driver ID'), ('readiness', 'readiness'), ('game', 'game'), ('game_build_id', 'game build ID'),
-                         ('host_build', 'host'), ('sdk', 'SDK'), ('shader_library', 'shader library')):
+                         ('host_build', 'host'), ('sdk', 'SDK'), ('max_map_count', 'memory maps limit'), ('shader_library', 'shader library')):
             if k in h: o.append(f'  {label}: {h[k]}')
         if 'switches' in h: o.append('  switches: ' + ' '.join(h['switches']))
     o += adv_lines(d.get('adv'))
@@ -898,6 +968,8 @@ def render(d):
     if p: o.append('-- performance'); o += [f'  {x}' for x in p]
     g = gfx_lines(d.get('graphics') or [])
     if g: o.append('-- graphics'); o += [f'  {x}' for x in g]
+    au = audio_lines(d.get('audio') or {})
+    if au: o.append('-- audio'); o += [f'  {x}' for x in au]
     if d['tail']:
         o.append(f"-- tail (last {len(d['tail'])} lines)")
         o += [f"  L{t['line']}: {t['text']}" for t in d['tail']]

@@ -5,6 +5,7 @@
 // until the shader side lands. Every transfer op is followed by a full memory barrier: correct, not fast
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "vka_hangparts.h"
 #include "../nvn/nvn_mtl.h"
 #include "../nvn/nvn_timestamp.h"
 #include "vka_present_rot.h"
@@ -15,6 +16,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "vka_tstick.h"
 
 typedef struct { uint64_t serial; p_set_rt rt; int has_rt; p_scissor sc; int has_sc; int64_t copy_stride, copy_img_stride; int rc_skip; vka_dstate d; } qstate;   // what a queue keeps between submissions (d: the draw state, vka_draw.c)
 static qstate S;
@@ -28,7 +30,7 @@ static int g_chunk_draws = -1, g_nx; static uint64_t g_chunk_d0;   // chunk(): d
 static VkCommandPool g_pool;
 static VkCommandBuffer g_cb;   // the submission being recorded (NULL without a device)
 VkCommandBuffer vka_rp_cb(void) { return g_cb; }
-typedef struct { int kind; uint32_t mode, v, type; uint64_t addr, q0, q1; } pop;   // kind 1 event, 2 counter report, 3 frame span, 4 report marker (DM_VK_RC_LOG), 5 counted samples-passed report, 6 occlusion queries given back unread (q0..q1: their sequence numbers)
+typedef struct { int kind; uint32_t mode, v, type; uint64_t addr, q0, q1; } pop;   // kind 1 event, 2 counter report, 3 frame span, 4 report marker (DM_VK_RC_LOG), 5 counted samples-passed report, 6 occlusion queries given back unread (q0..q1: their sequence numbers), 7 completion time (the tick's measure, DM_VK_TSCAL; q0: the slot + 1)
 static pop *g_post; static int g_npost, g_postcap;
 static uint64_t g_frame, g_stat_ops, g_stat_draws, g_stat_skipped;
 static int g_origin_ll = 1, g_queue_origin_ll = 1, g_depth_zero;
@@ -94,7 +96,8 @@ static uint64_t g_job_frame; static int g_job_frame_set;   // the frame of the s
 void vka_exec_sub_frame(uint64_t f) { g_job_frame = f; g_job_frame_set = 1; }
 uint64_t vka_frame_start_ns(uint64_t f) { unsigned k = f % 64; return atomic_load(&g_fstart_f[k]) == f ? atomic_load(&g_fstart[k]) : 0; }   // now_ns; 0 = not known (vka_perf.c)
 // The skipped-work warning (vka_skipwarn.h, DM_VK_SKIP_WARN): once per run, when the replay skipped over the threshold's share of the draws and dispatches in two windows of
-// VKS_WINDOW frames in a row for causes of the device (refused pipelines and shaders, a missing feature), the [RED] line below and nxhost_skip_status (the launcher's notice)
+// VKS_WINDOW frames in a row for causes of the device (refused pipelines and shaders, a missing feature) or shaders missing from the pack, the [RED] line below and
+// nxhost_skip_status (the launcher's notice). Its advice follows the largest cause
 static vkskip g_skipw; static _Atomic int g_skipw_pct;
 extern void vka_draw_skips(uint64_t dev[VKS_N], uint64_t *work, uint64_t *other);
 static void skipwarn_frame(uint64_t f) {
@@ -102,9 +105,12 @@ static void skipwarn_frame(uint64_t f) {
     if (th <= 0 || g_skipw.fired) return;
     uint64_t dev[VKS_N], work, other; vka_draw_skips(dev, &work, &other);
     if (!vkskip_step(&g_skipw, f, work, dev, other, th)) return;
-    int mesh = !strncmp(g_skipw.causes, vks_name[VKS_MESH], strlen(vks_name[VKS_MESH]));   // (the largest cause: this device has no mesh shading, which no driver choice here changes)
+    // the largest cause, named first: this device has no mesh shading, or the pack lacks shaders (an incomplete dump, an older split), which no driver choice here changes
+    int mesh = !strncmp(g_skipw.causes, vks_name[VKS_MESH], strlen(vks_name[VKS_MESH]));
+    int missing = !strncmp(g_skipw.causes, vks_name[VKS_MISSING], strlen(vks_name[VKS_MISSING]));
     VRED("%d %% of draws skipped over the last %d frames (causes: %s): %s", g_skipw.pct, VKS_WINDOW, g_skipw.causes,
-         mesh ? "this GPU has no mesh shading, so some models are missing" : "the GPU driver may not suit this game");
+         mesh ? "this GPU has no mesh shading, so some models are missing"
+              : missing ? "the pack's shader library lacks shaders the game uses: prepare the game again from a complete dump" : "the GPU driver may not suit this game");
     atomic_store_explicit(&g_skipw_pct, g_skipw.pct, memory_order_release);
 }
 // The launcher's notice (Native.skipStatus): "<percent> <causes>" once the warning fired, "" before; the buffer ends with a NUL
@@ -297,6 +303,7 @@ static void oq_stats(char *b, size_t n, double frames) {   // every 300 frames w
     r0 = g_oqs_reset; p0 = g_oqs_rep; c0 = g_oqs_const; q0 = g_oqs_q; f0 = g_oqs_full; s0 = g_oqs_skip; u0 = un; z0 = ze; g_oqs_fly = 0;
 }
 uint64_t guest_ns(void);
+static _Atomic uint64_t g_cal_post[8];   // when a slot's submission had its completion processed (post_run): the tick's measure and DM_VK_TSCAL (below)
 // Counter timestamps by segment (profile gpu_timestamps segment; DM_NVN_GPU_TS=segment / submission overrides it), as nvn_mtl.m's: a timestamp report also writes a GPU
 // timestamp where it is recorded (TOP_OF_PIPE for TIMESTAMP_TOP, else BOTTOM_OF_PIPE), and once the submission is done each report gets the completion time less the GPU time
 // from it to the submission's last report, so two reports of one submission bracket the GPU work between them (a game's dynamic resolution and frame pacing read that).
@@ -325,7 +332,7 @@ static uint64_t sh_get(uint32_t qi, uint32_t use, PFN_vkGetQueryPoolResults get)
 }
 static void post_run(void *ops_, int n) {   // the completion thread, in submission order, before the fence reads as done
     pop *ops = ops_;
-    for (int i = 0; i < n; i++) if (ops[i].kind < 1 || ops[i].kind > 6) {   // (diagnostic: an op array that is not one, see vka_dev.c's checks of the post records)
+    for (int i = 0; i < n; i++) if (ops[i].kind < 1 || ops[i].kind > 7) {   // (diagnostic: an op array that is not one, see vka_dev.c's checks of the post records)
         static _Atomic int k; if (atomic_fetch_add(&k, 1) < 8) VRED("completion effects: op %d of %d has kind %d (address %#llx): not an op array (freed or overwritten); its effects are dropped (not freed)",
                                                                    i, n, ops[i].kind, (unsigned long long)ops[i].addr);
         return;
@@ -353,6 +360,7 @@ static void post_run(void *ops_, int n) {   // the completion thread, in submiss
     for (int i = 0, q = 0; i < n; i++) {
         if (ops[i].kind == 4) { atomic_store(&g_rc_done, ops[i].addr); continue; }   // DM_VK_RC_LOG: this submission's reports up to here are written
         if (ops[i].kind == 5 || ops[i].kind == 6) { oq_done(&ops[i], ticks); continue; }   // a counted samples-passed report, queries given back (Occlusion queries)
+        if (ops[i].kind == 7) { atomic_store(&g_cal_post[(ops[i].q0 - 1) % 8], now_ns()); continue; }   // this slot's submission had its completion processed now
         if (ops[i].kind == 3) {   // the frame's span to here (the adaptive GPU clock floor)
             uint64_t f = ops[i].addr; unsigned k = f % 64;
             vka_floor_done(ops[i].v);
@@ -388,7 +396,7 @@ static struct { PFN_vkCreateQueryPool create; PFN_vkCmdResetQueryPool reset; PFN
 static VkQueryPool g_qp; static int g_ts_ok = -1; static double g_ts_ns;   // nanoseconds per tick
 enum { GRING = 64 };
 static struct { _Atomic uint64_t frame, ns, t0, t1, span; _Atomic int pending; } g_gpu[GRING];
-static uint64_t g_slot_frame[8]; static uint8_t g_slot_ts[8]; static uint32_t g_slot_parts[8]; static uint32_t g_part_seen;
+static uint64_t g_slot_frame[8]; static uint8_t g_slot_ts[8]; static uint32_t g_slot_parts[8]; static uint32_t g_part_seen; static uint32_t g_part_draws[8][33];   // g_part_draws: draws recorded in each part of a slot's submission (vka_hangparts.h)
 enum { QPS = 2 * (NCHUNK + 1) };   // queries a slot: a top and a bottom per part
 static int ts_init(void) {
     if (g_ts_ok >= 0) return g_ts_ok;
@@ -403,6 +411,92 @@ static int ts_init(void) {
     g_ts_ns = V.props.limits.timestampPeriod; g_ts_ok = 1;
     VLOG("GPU time: timestamps at %.2f ns a tick", g_ts_ns);
     return 1;
+}
+// DM_VK_TSCAL=n (diagnostic, live): for the next n submissions, the host's times for each part beside the GPU's own. A submission's GPU time is known in GPU ticks
+// only; the time the game reads as a frame's GPU end is the host's, taken when the completion thread runs the submission's effects (post_run). One line gives, on
+// the host clock from the first part's submit, when each part was handed to the queue and when the completion was processed, and on the GPU's clock from the first
+// part's begin, when the GPU began each part and how long it ran. The host span less the GPU span is time that is not GPU time: the wait between the first submit
+// and the GPU beginning it plus the wait between the GPU's end and the completion being processed (for a small submission on an idle GPU, the path's fixed
+// latency). With calibrated timestamps (V.cal_ts) the two are told apart: the GPU's begin and end are put on the host clock
+static _Atomic uint64_t g_cal_sub[8][NCHUNK + 1]; static uint8_t g_cal_on[8]; static uint32_t g_cal_draws[8]; static uint64_t g_cal_sig[8]; static _Atomic int g_tscal;
+uint64_t vka_tls_ret(uint64_t v);   // vka_dev.c: when the signal thread's wait for that value's fence returned (0: not known, or the GPU signals the timeline)
+// When the host could first read each of a submission's timestamps (the GPU wrote it: a part's begin or end), found by a thread that asks every 0.1 ms without
+// waiting while the log is on. That puts the GPU's begin and end of each part on the host clock, to 0.1 ms, on a device without calibrated timestamps: it says
+// on which side the time that is not GPU time lies. g_cal_arm: the slot is being watched; g_cal_prev: the values the slot's queries held after its previous use,
+// which stay readable until the GPU runs this use's reset
+static _Atomic uint8_t g_cal_arm[8]; static _Atomic uint64_t g_cal_seenq[8][2 * (NCHUNK + 1)]; static uint64_t g_cal_prev[8][2 * (NCHUNK + 1)];
+static void *cal_poll_main(void *a) {
+    (void)a; pthread_setname_np(pthread_self(), "vk-tscal");
+    for (;;) {
+        if (atomic_load(&g_tscal) <= 0) { struct timespec ts = {0, 5000000}; nanosleep(&ts, NULL); continue; }
+        for (unsigned k = 0; k < 8; k++) {
+            if (!atomic_load(&g_cal_arm[k])) continue;
+            uint32_t nq = 2 * g_slot_parts[k]; if (nq > 2 * (NCHUNK + 1)) nq = 2 * (NCHUNK + 1);
+            for (uint32_t q = 0; q < nq; q++) { uint64_t t = 0;
+                if (!atomic_load(&g_cal_seenq[k][q]) && !qf.get(V.dev, g_qp, k * 2 * (NCHUNK + 1) + q, 1, 8, &t, 8, VK_QUERY_RESULT_64_BIT) && t != g_cal_prev[k][q]) atomic_store(&g_cal_seenq[k][q], now_ns()); }
+        }
+        struct timespec ts = {0, 100000}; nanosleep(&ts, NULL);
+    }
+    return NULL;
+}
+static int tscal(void) {
+    static int last, thr; int v = VKA_ENV("DM_VK_TSCAL", 0);
+    if (v != last) { last = v; atomic_store(&g_tscal, v); if (v > 0 && !thr) { pthread_t th; thr = 1; if (!pthread_create(&th, NULL, cal_poll_main, NULL)) pthread_detach(th); } }
+    return atomic_load(&g_tscal) > 0;
+}
+static void cal_submit(uint32_t q) {   // a part goes to the queue: q is its bottom timestamp's query (the slot's range, two a part)
+    if (q == UINT32_MAX || atomic_load_explicit(&g_tscal, memory_order_relaxed) <= 0) return;
+    atomic_store(&g_cal_sub[(q / (2 * (NCHUNK + 1))) % 8][(q % (2 * (NCHUNK + 1))) / 2], now_ns());
+}
+static int cal_now(uint64_t *ticks, uint64_t *host) {   // a GPU tick and the host time it was read at (the tightest of three reads); 0: the device cannot
+    static PFN_vkGetCalibratedTimestampsKHR get; static int tried;
+    if (!tried) { tried = 1;
+        if (V.cal_ts) { get = (PFN_vkGetCalibratedTimestampsKHR)vk.vkGetDeviceProcAddr(V.dev, "vkGetCalibratedTimestampsKHR");
+                        if (!get) get = (PFN_vkGetCalibratedTimestampsKHR)vk.vkGetDeviceProcAddr(V.dev, "vkGetCalibratedTimestampsEXT"); }
+        VLOG("gpu clock: the device has %s calibrated timestamps%s", get ? "" : "no", get ? "" : " (the GPU's begin and end are not put on the host clock)"); }
+    if (!get) return 0;
+    VkCalibratedTimestampInfoKHR ci = {VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR, .timeDomain = VK_TIME_DOMAIN_DEVICE_KHR}; uint64_t best = UINT64_MAX;
+    for (int i = 0; i < 3; i++) {
+        uint64_t dev = 0, dv = 0, n0 = now_ns(); if (get(V.dev, 1, &ci, &dev, &dv)) return 0;
+        uint64_t n1 = now_ns(); if (n1 - n0 < best) { best = n1 - n0; *ticks = dev; *host = n0 + (n1 - n0) / 2; }
+    }
+    return 1;
+}
+static void cal_log(unsigned slot, uint64_t f, uint32_t np, const uint64_t *t, uint64_t busy) {
+    if (atomic_fetch_sub(&g_tscal, 1) <= 0) return;
+    double s0 = (double)atomic_load(&g_cal_sub[slot][0]), post = (double)atomic_load(&g_cal_post[slot]), sn = (double)atomic_load(&g_cal_sub[slot][np - 1]);
+    double span = (double)(t[2 * np - 1] - t[0]) * g_ts_ns / 1e6, host = post ? (post - s0) / 1e6 : -1;
+    char b[1000], c[260]; size_t l = 0; b[0] = 0; c[0] = 0;
+    uint64_t fr = g_cal_sig[slot] ? vka_tls_ret(g_cal_sig[slot]) : 0, seen0 = atomic_load(&g_cal_seenq[slot][0]), seen = atomic_load(&g_cal_seenq[slot][2 * np - 1]);
+    char sb[200]; sb[0] = 0;
+    if (seen0 && seen) snprintf(sb, sizeof sb, "; on the host clock the GPU began %.2f ms after the first submit and its last timestamp was readable %.2f ms after it", ((double)seen0 - s0) / 1e6, ((double)seen - s0) / 1e6);
+    if (fr && post) snprintf(c, sizeof c, "; its fence was seen done %.2f ms after the first submit, %.2f ms before the completion was processed", ((double)fr - s0) / 1e6, (post - (double)fr) / 1e6);
+    for (uint32_t i = 0; i < np && l + 60 < sizeof b; i++) { uint64_t hb = atomic_load(&g_cal_seenq[slot][2 * i]);
+        l += (size_t)snprintf(b + l, sizeof b - l, " %u:%.2f/%.2f+%.2f@%.2f", i + 1, ((double)atomic_load(&g_cal_sub[slot][i]) - s0) / 1e6, (double)(t[2 * i] - t[0]) * g_ts_ns / 1e6,
+                              t[2 * i + 1] > t[2 * i] ? (double)(t[2 * i + 1] - t[2 * i]) * g_ts_ns / 1e6 : 0.0, hb ? ((double)hb - s0) / 1e6 : -1.0); }
+    uint64_t ct = 0, ch = 0;
+    if (cal_now(&ct, &ch)) { double beg = ((double)ch + ((double)t[0] - (double)ct) * g_ts_ns - s0) / 1e6, end = ((double)ch + ((double)t[2 * np - 1] - (double)ct) * g_ts_ns - s0) / 1e6;
+                             size_t cl = strlen(c); snprintf(c + cl, sizeof c - cl, "; calibrated: the GPU began %.2f ms after the first submit and the completion was processed %.2f ms after its end", beg, host - end); }
+    VLOG("gpu clock: frame %llu, %u draws, %u parts: first submit to completion processed %.2f ms, last submit to completion %.2f ms; GPU span %.2f ms, busy %.2f ms; not GPU time %.2f ms%s%s; parts submit/begin+ran@begin on the host clock:%s",
+         (unsigned long long)f, g_cal_draws[slot], np, host, post ? (post - sn) / 1e6 : -1.0, span, busy * g_ts_ns / 1e6, post ? host - span : -1.0, sb, c, b);
+}
+// The tick's real length (vka_tstick.h): each finished submission gives its last timestamp and the host time its completion was processed (g_cal_post). Once the
+// measure is in, a driver's period that is off it is replaced for every GPU time from then on (the busy times here, the segment timestamps a game reads, DM_VK_GPUPROF
+// through vka_ts_tick_ns). DM_VK_TS_TICK=0 keeps the driver's period
+static vktk g_tk; static int g_tk_done;
+double vka_ts_tick_ns(void) { return g_ts_ok > 0 ? g_ts_ns : 0; }
+static void tick_sample(unsigned slot, uint64_t last_tick) {
+    uint64_t post = atomic_load(&g_cal_post[slot]);
+    if (g_tk_done || !post) return;
+    double m = vktk_add(&g_tk, last_tick, post);
+    if (!(m > 0)) return;
+    g_tk_done = 1;
+    double drv = V.props.limits.timestampPeriod, pick = vktk_pick(drv, m); int on = VKA_ENV("DM_VK_TS_TICK", 1) != 0;
+    if (pick == drv) { VLOG("GPU time: the timestamp tick measured against the host clock is %.2f ns, as the driver's %.2f ns", m, drv); return; }
+    VLOG("GPU time: the driver reports %.2f ns a timestamp tick, but against the host clock its counter advances one tick in %.2f ns (%d windows of %.0f s): its GPU times read %.0f %% %s; %s",
+         drv, m, (int)VKTK_N, VKTK_WINDOW_NS / 1e9, fabs(m / drv - 1) * 100 / (m > drv ? m / drv : 1), m > drv ? "low" : "high",
+         on ? "GPU times use the measured tick from here on (DM_VK_TS_TICK=0 keeps the driver's)" : "the driver's is kept (DM_VK_TS_TICK=0)");
+    if (on) { g_ts_ns = m; if (g_sqp) g_sq_ns = m; }
 }
 static void gpu_tag_begin(uint64_t f) {
     unsigned k = f % GRING;
@@ -427,7 +521,12 @@ static void gpu_slot_done(unsigned slot) {   // the slot's fence is done: its tw
         atomic_fetch_add(&g_gpu[k].ns, (uint64_t)(busy * g_ts_ns)); atomic_fetch_add(&g_gpu[k].span, s1 - s0);
         if (s0 < atomic_load(&g_gpu[k].t0)) atomic_store(&g_gpu[k].t0, s0);
         if (s1 > atomic_load(&g_gpu[k].t1)) atomic_store(&g_gpu[k].t1, s1);
+        tick_sample(slot, t[2 * np - 1]);
+        if (g_cal_on[slot] && atomic_load_explicit(&g_tscal, memory_order_relaxed) > 0) cal_log(slot, f, np, t, busy);
     }
+    atomic_store(&g_cal_arm[slot], 0);
+    if (ok) memcpy(g_cal_prev[slot], t, 2 * np * sizeof t[0]);
+    g_cal_on[slot] = 0;
     atomic_fetch_sub(&g_gpu[k].pending, 1);
 }
 double mtl_gpu_ms(uint64_t f) {
@@ -444,6 +543,28 @@ double vka_gpu_span_ms(uint64_t f) {
 int mtl_gpu_span(uint64_t f, uint64_t *t0, uint64_t *t1) { (void)f; if (t0) *t0 = 0; if (t1) *t1 = 0; return 0; }   // GPU ticks are not on the host clock (no calibrated timestamps yet)
 
 void vka_perf_thread(int nice);   // vka_perf.c
+// After a hang that did not lose the device: for each submission still in flight, which of its parts the GPU started and finished (the parts' timestamp queries with
+// their availability), and the draws each held. The part named is where the GPU is stuck; vkGetQueryPoolResults on a lost device is not called (Turnip faulted in other
+// calls on one), so this runs for the no-progress hang only. Read without a lock: the replay thread may still be recording (a diagnostic)
+void vka_exec_hang_parts(void) {
+    if (g_ts_ok != 1) { VLOG("GPU hang: no part timestamps on this queue, so the stuck part cannot be named"); return; }
+    for (unsigned k = 0; k < NSLOT; k++) {
+        if (!g_slot_ts[k]) continue;
+        vkhp_in in; memset(&in, 0, sizeof in);
+        in.np = g_slot_parts[k]; if (in.np > VKHP_MAX) in.np = VKHP_MAX;
+        for (uint32_t i = 0; i < in.np; i++) {
+            uint64_t r[2];
+            for (int e = 0; e < 2; e++) {
+                r[0] = r[1] = 0;
+                qf.get(V.dev, g_qp, k * QPS + 2 * i + e, 1, sizeof r, r, sizeof r, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+                if (r[1]) { if (e) in.bottom[i] = 1; else in.top[i] = 1; }
+            }
+            in.draws[i] = g_part_draws[k][i];
+        }
+        char b[220]; vkhp_describe(&in, b, sizeof b);
+        VRED("GPU hang: slot %u (frame %llu, fence %llu): %s", k, (unsigned long long)g_slot_frame[k], (unsigned long long)g_slot[k].fence, b);
+    }
+}
 // What each recent submission held, by fence, for the [RED] lines of a GPU hang (vka_dev.c hang_declare): every submission from the first one not done (fence) on, with
 // how long before the hang it was handed to the queue (a device loss leaves the timeline unreadable: fence is then the first after the last one published done)
 enum { NHREC = 16 };
@@ -552,6 +673,8 @@ void vka_rp_sub_begin(void) {
     if (ts_init()) {
         qf.reset(g_cb, g_qp, k * QPS, QPS); qf.write(g_cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, g_qp, k * QPS);
         g_slot_frame[k] = g_frame; g_slot_ts[k] = 1; g_slot_parts[k] = 1; g_part_seen = 0; gpu_tag_begin(g_frame);
+        g_cal_on[k] = 0; atomic_store(&g_cal_post[k], 0);
+        if (atomic_load_explicit(&g_tscal, memory_order_relaxed) > 0) { for (unsigned q = 0; q < 2 * (NCHUNK + 1); q++) atomic_store(&g_cal_seenq[k][q], 0); atomic_store(&g_cal_arm[k], 1); }
         g_sq_n = 0; g_sq_base = (int)k * SEGQ; g_slot_nq[k] = 0; atomic_fetch_add(&g_slot_use[k], 1);
         if (seg_ts() && !g_sqp) {
             VkQueryPoolCreateInfo ci = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = NSLOT * SEGQ};
@@ -584,6 +707,7 @@ static void part_submit(const void *a) {   // the part ends and goes to the queu
     part_arg pa; memcpy(&pa, a, sizeof pa); VkCommandBuffer cb = pa.cb;
     if (pa.q != UINT32_MAX) qf.write(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, g_qp, pa.q);
     VkResult r = vk.vkEndCommandBuffer(cb);
+    cal_submit(pa.q);
     VkSemaphore gs = vka_gate_sem(); VkPipelineStageFlags gst = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
     if (!r) r = vka_submit(cb, 0, pa.gate && gs ? 1 : 0, &gs, &pa.gate, &gst, VK_NULL_HANDLE);
     if (r) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VRED("part of a submission: %d", r); vka_qtrace(QT_SUBMIT_ERR, 0, 0, 0, (uint32_t)r, 0, 0, 0, NULL); }
@@ -623,7 +747,7 @@ static void chunk(void) {
     // The part's bottom and the next part's top timestamps (the slot's queries were reset at the submission's start, in its first part)
     uint32_t part = g_slot_parts[k]; int ts = g_slot_ts[k] && part < NCHUNK + 1;
     part_arg pe = {g_cb, ts ? k * QPS + 2 * (part - 1) + 1 : UINT32_MAX, gate_take()}, pb = {next, ts ? k * QPS + 2 * part : UINT32_MAX, 0};
-    if (ts) g_slot_parts[k] = part + 1;
+    if (ts) { g_part_draws[k][part - 1] = (uint32_t)(g_stat_draws - g_chunk_d0); g_slot_parts[k] = part + 1; }
     if (VKA_ENV("DM_VK_PARTLOG", 0)) { char zb[400]; vka_rp_zstats(zb, sizeof zb);
         VLOG("part %u of the submission of frame %llu ended at %.3f s: %llu draws%s", part, (unsigned long long)g_frame, now_ns() / 1e9, (unsigned long long)(g_stat_draws - g_chunk_d0), zb); }
     vka_gbar_settle(g_cb);   // a game barrier left pending (vka_gbar.c), in this part: it covers the parts after it
@@ -702,6 +826,10 @@ static uint64_t sub_commit(uint64_t reserved, int has_sig, uint64_t signal) {
     vka_draw_peek_commit(fence);   // DM_VK_SB_PEEK: this submission's storage buffers, read again once it has completed
     int tail = 0;   // counted for the tail floor (DM_VK_GPU_FLOOR_AUTO=2): given back by the span op when it completes
     if (g_cb && g_stat_draws > g_sub_draws0) { int vka_floor_tail_add(void); tail = vka_floor_tail_add(); post((pop){3, 0, (uint32_t)tail, 0, g_job_frame_set ? g_job_frame : g_frame}); }   // the frame's span at the end of this submission with draws (post_run)
+    if (g_cb) {   // when its completion is processed: for the tick's measure (tick_sample) and DM_VK_TSCAL
+        unsigned kc = (g_slot_i - 1) % NSLOT; post((pop){7, 0, 0, 0, 0, kc + 1});
+        if (tscal()) { g_cal_on[kc] = 1; g_cal_draws[kc] = (uint32_t)(g_stat_draws - g_sub_draws0); g_cal_sig[kc] = signal; }
+    }
     pop *ops = g_npost ? malloc((size_t)g_npost * sizeof *ops) : NULL; if (ops) memcpy(ops, g_post, (size_t)g_npost * sizeof *ops);
     int n = g_npost; g_npost = 0;
     ops = carry_take(fence, signal, ops, &n);
@@ -718,7 +846,7 @@ static uint64_t sub_commit(uint64_t reserved, int has_sig, uint64_t signal) {
     vka_enc_stop();   // every call made: the command buffer is complete
     g_t_cm_enc += now_ns() - tc0;
     unsigned k = (g_slot_i - 1) % NSLOT;
-    if (g_slot_ts[k]) qf.write(g_cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, g_qp, k * QPS + 2 * (g_slot_parts[k] - 1) + 1);
+    if (g_slot_ts[k]) { g_part_draws[k][g_slot_parts[k] - 1] = (uint32_t)(g_stat_draws - g_chunk_d0); qf.write(g_cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, g_qp, k * QPS + 2 * (g_slot_parts[k] - 1) + 1); }
     vka_gp_commit(g_cb, fence);
     VkResult r = vk.vkEndCommandBuffer(g_cb);
     g_rec_ns += now_ns() - g_sub_t0;
@@ -730,6 +858,7 @@ static uint64_t sub_commit(uint64_t reserved, int has_sig, uint64_t signal) {
     uint64_t tc1 = now_ns(); g_t_cm_up += tc1 - tc0;
     unsigned ks = (g_slot_i - 1) % NSLOT;
     if (!signal && !g_slot[ks].vf) { VkFenceCreateInfo fi = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO}; if (vk.vkCreateFence(V.dev, &fi, NULL, &g_slot[ks].vf)) g_slot[ks].vf = VK_NULL_HANDLE; }
+    if (g_slot_ts[ks]) cal_submit(ks * QPS + 2 * (g_slot_parts[ks] - 1) + 1);
     if (!r) r = vka_submit_fence(g_cb, signal, !signal ? g_slot[ks].vf : VK_NULL_HANDLE, gate_take());
     if (!r && !signal && g_slot[ks].vf) g_slot[ks].vf_on = 1;   // (no fence made: the slot waits for the timeline, as a signalled one)
     g_t_cm_sub += now_ns() - tc1;

@@ -127,6 +127,10 @@ def scene_args(g):
     return out
 
 
+# nn::settings::LanguageCode of the console's 18 languages (hle_oe.c dm_lang_code; the launcher's GameLanguage.CODES)
+LANGUAGE_CODES = ('ja', 'en-US', 'en-GB', 'fr', 'fr-CA', 'de', 'it', 'es', 'es-419', 'nl', 'pt', 'pt-BR', 'ru', 'ko', 'zh-Hans', 'zh-Hant', 'pl', 'th')
+
+
 def header(g):
     """the host's game_profile.h: the profile constants the host uses, as macros"""
     q = lambda s: '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
@@ -212,6 +216,9 @@ def header(g):
     om = g.get('op_mode', 'console')   # the operation mode reported at start (hle_oe.c dm_opmode; DM_OPMODE overrides): console = docked, handheld = touch screen in use (Super Mario Galaxy's pointer)
     if om not in ('console', 'handheld'): sys.exit(f'{g.id}: op_mode must be console or handheld: {om}')
     if pl == 'touch' and om != 'handheld': sys.exit(f'{g.id}: pad_layout touch needs op_mode handheld (the touch screen reaches the game only in handheld mode)')
+    langs = g.words('languages', '')   # the console languages the game ships (hle_oe.c dm_lang_limit): the language it is given is one of them, as on a console, where the system gives a game only a language its control data lists. None = no limit
+    bad = [c for c in langs if c not in LANGUAGE_CODES]
+    if bad: sys.exit(f'{g.id}: languages: not a console language code: {" ".join(bad)} (the codes: {" ".join(LANGUAGE_CODES)})')
     pm = g.get('perf_mode', 'follow')   # the performance mode reported (hle_oe.c): follow = the operation mode's (Boost docked, Normal handheld), boost = Boost always
     if pm not in ('follow', 'boost'): sys.exit(f'{g.id}: perf_mode must be follow or boost: {pm}')
     dmo = g.get('depth_mode', 'gl')   # the NVN depth mode the game sets, for the pipeline archive made offline (dm/gfx/tools/pso_offline.py; the host follows the game at run time): gl / zero
@@ -224,10 +231,19 @@ def header(g):
             w, h = map(int, r[3].split('x'))
             if not (0 < w < 65536 and 0 < h < 65536): sys.exit(f'{g.id}: window_fn size must be 1..65535 each: {r[3]}')
             wfn.append('{' + q(r[0]) + f', {r[1]}, {r[2]}, {w}, {h}' + '}')
+    shp = []   # shape tables, one row per main build: <main build ID> <variant> <cam> <squeeze> <shift> <nshift> <fade> <top> <stretch> (word offsets; loader.c shape_apply writes them from DM_VK_PICTURE_ASPECT for the variant)
+    for r in (g.values('shape_table') if g.get('shape_table', '') else []):
+        if len(r) != 9 or not re.fullmatch(r'[0-9a-f]{32}', r[0]) or not r[1].isalnum() or not all(re.fullmatch(r'0x[0-9a-fA-F]+', x) for x in r[2:]):
+            sys.exit(f"{g.id}: shape_table takes <main build ID (32 hex)> <variant> and seven word offsets (cam squeeze shift nshift fade top stretch): {r}")
+        shp.append('{' + q(r[0]) + ', ' + q(r[1]) + ', {' + ', '.join(r[2:]) + '}}')
     # fps_decouple sead: the game's speed follows its measured frame rate through sead's frame-rate controller, which the rewriter gates in main only for a profile with this key (dm/tools/nso_code.py sead_find,
-    # hle_fpslock.c sead_rate; pack_android.py build_rows keys it), and the Android launcher (build.gradle decoupleOf: a frame limit with presentation on the host's tick); a build's own place is an OBS row of its patches.py
-    for r in g.values('fps_decouple') if g.get('fps_decouple', '') else []:
-        if r != ['sead']: sys.exit(f"{g.id}: fps_decouple takes sead (the rewriter finds the controller; a build's own place is an OBS row of the profile's patches.py): {r}")
+    # hle_fpslock.c sead_rate; pack_android.py build_rows keys it), and the Android launcher (build.gradle decoupleOf: a frame limit with presentation on the host's tick); a build's own place is an OBS row of its patches.py.
+    # fps_decouple skip: a game that counts frames skips the submit and present of frames behind real time through its own draw flag, at gates its patches.py OBS rows place (the
+    # rewriter takes them only with this key; Mario Tennis Fever, android/mtf_speed.c); the launcher shows Full game speed at low frame rates and keeps the game's own interval
+    dec = g.values('fps_decouple') if g.get('fps_decouple', '') else []
+    for r in dec:
+        if r not in (['sead'], ['skip']): sys.exit(f"{g.id}: fps_decouple takes sead (the rewriter finds the controller; a build's own place is an OBS row of the profile's patches.py) or skip (the game's own draw flag, at OBS rows of its patches.py): {r}")
+    if len(dec) > 1: sys.exit(f"{g.id}: one fps_decouple row (sead or skip): {dec}")
     # fps_steps: the game's framework runs a whole number of fixed steps each frame and presents at that many vsyncs; the frame rate cap holds 60, 30 or 20 through it (hle_fpslock.c
     # steps_tick). One row per main build: <main build ID> <global offset> <member offsets to the framework, comma-separated, or -> <mode field> <step count field>: the framework is at
     # [main + global], then [that + each member]
@@ -411,6 +427,7 @@ def header(g):
          f'#define DM_GAME_PAD_LAYOUT {("simple", "full", "touch").index(pl)}',
          f'#define DM_GAME_OPMODE {int(om == "console")}',
          f'#define DM_GAME_PERF_BOOST {int(pm == "boost")}',
+         f'#define DM_GAME_LANGUAGES {q(" ".join(langs))}',
          f'#define DM_GAME_TEX_FLUSH_UPLOAD {int(tfu == "on")}',
          f'#define DM_GAME_SHADER_KEY_SKIP_OFF {sko:#x}', f'#define DM_GAME_SHADER_KEY_SKIP_LEN {skl:#x}',
          f'#define DM_GAME_RENDER_COND {int(rcd == "on")}',
@@ -426,6 +443,7 @@ def header(g):
          f'#define DM_GAME_LOW_RAM_PLACE_PART_MB {int(lpp)}', f'#define DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB {int(lic)}', f'#define DM_GAME_LOW_RAM_APP_POOL_MB {int(lap)}',
          f'#define DM_GAME_ROMFS_SUBST {q(rsub)}',
          f'#define DM_GAME_WINDOW_FN {{{", ".join(wfn) or "{\"\", 0, 0, 0, 0}"}}}', f'#define DM_GAME_NWINDOW_FN {len(wfn)}',
+         '#define DM_GAME_SHAPE_TABLE {' + (', '.join(shp) or '{"", "", {0}}') + '}', f'#define DM_GAME_NSHAPE_TABLE {len(shp)}',
          '#define DM_GAME_SUBGROUP_ONE_LANE {' + (', '.join(sol) or '0') + '}', f'#define DM_GAME_NSUBGROUP_ONE_LANE {len(sol)}',
          '#define DM_GAME_MESH_VEGETATION_CUT {' + (', '.join(f'0x{k}ull' for k in vegetation) or '0') + '}',
          f'#define DM_GAME_NMESH_VEGETATION_CUT {len(vegetation)}',

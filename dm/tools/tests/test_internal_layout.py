@@ -24,7 +24,8 @@ class Layout(unittest.TestCase):
             rel = p.relative_to('internal')
             top = rel.parts[0]
             if len(rel.parts) == 1: self.assertEqual(rel.name, 'README.md', f'{p}: only README.md sits in internal/; use topics/, tools/ or history/')
-            else: self.assertIn(top, ('topics', 'tools', 'history'), f'{p}: not in topics/, tools/ or history/')
+            else: self.assertIn(top, ('topics', 'tools', 'history', 'issues'), f'{p}: not in topics/, tools/, issues/ or history/')
+            if top == 'issues': self.assertRegex(str(rel), r'^issues/(archive/)?\d+\.md$', f'{p}: issues/ holds <N>.md notes and archive/<N>.md only')
 
     def test_no_dates_outside_history(self):
         for p in tracked():

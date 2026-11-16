@@ -120,6 +120,7 @@ void *plat_mem_reserve(size_t size) {
     } else if (at != want) LOG("guest block: %#llx was taken, reserved at %#llx", (unsigned long long)want, (unsigned long long)at);
     if ((uint64_t)(uintptr_t)p + size > GUEST_VA_END) LOG("[RED] guest block %p+%#zx ends above %#llx (the 39-bit user space)", p, size, GUEST_VA_END);
     plat_mem_name_guest(p, size);
+    { int mx; (void)plat_maps_count(&mx); }   // the limit's value (or why it could not be read) goes to the log at boot
     return p;
 }
 // Its name in /proc/self/maps (fails quietly where the kernel has no anonymous VMA names). The kernel merges two neighbouring anonymous mappings only when their names are
@@ -131,8 +132,15 @@ int plat_maps_count(int *max) {
     static _Atomic int mx;
     if (max) {
         int m = atomic_load(&mx);
-        if (!m) { char b[32]; int fd = open("/proc/sys/vm/max_map_count", O_RDONLY | O_CLOEXEC); ssize_t k = fd >= 0 ? read(fd, b, sizeof b - 1) : -1; if (fd >= 0) close(fd);
-                  m = k > 0 ? (b[k] = 0, atoi(b)) : 0; if (m <= 0) m = 65530; atomic_store(&mx, m); }   // (the kernel's default when it cannot be read)
+        if (!m) { char b[32]; int fd = open("/proc/sys/vm/max_map_count", O_RDONLY | O_CLOEXEC), e = fd < 0 ? errno : 0; ssize_t k = fd >= 0 ? read(fd, b, sizeof b - 1) : -1; if (fd >= 0) { if (k < 0) e = errno; close(fd); }
+                  m = k > 0 ? (b[k] = 0, atoi(b)) : 0;
+                  // Said once, at the first count (the boot reads it: plat_mem_reserve): every report so far showed exactly 65530, which is also the fallback, so a phone whose read
+                  // is refused (SELinux) could not be told from one whose limit is the default. The log header of the issue digest carries this line
+                  // An app may not open it (SELinux, errno 13: the Honor test phone, 2026-11-16): not an error, the default is the limit every report's failures show (maps past
+                  // 65,530 failing at 65,560-66,276). Another failure is reported
+                  if (m <= 0) { LOG("%svm.max_map_count: /proc/sys/vm/max_map_count could not be read (%s, errno %d): 65530, the kernel's default, assumed", e == EACCES || e == EPERM ? "" : "[RED] ", fd < 0 ? "open" : k < 0 ? "read" : "empty", e); m = 65530; }
+                  else LOG("vm.max_map_count: %d (read from /proc/sys/vm/max_map_count)", m);
+                  atomic_store(&mx, m); }
         *max = m;
     }
     int fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC); if (fd < 0) return -1;

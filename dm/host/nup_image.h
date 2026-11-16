@@ -319,7 +319,16 @@ static const uint8_t *nup_z_get(romfs_img *m, uint64_t zi, char *why, size_t wn)
     else if (!romfs_image_read(m->fd, src, (size_t)z->stored, (off_t)z->off)) { e = errno ? errno : EIO; snprintf(why, wn, "cannot read the extent (errno %d)", e); }
     else {
         size_t r = ZSTD_decompress(out, (size_t)z->size, src, (size_t)z->stored);
-        if (ZSTD_isError(r) || r != z->size) { snprintf(why, wn, "zstd: %s (%zu of %llu bytes)", ZSTD_isError(r) ? ZSTD_getErrorName(r) : "short frame", ZSTD_isError(r) ? 0 : r, (unsigned long long)z->size); e = EIO; }
+        if (ZSTD_isError(r) || r != z->size) {
+            // The decoder's error strings are stripped (dm/third_party/zstd), so name what the extent holds: a package copy that has zeros where a file was (a
+            // cut or sparse copy) or other wrong bytes shows in the extent's start, and says the file must be copied again, not that the reader is wrong
+            size_t nz4 = z->stored < 4096 ? (size_t)z->stored : 4096, nzero = 0; while (nzero < nz4 && !src[nzero]) nzero++;
+            snprintf(why, wn, "zstd: %s (%zu of %llu bytes decoded); the stored extent (%llu bytes at 0x%llx of the .nup) begins %02x %02x %02x %02x%s",
+                     ZSTD_isError(r) ? "the frame does not decode" : "short frame", ZSTD_isError(r) ? 0 : r, (unsigned long long)z->size, (unsigned long long)z->stored, (unsigned long long)z->off,
+                     src[0], z->stored > 1 ? src[1] : 0, z->stored > 2 ? src[2] : 0, z->stored > 3 ? src[3] : 0,
+                     nzero == nz4 ? " and is all zeros there: the package file is damaged or was copied incompletely; copy it again and check it against its hashes" : "");
+            e = EIO;
+        }
     }
 #endif
     free(src);

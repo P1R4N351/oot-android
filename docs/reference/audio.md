@@ -327,6 +327,20 @@ For a replaced DSP renderer the size query keeps the service's work-buffer contr
 - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (imports only the older interface; v0.3.12 and v0.3.13, every driver).
 - **Check:** `make -C dm/host/tests GAME=<id> run` (`t_opus_hw`: Reset and Finalize of the older interface reach its software state and leave the work buffer alone); on a run log, the `not silent` count of the `audren: rendered` lines.
 
+### A sound report with no line for the symptom
+
+- **Symptom:** a player reports music missing, voices cut after half a second, a cutscene's sound over the previous one's, or a feedback-like distortion, and the log has no `[RED]` audio line; the one `audren: rendered 200 frames, 0 of them not silent` line of a 55 s run says nothing about the music.
+- **Cause:** open (2026-11-16): these reports (OoT #309, #282, #324; Star Fox #238) could not be told apart in the logs of 0.3.24 and before, which kept only the renderer's frame counts every 12,000 frames (a minute), nothing about the Opus decoders, the movie decoders or the SDK 21 OutputStream.
+- **Fix:** lines that always print, none per frame:
+  - `audren: rendered N frames, M of them not silent (the last W: S not silent, peak P of 32767, at T s)` at 200 and 1000 frames and then every 3000 (15 s), so a short run has lines and a silent stretch shows as `S` 0. The digest lists the stretches that were silent from end to end.
+  - `[codec] Opus at T s, the last 10 s: …` while any Opus decoder works: frames decoded, failures, all-zero frames, the loudest sample, packets enqueued and refused, the I/O buffers in use, resets, finalizes and inits. Frames decoded but all zero or peak 0 means the decoder gives silence; no frames decoded means the game does not feed it; refused packets or a full I/O pool means the host stops it.
+  - `[codec] Opus decoder initialized|reset|finalized at T s (older|manager interface, N decoders alive)` for the first 32 of each.
+  - `[codec] AV1|VP9|… decoder N at T s`, `started at`, `stopped or flushed at`, `finalized at`: a movie's start and end (a movie's sound is the game's own, not the host's: these times, the Opus lines and the renderer windows together show whether the first movie's sound stopped when the second began).
+  - `audio #N OutputStream at T s, the last 5 s: W writes (F frames), R refused; the game asked for room Y times, none left on Z; P purges (Q frames dropped); starts, stops; queued now …` for SDK 21's stream (Star Fox): voice writes that stop show the game side, refusals and a full queue the host side.
+- **Phone run (2026-11-16, 0.3.24's source plus these lines, system driver, new save, 176 s of the opening movies):** the lines print as described. Every movie decoded its sound with six older-interface Opus decoders (3,072 frames per 10 s, none failed, none all zero, peak 3,000 to 10,000), the renderer was not silent in any 15 s window, and each AV1 decoder was stopped, flushed and finalized before the next movie began, with no overlap or mute second movie. So #324 did not reproduce here, and no host fault shows in this path. The game never finalizes its Opus decoders (24 alive after four movies, 0 finalizes): the host keeps a 512-byte state for each, a small leak, not a cause.
+- **Check:** `python3 scripts/issue_digest.py <N>` prints the `-- audio` section. Ask for a 60 s+ log in a music area; with `DM_AUDIO_DUMP=<file>` the output is also recorded (the check in [Checking audio without listening](#checking-audio-without-listening)).
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (#309 no music on Snapdragon 8 Elite Gen 5, #282 distortion on the Odin 3, #324 the second opening cutscene); [Star Fox](../../dm/games/0400E88025B1A000/README.md) (#238).
+
 ## Timing and catch-up
 
 ### At least one rendered frame between two updates
@@ -343,7 +357,7 @@ For a replaced DSP renderer the size query keeps the service's work-buffer contr
 - **Cause:** Square Enix's `SQEX::Sd::Driver::Core::CoreAudioOut` (its loop at `main+0x442c5c0`) appends a wave buffer, mixes the next block on the same thread, calls `RequestUpdate` and takes the next released buffer. It waits on the renderer event only when no buffer is released. Every update there finds no frame rendered since the last one and renders a catch-up frame, which releases the buffer just appended, so the loop never waits. When a full catch-up queue discarded the frame, the loop ran unchecked.
 - **Fix:** an update with a full queue waits (at most 50 ms) for the render thread to play one queued frame, so catch-up frames keep real time (`hle_audren.c`). The render thread then only plays queued frames, and the driver's updates render every frame. A queued frame does not signal the renderer event (the SDK signals it in each render): signalled, an ordinary game woke, updated with nothing rendered since and rendered the next catch-up frame, so every frame became one ([Big Brain Academy: Brain vs. Brain](../../dm/games/0100620012D6E000/README.md), about 38,000 catch-up renders instead of 37).
 - **Found on:** [DRAGON QUEST XI S: Echoes of an Elusive Age – Definitive Edition](../../dm/games/01006C300E9F0000/README.md).
-- **Check:** `audren: rendered 12000 frames, N of them not silent` shows whether a game's sound reaches the output.
+- **Check:** `audren: rendered N frames, M of them not silent` (every 15 s of a run since the line gained its window) shows whether a game's sound reaches the output.
 
 ### No virtual audio input devices (SDK 22)
 

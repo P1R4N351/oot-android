@@ -123,6 +123,8 @@ The first boot shows the language list: `A`, `LUp`, `A` picks English. The chara
 
 ## Found on this game
 
+- [A game asked for a shader its library lacks](../../../docs/reference/shaders.md#a-game-asked-for-a-shader-its-library-lacks-android): the run-time shader layer builds the missing shader while the game runs (`DM_VK_LAYER`, default on); tested here with faked misses (`DM_VK_LAYER_DROP`), a real miss (Carkol) not yet run (2026-11-16).
+
 - [Opt-in LDN sessions and virtual UDP sockets](../../../docs/reference/services.md#opt-in-ldn-sessions-and-virtual-udp-sockets): experimental Android-to-PC Link Play; current verification limits are in [Link Play on Android](#link-play-on-android).
 
 - [The Mac's pack translates every shader of a selected profile at a new library version](../../../docs/reference/packing.md#the-macs-pack-translates-every-shader-of-a-selected-profile-at-a-new-library-version): v0.3.12 on a Mac (issue 178) translated all 131,426 shaders (about 6 hours) where the phone and the manifest hold the 8,161 selected; `pack_android.py` now builds the selected set.

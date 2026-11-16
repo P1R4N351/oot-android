@@ -1,6 +1,6 @@
 # Settings: Performance
 
-The settings that change how fast a game runs and how sharp it looks: frame rate cap, resolution, upscaler, dynamic resolution, GPU driver, frame generation and the Advanced rows. Most are on the **Performance** tab of a game's page; the same choices exist globally under **Settings > Game defaults**. For what to try in what order, see [Getting higher FPS](Getting-Higher-FPS).
+The settings that change how fast a game runs and how sharp it looks: frame rate cap, resolution, upscaler, dynamic resolution, GPU driver, frame generation and the Advanced rows. Most are on the **Performance** tab of a game's page; the same choices exist globally under **Settings > Defaults for all games** (a closed group; tap it to open). For what to try in what order, see [Getting higher FPS](Getting-Higher-FPS).
 
 <!-- TODO screenshot: a game page, Performance tab, Picture and Speed sections -->
 
@@ -95,6 +95,7 @@ Folded on a phone; tap **Show**. These are for testers; the defaults are the tes
 - **What it does:** a text block over the game: top left the build tag, top right the frame rate and frame time, a **throttle dot** (green, yellow or red), GPU time per frame, CPU clock caps, battery temperature and level, and memory. A master switch and one switch per item (Frame rate and frame time, Throttle dot, GPU time a frame, CPU clock caps, Battery temperature and level, Build tag, Memory).
 - **When to toggle:** leave it on while you tune; turn it off for recordings or if it distracts. The text is drawn by the game's own present step rather than by Android views, to keep its cost low (what it costs is not measured here).
 - **Default:** on, every item on.
+- **Building shaders label (0.3.40):** moved out of the overlay's items. **Settings > Building shaders label** (and the same row in the in-game panel's General tab) has three choices: **Off**, **Number only** (the default: just the count, small and see-through at the very top of the screen) and **Full text** (**Building shaders (N)**; see [Live shader building](Live-Shader-Building)). A build that waits for a cooler phone or more battery is said in every choice, so a blank picture always has a reason. Hiding the label never stops the build.
 
 The dot is red when the system reports thermal status moderate or worse, or severe headroom, or the main CPU cluster is capped below 65 % of its top clock; yellow for light status or a cap below 85 %; green otherwise; grey when nothing could be read. More in [Heat and battery](Heat-and-Battery).
 

@@ -2794,6 +2794,28 @@ def frame_size(f):
     o = 6 - single + (0, 1, 2, 4)[fhd & 3]   # after the window descriptor and the dictionary ID
     return int.from_bytes(f[o:o + n], 'little') + (256 if n == 2 else 0)
 
+def lz4_frame(f):
+    """An LZ4 frame (lz4's Frame format) decompressed block by block with lz4.block, which every packing Python has: the phone's carries python-lz4's block module
+    only (android/ondevice/build.sh), and the frame module's absence left the .cmp containers closed, among them the 9,092 of Kirby and the Forgotten Land's
+    add-on that hold its Switch 2 Edition's shaders (BananaNative #356). A linked block decodes with the frame's last 64 KiB as its dictionary. The checksums are
+    not verified: unsized checks the size against its prefix"""
+    import lz4.block
+    flg, bd = f[4], f[5]
+    if flg >> 6 != 1 or not 4 <= bd >> 4 & 7: raise ValueError(f'an LZ4 frame descriptor this reader does not know (FLG {flg:#04x}, BD {bd:#04x})')
+    bmax = 1 << 8 + 2 * (bd >> 4 & 7)   # the block maximum: 4 = 64 KiB … 7 = 4 MiB
+    linked = not flg & 0x20
+    o, out = 6 + (8 if flg & 8 else 0) + (4 if flg & 1 else 0) + 1, bytearray()   # after the content size and dictionary ID when present, and the header checksum
+    while True:
+        if o + 4 > len(f): raise ValueError('the LZ4 frame ends before its end mark')
+        n = int.from_bytes(f[o:o + 4], 'little'); o += 4
+        if not n: return bytes(out)
+        stored, n = n >> 31, n & 0x7FFFFFFF
+        if n > bmax or o + n > len(f): raise ValueError(f'an LZ4 block of {n} bytes (at most {bmax}, {len(f) - o} left)')
+        b = f[o:o + n]; o += n + (4 if flg & 0x10 else 0)   # and its checksum when the frame has them
+        if stored: out += b
+        elif linked and out: out += lz4.block.decompress(b, uncompressed_size=bmax, dict=bytes(out[-0x10000:]))
+        else: out += lz4.block.decompress(b, uncompressed_size=bmax)
+
 def unsized(d, where):
     """A size-prefixed frame (HAL's .cmp containers, Kirby and the Forgotten Land): a 4-byte little-endian uncompressed size, then a zstd frame (with a dictionary as for a zstd file)
     or an LZ4 frame (its ubin/ map data) → the frame decompressed. Bytes whose frame header records another size are not such a container and are returned as they are (Tears of the
@@ -2803,9 +2825,7 @@ def unsized(d, where):
     if frame_size(f) not in (None, n): return d
     did = zs_dict_id(f)
     try:
-        if f[:4] == LZ4_FRAME_MAGIC:
-            import lz4.frame
-            dec = lz4.frame.decompress(f)
+        if f[:4] == LZ4_FRAME_MAGIC: dec = lz4_frame(f)
         elif did and did not in ZDICTS: dec = None
         else: dec = unzs_dict(f, did, where) if did else zstd_mod().decompress(f)
     except Exception as e: why = str(e) or type(e).__name__
@@ -3589,7 +3609,8 @@ def main():
     # Several versions (base game + update): the RomFS and main arguments are comma-separated and paired one to one; the output is their union (keys are content hashes, shaders shared by versions appear once).
     # The first version's source column is unchanged; later versions are prefixed with their workspace directory name (e.g. v327680): /v327680/Shader/…, main@v327680. They sort after the first version, so existing rows keep their package indices.
     romfs_v, main_v = [nup.default_romfs(r) for r in romfs_l.split(',')], main_l.split(',')
-    dlc_v = [nup.default_romfs(r) for r in dlc_v]
+    dump_aoc = [] if dlc_v else dump_addons(os.environ.get('DM_SPLIT_DUMP'))
+    dlc_v = [nup.default_romfs(r) for r in dlc_v] + dump_aoc
     if len(romfs_v) != len(main_v): red(f'{len(romfs_v)} RomFS and {len(main_v)} main: they must pair one to one')
     files, results, common, dumps, nros = [], [], None, [], []
     for i, (romfs, mainnso) in enumerate(zip(romfs_v, main_v)):
@@ -3635,7 +3656,7 @@ def main():
     zdicts = {k: v for r in romfs_v + dlc_v for k, v in zs_dicts(r).items()}   # Tears of the Kingdom's zstd dictionaries (zs_dicts)
     J = int(os.environ.get('J', '8'))
     rd = os.environ.get('DM_SPLIT_RESUME')   # the phone's split (PackService): kept results from a stopped run
-    inputs = sys.argv[1:3] + sys.argv[8:]   # the inputs only (RomFS, main and DLC; not the output paths), and main's size and time with the jobs: main gives Unity's common strings to every scan
+    inputs = sys.argv[1:3] + sys.argv[8:] + dump_aoc   # the inputs only (RomFS, main and DLC; not the output paths), and main's size and time with the jobs: main gives Unity's common strings to every scan
     mains = [(m, 'main') for m in main_v]
     targeted = os.environ.get('DM_SPLIT_TARGETED') == '1'
     out = None
@@ -3673,6 +3694,19 @@ def main():
         out = split_tables(list(results), big, todo, dumps, J, common, zdicts, ScanCache(cd, scan_digest(inputs, big + todo + mains)) if cd else None)
     stage('writing the shaders found')
     write_outputs(out, pkg, mapout, factsout, pairsout, psopairsout)
+
+def dump_addons(dump):
+    """DM_SPLIT_DUMP (the phone's split step, PackService): the dump folder or .nup the RomFS argument is of → the add-on RomFS roots its program's split reads,
+    as pack_android.py passes them (scripts/pack_dump.py split_addons: a program n > 0, a Switch 2 Edition's program 1, keeps its shaders in its application's
+    add-ons; none for program 0). [] when unset"""
+    if not dump: return []
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'scripts'))
+    import pack_dump
+    try: app, _, dlc = pack_dump.scan(pack_dump.Path(dump))
+    except pack_dump.Error as e: red(f'DM_SPLIT_DUMP: {e}')
+    roots = [str(r) for r in pack_dump.split_addons(app, dlc)]
+    if roots: print(f'split: program {app:016X} keeps shaders in its application\'s add-ons: {", ".join(roots)}', flush=True)
+    return roots
 
 class Fallback(Exception): pass   # the targeted scan cannot give the full scan's outputs (split_tables)
 

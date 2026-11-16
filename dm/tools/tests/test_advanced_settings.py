@@ -7,6 +7,10 @@ import unittest
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'dm/tools'))
 import advanced_switches as A
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))   # the tests folder, for javatext (unittest by file name does not add it)
+import javatext  # noqa: E402
 
 ENV = {'DM_A': ('switch', 'meaning'), 'DM_B': ('diagnostic', 'meaning'), 'DM_P': ('path', 'meaning')}
 
@@ -23,6 +27,8 @@ FRIENDLY = dict(tier='friendly', area='Graphics', label='A thing', try_if='the p
 
 class AdvancedSettings(unittest.TestCase):
     def test_real_table_is_complete_and_valid(self):
+        javatext.install()   # the launcher's labels are Tx.s(R.string.key): read as their English
+        self.addCleanup(javatext.uninstall)
         keys, ids = A.profile_keys()
         wp = REPO / 'wiki/Settings-Advanced.md'
         bad = A.problems(A.load(), A.read_env(), keys, ids, A.java_strings(), wp.read_text() if wp.exists() else '')

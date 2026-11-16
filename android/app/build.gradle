@@ -50,6 +50,8 @@ def tsvRows = { String game, String key -> def t = new File(repo, "dm/games/$gam
 def buildsOf = { String game -> tsvRows(game, 'build').collect { c -> def m = (c[1] =~ /\d+/); (m.find() ? m.group() : c[1]) + (c.size() > 2 && c[2] ==~ /\d+(\.\d+)+/ ? ' @' + c[2] : '') + ' ' + c.drop(3).join(' ') }.join(';') }   // "<version> [@<display version>] <module>=<build ID> ..."
 def nameOf = { String game -> tsvRows(game, 'name').collect { it[1] }.find() ?: game }
 def defineOf = { String path, String name -> def f = new File(repo, path); def m = f.isFile() ? (f.text =~ /#define\s+${name}\s+"([^"]*)"/) : null; (m != null && m.find()) ? m.group(1) : 'unknown' }
+// the older VK chains a library of this DMSH_VK_CHAIN is known to take over without a sampled check (dm/gfx/vk_android/vka_known_transitions.tsv, android/SHADERS.md Known transitions)
+def knownFrom = { -> def cur = defineOf('dm/gfx/nvn/dmsh_chain_vk.h', 'DMSH_VK_CHAIN'); def f = new File(repo, 'dm/gfx/vk_android/vka_known_transitions.tsv'); !f.isFile() ? '' : f.readLines().findAll { !it.startsWith('#') }.collect { it.split('\t') }.findAll { it.size() >= 2 && it[0] ==~ /[0-9a-f]{12}/ && it[1] == cur }.collect { it[0] }.join(' ') }
 // The shaders Prepare builds: every key of the profile's shader_map.tsv, or for a profile with a selected set (shader_seen.tsv; ShaderLibs.selection, android/SHADERS.md
 // "Selected shaders") the set's keys that the map has, with the pixel shaders paired with them (shader_pairs.tsv, pso_pairs.tsv: dmsh_build.py build_keys, the tool's total)
 def shaderKeysOf = { String game ->
@@ -103,8 +105,10 @@ def romfsChecksOf = { String game -> tsvRows(game, 'romfs_check').findAll { it.s
 def gpuTsOf = { String game -> tsvRows(game, 'gpu_timestamps').with { rs -> rs.isEmpty() || rs[0].size() < 2 ? 'submission' : rs[0][1].trim() } }
 // The profile's default Game resolution (game.tsv android_window: one of Prefs.WINDOWS; empty without the key: the main screen's default)
 def windowOf = { String game -> tsvRows(game, 'android_window').with { rs -> rs.isEmpty() || rs[0].size() < 2 ? '' : rs[0][1].trim() } }
-// Whether the game's speed follows its measured frame rate (game.tsv fps_decouple rows): "1", or empty. The launcher then offers a frame limit instead of 60 / 30 / 20 (Prefs.paced)
-def decoupleOf = { String game -> tsvRows(game, 'fps_decouple').isEmpty() ? '' : '1' }
+// How the game keeps its speed at low frame rates (game.tsv fps_decouple): "1" for sead (its speed follows its measured frame rate: the launcher offers a frame limit instead of
+// 60 / 30 / 20, with presentation on the host's tick, Prefs.paced), "skip" for skip (a frame-counting game skips late frames' presents through its own draw flag: the game's own
+// interval stays, Prefs.frameSkip), or empty. Both show Full game speed at low frame rates
+def decoupleOf = { String game -> tsvRows(game, 'fps_decouple').with { rs -> rs.isEmpty() ? '' : rs[0].size() > 1 && rs[0][1].trim() == 'skip' ? 'skip' : '1' } }
 // Whether the host can steer the game's dynamic resolution (game.tsv drs_ctl rows): "1", or empty. The launcher then offers its Dynamic resolution setting (Prefs.drsGame)
 def drsOf = { String game -> tsvRows(game, 'drs_ctl').isEmpty() ? '' : '1' }
 // The profile's default frame limit (game.tsv fps_limit: frames a second, the host's limiter, hle_fpslock.c), or empty without one (0 = none). The launcher then offers a frame limit
@@ -119,7 +123,7 @@ def presentOnlyOf = { String game -> tsvRows(game, 'fps_limit_present').isEmpty(
 // Hold 60 fps (Prefs.steps, Prefs.hold60: DM_FPS_HOLD60), one step a frame, where the game's own mode drops to two steps (30 fps) after a frame its work overran
 // or a host frame step (fps_target with the rewriter's FRAME_STEP stubs in the profile's patches.py: Ocarina of Time), which Hold 60 fps keeps at one vsync, late time paid back
 def stepsOf = { String game -> def pp = new File(repo, "dm/games/$game/patches.py"); def ft = tsvRows(game, 'fps_target'); (!tsvRows(game, 'fps_steps').isEmpty() || (!ft.isEmpty() && ft[0].size() > 1 && ft[0][1].trim() != '0' && pp.isFile() && pp.text.contains('FRAME_STEP'))) ? '1' : '' }
-def variantsOf = { String game -> tsvRows(game, 'variant').findAll { it.size() > 1 && it[1].trim() }.collect { it[1].trim() + '=' + (it.size() > 3 && it[3].trim() ? it[3].trim() : it[1].trim()) }.join(',') }   // game.tsv variant rows: "43=4:3,..." (Game settings > Aspect ratio)
+def variantsOf = { String game -> tsvRows(game, 'variant').findAll { it.size() > 1 && it[1].trim() }.collectMany { r -> (r.size() > 3 && r[3].trim() ? r[3].trim() : r[1].trim()).split('\\|').collect { l -> r[1].trim() + '=' + l.trim() } }.join(',') }   // game.tsv variant rows: "43=4:3,..." (Game settings > Aspect ratio); a label "4:3|screen" names one variant for two choices ("screen": Screen shape)
 // Profile-declared opt-in settings (game.tsv option rows: "<env>|<label>|<description>|<restart or live>", ';' between them: Profile.options)
 def optionsOf = { String game ->
     tsvRows(game, 'option').collect { c ->
@@ -250,6 +254,10 @@ android {
         buildConfigField 'String', 'NX_DMSH_VK_ABI', "\"${defineOf('dm/gfx/nvn/dmsh_chain_vk.h', 'DMSH_VK_ABI')}\""
         // and the older ABIs its host also plays (dm/gfx/vk_android/vka_abi_compat.h DMSH_VK_ABI_COMPAT, space-separated), only while that table is for this ABI (VKA_ABI_COMPAT_FOR)
         buildConfigField 'String', 'NX_DMSH_VK_ABI_COMPAT', "\"${defineOf('dm/gfx/vk_android/vka_abi_compat.h', 'VKA_ABI_COMPAT_FOR') == defineOf('dm/gfx/nvn/dmsh_chain_vk.h', 'DMSH_VK_ABI') ? defineOf('dm/gfx/vk_android/vka_abi_compat.h', 'DMSH_VK_ABI_COMPAT') : ''}\""
+        // the older ABIs among them whose modules differ in nothing (a row's differs 0: ShaderLibs.sampleCandidate may stamp such a library after a sample)
+        buildConfigField 'String', 'NX_DMSH_VK_ABI_SAME', "\"${defineOf('dm/gfx/vk_android/vka_abi_compat.h', 'VKA_ABI_COMPAT_FOR') == defineOf('dm/gfx/nvn/dmsh_chain_vk.h', 'DMSH_VK_ABI') ? (new File(repo, 'dm/gfx/vk_android/vka_abi_compat.h').text =~ /\{\"([0-9a-f]{12})\",\s*0\}/).collect { it[1] }.join(' ') : ''}\""
+        // the older VK chains whose libraries are kept as this chain's without a sampled check (dm/gfx/vk_android/vka_known_transitions.tsv: rows "<old>\t<new>\t<note>" whose new is this chain)
+        buildConfigField 'String', 'NX_KNOWN_FROM', "\"${knownFrom()}\""
         buildConfigField 'String', 'NX_PACK_ENGINE', "\"$nxPackEngine\""
         // The DM_ switches some part of this build reads (docs/env_switches.tsv, which dm/tools/env_switches.py keeps current), space-separated: a user line naming
         // another DM_ variable gets a [RED] line in the game's log (Readiness.unknownSwitches; GitHub #40 had DM_VK_PS0_ASYNC, a zero for the O)

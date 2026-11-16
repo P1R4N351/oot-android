@@ -3,6 +3,10 @@ picker or switch, rows keep their titles short enough for one line on a phone, a
 are there. Source checks only: the look is checked on the phone (android/README.md, The launcher)."""
 import re
 import unittest
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))   # the tests folder, for javatext (unittest by file name does not add it)
+import javatext  # noqa: E402
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
@@ -26,8 +30,9 @@ class GameSettingsPage(unittest.TestCase):
                      'driver(a, g, again)', 'gpuTiming(a, g, again)', 'language(a, g, again)', 'xbox(a, g, again)', 'PadMapUi.forGame(a, g, again)', 'env(a, g, again)',
                      'Prefs.resetGame(a, id)', 'Prefs.backToRecommended(a, id)'):
             self.assertIn(call, self.gs, f'{call}: its row is gone')
-        for setter in ('fullVegetation', 'skipLayers', 'hold60', 'decouple', 'instancedDraws', 'classicPasses', 'psoAsync', 'ramSaver', 'pauseOnReturn', 'rumble', 'pinThreads'):
+        for setter in ('fullVegetation', 'skipLayers', 'hold60', 'decouple', 'instancedDraws', 'classicPasses', 'psoAsync', 'ramSaver', 'pauseOnReturn', 'pinThreads'):
             self.assertIn(f'Prefs.{setter}(a, id, on)', self.gs, f'{setter}: its switch is gone')
+        self.assertIn('Prefs.rumbleOwn(a, id, ', self.gs)
         self.assertIn('Prefs.gameOption(a, id, opt.env, checked)', self.gs, "the profile's options")
 
     def test_short_titles(self):
@@ -41,8 +46,8 @@ class GameSettingsPage(unittest.TestCase):
         for key, label in (('picture', 'Picture'), ('speed', 'Speed'), ('options', 'Game options'), ('controls', 'Controls'), ('advanced', 'Advanced')):
             self.assertIn(f'"{key}", ', self.gs); self.assertIn(f'"{label}")', self.gs)
         self.assertIn('new Ui.Segmented(a, new String[] {"Recommended", "Custom"}', self.gs)
-        self.assertIn('screenWidthDp >= 600', self.gs, 'a wide window gets the rail')
-        self.assertIn('rail(a, content, all, reset, again)', self.gs); self.assertIn('column(a, content, all, reset)', self.gs)
+        self.assertIn('screenWidthDp >= 600', self.gs, 'a wide window gets the left column')
+        self.assertIn('Ui.navItem(a, e, labels[k]', self.gs, 'the left column lists the tabs'); self.assertIn('column(a, content, all, reset)', self.gs)
         self.assertNotIn('Ui.sheet(a, "Game settings', self.gs, 'a page, not a dialog')
 
     def test_ui_helpers(self):
@@ -57,8 +62,9 @@ class GameSettingsPage(unittest.TestCase):
         self.assertNotIn('Ui.sheet(this, null, box)', ma)
         self.assertIn('{"Performance", "Game", "Saves", "Storage"}', self.gs)
         self.assertIn('Ui.tabs(a, labels, t, ', self.gs)
-        self.assertIn('Ui.button(a, "Play", Ui.Kind.PRIMARY, v -> a.launch(g))', self.gs, 'Play in the header')
-        self.assertIn('t.setMaxLines(2);', self.gs.split('private static LinearLayout header(')[1].split('return out;')[0], 'a long name wraps')
+        bar = self.gs.split('private static void topBar(')[1].split('\n    }\n')[0]
+        self.assertIn('v -> a.launch(g)', bar, 'Play in the top bar (a round button on a narrow window, the left column has it on a wide one)')
+        self.assertIn('name.setMaxLines(play ? 2 : 1)', bar, 'a long name wraps on a narrow window')
         m = ma.split('void gameTab(LinearLayout content, Game g, boolean savesTab) {')[1].split('\n    }\n')[0]
         for s in titles(m): self.assertLessEqual(len(s), MAX_TITLE, s)
         for call in ('SaveUi.backup(this, g)', 'SaveUi.restoreList(this, g)', 'SaveUi.importPick(this, g)', 'Ondevice.prepare(this, new File(g.gameDir), true)',
@@ -94,6 +100,18 @@ class GameSettingsPage(unittest.TestCase):
             d = r[3]
             self.assertGreater(len(d), 40, r[2]); self.assertLess(len(d), 260, r[2])
             for word in ('guest memory', 'allocation', 'update step', 'capped at', ';', '|'): self.assertNotIn(word, d, f'{r[2]}: {word}')
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+def setUpModule():
+    javatext.install()   # the launcher text is in strings.xml: this module reads the Java source with its English
+
+
+def tearDownModule():
+    javatext.uninstall()
+
 
 if __name__ == '__main__':
     unittest.main()

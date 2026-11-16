@@ -378,6 +378,7 @@ static int sead_rate_on(void) {
     if (atomic_compare_exchange_strong(&g_decouple, &was, v)) { g_decouple_src = e ? "DM_FPS_DECOUPLE" : "default"; if (!v) LOG("main: frame rate decoupling off (DM_FPS_DECOUPLE=0)"); }
     return atomic_load(&g_decouple);
 }
+int dm_fps_decouple_on(void) { return sead_rate_on(); }   // the same setting for a game's own speed gate, read at every frame (android/mtf_speed.c: Mario Tennis Fever's draw flag)
 // The gate's work at time now (the unit tests call it with their own clock): regs x0..x29 as the gate saved them, param N | M << 5 | C << 10
 static void sead_rate_at(uint64_t *r, int param, struct timespec now) {
     int n = param & 31, m = (param >> 5) & 31, c = (param >> 10) & 31; static int nlog;

@@ -114,6 +114,9 @@ static int init_once(void) {
     VkExtensionProperties *ie = calloc(ne ? ne : 1, sizeof *ie); vk.vkEnumerateInstanceExtensionProperties(NULL, &ne, ie);
     const char *iext[4]; uint32_t niext = 0;
     if (has_ext(ie, ne, VK_KHR_SURFACE_EXTENSION_NAME) && has_ext(ie, ne, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)) { iext[niext++] = VK_KHR_SURFACE_EXTENSION_NAME; iext[niext++] = VK_KHR_ANDROID_SURFACE_EXTENSION_NAME; V.has_android_surface = 1; }
+#ifdef NX_LINUX   // the window's surface extensions come from the front end (linux/host/front_sdl.c); has_android_surface then means "a surface can be made"
+    { extern int nx_linux_vk_instance_exts(const char **out, int max); niext = (uint32_t)nx_linux_vk_instance_exts(iext, 4); V.has_android_surface = niext > 0; }
+#endif
     free(ie);
     const char *layer = "VK_LAYER_KHRONOS_validation"; uint32_t nlayer = 0;
     const char *ve = getenv("DM_VK_VALIDATE");
@@ -158,6 +161,12 @@ static int init_once(void) {
       if (qn) VLOG("device extensions of the vendor:%s", q); }
     int swap = has_ext(de, nde, VK_KHR_SWAPCHAIN_EXTENSION_NAME), map2 = has_ext(de, nde, VK_KHR_MAP_MEMORY_2_EXTENSION_NAME), placed = map2 && has_ext(de, nde, VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME);
     V.display_timing = swap && has_ext(de, nde, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+#ifdef NX_LINUX
+    // Linux: VK_GOOGLE_display_timing is there only when Gamescope's Vulkan layer is (Mesa's X11 and Wayland WSI have none). With present times given through it,
+    // on Turnip (Adreno 740 at its full clock) the GPU faulted at the 15th present or the encoder hung in the driver within seconds; without them the same layer
+    // presents fine. Not used unless NX_VK_DISPLAY_TIMING=1 (linux/README.md)
+    { const char *e = getenv("NX_VK_DISPLAY_TIMING"); if (!(e && *e == '1')) V.display_timing = 0; }
+#endif
     if (swap) dext[ndext++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
     if (map2) dext[ndext++] = VK_KHR_MAP_MEMORY_2_EXTENSION_NAME;
     if (placed) dext[ndext++] = VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME;
@@ -196,6 +205,10 @@ static int init_once(void) {
     if (x_fault) dext[ndext++] = VK_EXT_DEVICE_FAULT_EXTENSION_NAME;
     V.mem_budget = has_ext(de, nde, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);   // the image heap's budget, for the texture cache's limit (vka_tex.c img_limit_update)
     if (V.mem_budget) dext[ndext++] = VK_EXT_MEMORY_BUDGET_EXTENSION_NAME;
+    // GPU timestamps on the host clock, for DM_VK_TSCAL (vka_exec.c): where the device has calibrated timestamps
+    const char *x_cal = has_ext(de, nde, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) ? VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
+                      : has_ext(de, nde, VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) ? VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME : NULL;
+    if (x_cal) { dext[ndext++] = x_cal; V.cal_ts = 1; }
     free(de);
 
     // Every feature the device has, but robustness and capture-replay (they cost and nothing needs them); the shader side takes what it needs from the same device
@@ -411,6 +424,10 @@ out:
     if (pool) vk.vkDestroyCommandPool(V.dev, pool, NULL);
     return res;
 }
+// When the signal thread saw a fence of the replay's timeline done (its wait returned), by the value it then signals: for DM_VK_TSCAL (vka_exec.c), which sets the
+// time the driver took to report the GPU's end apart from the host's own hand-over to the completion thread
+static _Atomic uint64_t g_tls_ret_v[64], g_tls_ret_t[64];
+uint64_t vka_tls_ret(uint64_t v) { unsigned k = v % 64; return atomic_load(&g_tls_ret_v[k]) == v ? atomic_load(&g_tls_ret_t[k]) : 0; }
 static void *tls_main(void *arg) {
     (void)arg; pthread_setname_np(pthread_self(), "vk-tlsig"); vka_fp_host("vk-tlsig"); void vka_perf_thread(int nice); vka_perf_thread(-8);
     for (;;) {
@@ -419,6 +436,7 @@ static void *tls_main(void *arg) {
         VkFence f = (VkFence)e.fence; VkResult r;
         while ((r = vk.vkWaitForFences(V.dev, 1, &f, VK_TRUE, 500000000ull)) == VK_TIMEOUT && !vka_hung()) {}   // (a GPU that stops is found by the completion thread)
         if (r) { if (r != VK_TIMEOUT) VRED_ONCE("timeline signal thread: vkWaitForFences %d: the value is not signalled", r); continue; }   // (the fence is not reused)
+        if ((VkSemaphore)e.sem == V.tl) { unsigned k = e.v % 64; atomic_store(&g_tls_ret_t[k], now_ns()); atomic_store(&g_tls_ret_v[k], e.v); }
         pthread_mutex_lock(&g_tlsmu); int go = tls_take(&g_tls, e.sem, e.v); pthread_mutex_unlock(&g_tlsmu);
         if (go) { VkSemaphoreSignalInfo si = {VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, .semaphore = (VkSemaphore)e.sem, .value = e.v};
                   VkResult sr = vk.vkSignalSemaphore(V.dev, &si); if (sr) VRED_ONCE("timeline signal thread: vkSignalSemaphore of %llu: %d", (unsigned long long)e.v, sr); }
@@ -774,11 +792,13 @@ void vka_device_lost(const char *what) {
 static _Atomic int g_fault_reported;
 static void *hang_exit_main(void *arg) { (void)arg; pthread_setname_np(pthread_self(), "vk-hang"); dm_host_shutdown("GPU hang"); return NULL; }
 void vka_exec_hang_report(uint64_t fence);   // vka_exec.c: what the stuck submission held
+void vka_exec_hang_parts(void);   // vka_exec.c: which part of each submission in flight the GPU is in (not on a lost device)
 static void hang_declare(uint64_t want, uint64_t at, double s, const char *what) {
     if (atomic_exchange(&g_hung, 1)) return;
     VRED("GPU hang: %s; fence %llu not reached in %.1f s (the timeline at %llu, %llu handed to the queue, %llu reserved): nothing more is submitted, every fence reads as done",
          what, (unsigned long long)want, s, (unsigned long long)at, (unsigned long long)vka_fence_queued(), (unsigned long long)vka_fence_last());
     vka_exec_hang_report(at + 1);
+    if (!strstr(what, "-4")) vka_exec_hang_parts();   // (the device still answers: which parts the GPU started and finished)
     if (strstr(what, "-4") && !atomic_exchange(&g_fault_reported, 1)) fault_report();   // (a lost device: the driver may know where the GPU faulted)
     if (!VKA_ENV("DM_VK_HANG_EXIT", 1)) { VRED("GPU hang: DM_VK_HANG_EXIT=0, the game runs on without the GPU"); return; }
     VRED("GPU hang: the host exits (DM_VK_HANG_EXIT=0 runs on without the GPU)");

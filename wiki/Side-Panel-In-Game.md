@@ -24,7 +24,7 @@ A hint at the right edge shows how, once after install. With a controller: D-pad
 - **Upscaler** (and **FSR sharpness**): for a game whose upscaler the app replaces; applies from the next frame. Hidden for a game with Resolution presets unless Settings > Help > Tester settings is on.
 - **Dynamic resolution**: a slider from Off to 30 % (Donkey Kong Bananza).
 - **Frame generation**: the on switch, target, multiplier and motion estimation resolution ([Settings: Performance](Settings-Performance#frame-generation)).
-- The game's own **live** switches, if its profile has any.
+- The game's own **live** switches, if its profile has any. Ocarina of Time has four sliders here, each starting at Auto: **Draw distance**, **Shadow range**, **Foliage distance** and **Model detail distance** ([the game's page](Game-Zelda-Ocarina-of-Time)). They apply at once and are saved for the next start.
 
 The live lines on this tab (the frame rate now) refresh twice a second while it shows.
 
