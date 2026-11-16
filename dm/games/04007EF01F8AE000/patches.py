@@ -506,6 +506,9 @@ _UI_V27 = [
 # which v4's edge rule moved 180 up: a top-level Wdw about 1014 wide, caves 0x5e7684 and 0x5ec244 at the edge move itself, 0x58e464,
 # which three rule paths reach, so no frame of the opening slips past it; the Base Menu's Wdw is 520 wide).
 # The whole window then sits where 16:9 has it, with the buttons right under it. Checked on the Nova at the Behelda Axes turn-in.
+# v34: the frame is now told by its type (Window pane vtable) and layout place (y 452), not its name or width, which the game had not set yet
+# on the first layout pass of some openings (a heap dump showed the frame at y 632 = 452 + 180, contents in place). v33 used y alone: on some openings the width was not 1014 yet when the frame was first
+# laid out, so it took the edge move and kept it (the frame 180 above the contents, an empty band at its bottom).
 # v29: the L_Info test is now "parent named Right*" (the Quest List and the Tutorials) instead of "parent named Root*": on some openings (after
 # Don't Report and talking again) the quest window's L_Info had another parent name, took v23's move and its contents sat 180 above the frame.
 _UI_V28 = [
@@ -515,17 +518,18 @@ _UI_V28 = [
     (0x005d3990, '00000000', '9f010a6b', 'v29: cmp w12, w10'),
     (0x005d3994, '00000000', '0157dd54', 'v29: b.ne #0x58e474 (L_Info not under a Right anchor, e.g. the quest window: in place, not stretched)'),
     (0x005d3998, '00000000', 'fc0f0014', 'v29: b #0x5d7988 (L_Info beside a list, under Right: v23\'s move up by the shape shift)'),
-    (0x005e7684, '00000000', 'ea8a8cd2', 'v28: x10 = "Wdw" (from the edge move at 0x58e464, which every path to it passes)'),
-    (0x005e7688, '00000000', 'ea0ea0f2', 'v28: movk x10, #0x77, lsl #16'),
-    (0x005e768c, '00000000', '7f010aeb', 'v28: cmp x11, x10'),
-    (0x005e7690, '00000000', 'e15d0254', 'v28: b.ne #0x5ec24c (other names: the move)'),
-    (0x005e7694, '00000000', '0aa44079', 'v28: ldrh w10, [x0, #0x52] (top half of the pane width)'),
-    (0x005e7698, '00000000', '4a114051', 'v28: sub w10, w10, #0x4000'),
-    (0x005e769c, '00000000', 'ea120014', 'v28: b #0x5ec244'),
-    (0x005ec244, '00000000', '5ff51171', "v28: cmp w10, #0x47d (width 1012 to 1016: QuestTalk's 1014)"),
-    (0x005ec248, '00000000', '6011d154', 'v28: b.eq #0x58e474 (the turn-in window frame stays in place)'),
-    (0x005ec24c, '00000000', '3342211e', "v28: fneg s19, s17 (other panes, e.g. the Base Menu's 520 wide Wdw: the move, as before)"),
-    (0x005ec250, '00000000', '8688fe17', 'v28: b #0x58e468'),
+    (0x005e7684, '00000000', '0a0040f9', 'v34: the pane vtable (from the edge move at 0x58e464, which every path to it passes)'),
+    (0x005e7688, '00000000', '0dcf00f0', 'v34: x13 = the ui2d Window pane vtable (main+0x1fca0a0)'),
+    (0x005e768c, '00000000', 'ad810291', 'v34: add x13, x13, #0xa0'),
+    (0x005e7690, '00000000', '5f010deb', 'v34: cmp x10, x13'),
+    (0x005e7694, '00000000', 'e15d0254', 'v34: b.ne 0x5ec250 (not a window: the move)'),
+    (0x005e7698, '00000000', '0a6c4079', 'v34: ldrh w10, [x0, #0x36] (top half of its layout y)'),
+    (0x005e769c, '00000000', 'ea120014', 'v34: b 0x5ec244'),
+    (0x005ec244, '00000000', '4a114051', 'v34: sub w10, w10, #0x4000'),
+    (0x005ec248, '00000000', '5f890f71', 'v34: cmp w10, #0x3e2 (y 452 to 454: QuestTalk Wdw, the only window there)'),
+    (0x005ec24c, '00000000', '4011d154', 'v34: b.eq 0x58e474 (the turn-in window frame stays in place)'),
+    (0x005ec250, '00000000', '3342211e', 'v34: fneg s19, s17 (the move, as before)'),
+    (0x005ec254, '00000000', '8588fe17', 'v34: b 0x58e468'),
 ]
 
 # v32 (replaces v30 and v31): the quest window's contents could come out 4/3 tall and 180 too high on an opening (now and then on the Nova,
