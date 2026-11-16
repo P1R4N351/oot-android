@@ -371,7 +371,7 @@ _UI_V20 = [
     (0x005d2570, '00000000', 'aaacedf2', 'v20: movk x10, #0x6d65, lsl #48'),
     (0x005d2574, '00000000', '9f010aeb', 'v20: cmp x12, x10'),
     (0x005d2578, '00000000', 'e0f7dd54', 'v20: children of MenuItem* (choice lists): leave together'),
-    (0x005d257c, '00000000', 'bb50ff17', 'v20: b 0x5a6868'),
+    (0x005d257c, '00000000', 'cb010014', 'v27: b 0x5d2ca8 (children of L_Info; v20 had b 0x5a6868)'),
 ]
 
 # v21: the footer key help (Common_Footer: N_Footer > A_KeyHelp at y -520, the talk window's Text Log / Hide UI / Auto-Advance) jumped
@@ -484,6 +484,19 @@ _UI_V25 = [
     (0x00b785fc, '00000000', '83250014', 'v25: b #0xb81c08'),
 ]
 
+# v27: quest turn-in window (Common_QuestTalk > L_Info > Common_QuestInfo's N_Body, holding the quote, Objective and Reward). v23 moves L_Info 180 up and
+# ends its rules; its children are not edge-moved while L_Info's global y is 180, but on a frame where that move was not yet in the parent's global matrix
+# they took v4's edge move too and kept it: now and then the contents sat 180 higher than the box, the quest title off the top (seen on the Nova in one of
+# four openings of the same turn-in, never at 16:9). Children of a parent named exactly L_Info now stay in place (cave 0x5d2ca8, after v20's MenuItem check).
+_UI_V27 = [
+    (0x005d2ca8, '00000000', '8ae98bd2', 'v27: children of a parent named exactly L_Info stay in place'),
+    (0x005d2cac, '00000000', '2ac9adf2', 'v27: movk x10, #0x6e49, lsl #16'),
+    (0x005d2cb0, '00000000', 'caeccdf2', 'v27: movk x10, #0x6f66, lsl #32'),
+    (0x005d2cb4, '00000000', '9f010aeb', 'v27: cmp x12, x10'),
+    (0x005d2cb8, '00000000', 'e0bddd54', 'v27: b.eq #0x58e474'),
+    (0x005d2cbc, '00000000', 'eb4eff17', 'v27: b #0x5a6868'),
+]
+
 # Screen shape (Game settings › Aspect ratio › Screen shape): every value above that depends on the 4:3 shape is read from one of seven words instead of being part of an
 # instruction, so the host can lay the UI out for any shape from 1:1 to 16:9 by writing those words at load (game.tsv shape_table, loader.c shape_apply). The words hold the
 # 4:3 values, so the variant is the 4:3 mod as before when nothing writes them (4:3 itself, or a host without shape_apply). Each site's fmov / mov becomes an `ldr` of its
@@ -517,7 +530,7 @@ def _shape(cuts):
 
 
 _MAIN = 'db93b0125f4850601d61c3edde012f8e'
-VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24 + _UI_V25)}}
+VARIANT_CUTS = {'43': {_MAIN: _shape(_V11 + _SCISSOR43 + _UI_V12 + _UI_V13 + _UI_V14 + _UI_V15 + _UI_V16 + _UI_V17 + _UI_V18 + _UI_V20 + _UI_V21 + _UI_V22 + _UI_V24 + _UI_V25 + _UI_V27)}}
 
 BINDING = [
     {'what': "Fire Emblem Fortune's Weave native 4:3 variant (VARIANT_CUTS['43']: camera aspect and ui2d pane rules)", 'now': 'build', 'goal': 'unreviewed', 'purpose': 'rendering',
