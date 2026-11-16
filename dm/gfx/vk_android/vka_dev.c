@@ -10,6 +10,20 @@
 #include <time.h>
 #include "vka_fd_alias.h"
 #include "vka_tlsig.h"
+#include "vka_auto.h"
+_Static_assert(VKA_DRV_QCOM == VK_DRIVER_ID_QUALCOMM_PROPRIETARY && VKA_DRV_TURNIP == VK_DRIVER_ID_MESA_TURNIP, "vka_auto.h driver IDs");
+
+// One "[auto] KEY=value because driver_id=N (name)" line for each automatic default by driver this device takes (vka_auto.h), once per run at device creation; a switch
+// that is set (env.txt, the launcher, live control before this point) prints nothing: its value is the player's
+static void auto_log(const vka_auto_in *in, const char *name) {
+    vka_auto_rule r[16]; int n = vka_auto_rules(in, r, 16);
+    for (int i = 0; i < n; i++) {
+        char v[64], b[256];
+        if (vka_env_str(r[i].key, v, sizeof v)) continue;
+        vka_auto_line(b, sizeof b, &r[i], in->driver_id, name);
+        LOG("%s", b);
+    }
+}
 
 // One placed map of a 64 KiB host-visible allocation at an address reserved for it (vka_dev.c, unadvertised placed maps): 1 when the driver maps it exactly there and
 // the memory reads back what was written through it
@@ -285,6 +299,7 @@ static int init_once(void) {
          p11.subgroupSupportedStages & VK_SHADER_STAGE_GEOMETRY_BIT ? "yes" : "NO", p11.subgroupSupportedStages & VK_SHADER_STAGE_FRAGMENT_BIT ? "yes" : "NO", p11.subgroupSupportedStages & VK_SHADER_STAGE_VERTEX_BIT ? "yes" : "NO",
          p11.subgroupSupportedOperations, p11.subgroupQuadOperationsInAllStages ? "yes" : "no", p13.requiredSubgroupSizeStages);
     V.subgroup_stages = p11.subgroupSupportedStages;
+    V.cache_ctl = f13.pipelineCreationCacheControl;
     V.subgroup_req_stages = f13.subgroupSizeControl ? p13.requiredSubgroupSizeStages : 0;
     V.subgroup_size = p11.subgroupSize; V.subgroup_min = p13.minSubgroupSize ? p13.minSubgroupSize : p11.subgroupSize; V.subgroup_max = p13.maxSubgroupSize ? p13.maxSubgroupSize : p11.subgroupSize;
     if (!vk.vkCmdPushDescriptorSetKHR) vk.vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR)vk.vkGetDeviceProcAddr(V.dev, "vkCmdPushDescriptorSet");   // core in 1.4
@@ -295,11 +310,14 @@ static int init_once(void) {
     // characters as long spikes with the vertex input set per draw (vkCmdSetVertexInputEXT); 512.800 (Adreno 830), 512.863 and Turnip draw them correctly, and so
     // does 512.676 with the vertex input in the pipeline (the path of a device without the extension), which it gets here. DM_VK_VIN_DYN (restart only): 0 off, 1 on
     // wherever the device has it, unset as above
+    int vin_dyn_ext = V.vin_dyn;
     if (V.vin_dyn) {
         const char *e = getenv("DM_VK_VIN_DYN");
         if (e && *e) V.vin_dyn = strcmp(e, "0") != 0; else if (V.qcom_old) V.vin_dyn = 0;
         if (!V.vin_dyn) VLOG("vertex input dynamic state: off (%s; DM_VK_VIN_DYN=1: on), the vertex input goes into the pipeline", e && *e ? "DM_VK_VIN_DYN=0" : "Qualcomm driver before 512.800");
     }
+    auto_log(&(vka_auto_in){.driver_id = V.driver_id, .qcom_old = V.qcom_old, .mesh_ext = mesh_ext, .memu = V.memu, .vin_dyn_ext = vin_dyn_ext,
+                            .prof_one_lane = DM_GAME_NSUBGROUP_ONE_LANE, .prof_prepass_cut = DM_GAME_NMESH_PREPASS_CUT, .prof_oq_split = DM_GAME_OCCLUSION_SPLIT_PASS}, pdr.driverName);
     vka_enc_install();
     vka_gbar_install();   // on top of the encoder: sees every work command the replay records (vka_gbar.c)
     const VkPhysicalDeviceLimits *lim = &V.props.limits;
@@ -522,6 +540,11 @@ uint64_t vka_fence_next(void) { pthread_mutex_lock(&g_fmu); uint64_t f = ++g_fen
 void vka_fence_post(uint64_t fence, void *ops, int n, void (*run)(void *, int)) {
     pthread_mutex_lock(&g_fmu);
     while (g_post[fence % POST_RING].fence && g_post[fence % POST_RING].fence != fence) pthread_cond_wait(&g_fcv, &g_fmu);   // that slot's earlier fence has not completed yet
+    {   // (diagnostic) a second record for one fence replaces the first; a record for a fence already done never runs
+        static _Atomic int k; post_rec *o = &g_post[fence % POST_RING];
+        if (o->fence == fence && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu: a second set of completion effects (%d ops) replaces the first (%d ops, %p)", (unsigned long long)fence, n, o->n, o->ops);
+        else if (fence <= g_done && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu: completion effects (%d ops) posted after the fence was done (done %llu): they never run", (unsigned long long)fence, n, (unsigned long long)g_done);
+    }
     g_post[fence % POST_RING] = (post_rec){fence, ops, n, run};
     if (fence > g_submitted) g_submitted = fence;
     pthread_cond_broadcast(&g_scv); pthread_mutex_unlock(&g_fmu);
@@ -529,6 +552,11 @@ void vka_fence_post(uint64_t fence, void *ops, int n, void (*run)(void *, int)) 
 void vka_fence_cpu(uint64_t fence, void *ops, int n, void (*run)(void *, int)) {
     if (run) run(ops, n); else free(ops);
     pthread_mutex_lock(&g_fmu);
+    {   // (diagnostic) done jumps past fences whose GPU work and effects may still be pending: their effects then never run, or run beside these
+        static _Atomic int k; uint64_t pend = 0;
+        for (uint64_t f = g_done + 1; f < fence && f <= g_submitted; f++) if (g_post[f % POST_RING].fence == f) pend++;
+        if (pend && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu done on the CPU while %llu earlier fences' effects are pending (done %llu, submitted %llu)", (unsigned long long)fence, (unsigned long long)pend, (unsigned long long)g_done, (unsigned long long)g_submitted);
+    }
     if (fence > g_submitted) g_submitted = fence;
     if (fence > g_done) __atomic_store_n(&g_done, fence, __ATOMIC_RELEASE);
     pthread_cond_broadcast(&g_fcv); pthread_mutex_unlock(&g_fmu);
@@ -803,7 +831,12 @@ static void *completion_main(void *arg) {
         if (v > sub) v = sub;
         for (uint64_t f = done + 1; f <= v; f++) {
             post_rec *p = &g_post[f % POST_RING];
-            if (p->fence == f) { if (p->run) p->run(p->ops, p->n); else free(p->ops); }
+            if (p->fence == f) {
+                static void *last_ops; static _Atomic int k;   // (diagnostic) the same op array run twice: freed by its first run
+                if (p->ops && p->ops == last_ops && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu: its completion effects' ops %p are those of the record run just before", (unsigned long long)f, p->ops);
+                last_ops = p->ops;
+                if (p->run) p->run(p->ops, p->n); else free(p->ops);
+            }
         }
         pthread_mutex_lock(&g_fmu);
         for (uint64_t f = done + 1; f <= v; f++) if (g_post[f % POST_RING].fence == f) g_post[f % POST_RING].fence = 0;

@@ -60,6 +60,8 @@ On a first start the language, gamma and terms screens come before the title: `A
 - [The SDK's address-region node area](../../../docs/reference/memory.md#the-sdks-address-region-node-area): the engine region started past a 1 GB node area and did not fit an iPhone's address space; the SDK-wide rule now has this SDK 21.4 build's constructor.
 - Ampere forms with a handle in a register: 5 compute shaders stopped at `Ampere instruction 394`.
 - A frame the Mac dropped stays queued in the frame history: after both players readied up, the load stopped presenting, and Unreal aborted with `GameThread timed out waiting for …`.
+- [A second controller on a player the game does not read](../../../docs/reference/services.md#a-second-controller-on-a-player-the-game-does-not-read): on Android an Xbox controller paired during play ended up on player 3, which this two-player game never reads, and Play Local's controller applet was canceled at every try.
+- [The controller applet as a join screen](../../../docs/reference/services.md#the-controller-applet-as-a-join-screen): Play Local's controller screen (two players) shows on Android, where the second player joins by L + R.
 
 ## Open
 

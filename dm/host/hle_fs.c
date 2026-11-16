@@ -530,8 +530,10 @@ static int aoc_dir(char *dir, size_t n, int index) {
     const char *base = getenv("DM_AOC_DIR"); struct stat st;
     // <index>.nup: a NUP container (or a link to one) holding the add-on as an addon package; the mount picks it by index (nup_image.h "aoc/<index>").
     // A link whose target is fd:<n>/<name> names the launcher's descriptor of a .nup used where it is (nup_image.h nup_fd_spec): nothing is at that target
-    if (base && *base && snprintf(dir, n, "%s/%d.nup", base, index) < (int)n) {
-        if (!stat(dir, &st) && S_ISREG(st.st_mode)) return snprintf(dir, n, "%s/%d.nup:aoc/%d", base, index, index) < (int)n;
+    for (int x = 0; x < 2; x++) {   // .nup, or .nsp: a plaintext NSP is read as a NUP file (nsp_toc.h)
+        const char *ext = x ? "nsp" : "nup";
+        if (!(base && *base && snprintf(dir, n, "%s/%d.%s", base, index, ext) < (int)n)) break;
+        if (!stat(dir, &st) && S_ISREG(st.st_mode)) return snprintf(dir, n, "%s/%d.%s:aoc/%d", base, index, ext, index) < (int)n;
         char t[512]; ssize_t L = readlink(dir, t, sizeof t - 1); int fd;
         if (L > 0 && (t[L] = 0, nup_fd_spec(t, &fd) > 0)) return snprintf(dir, n, "%s:aoc/%d", t, index) < (int)n;
     }

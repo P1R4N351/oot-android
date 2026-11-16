@@ -46,6 +46,21 @@ final class GameSettings {
         a.gameSettings(g);
     }
 
+    /**
+     * An optional shader update (Pack.shaderUpdateAvailable): this app version makes its games' shaders in a newer way; the game plays with the ones it has until the player
+     * updates them. Shown on every tab of the game's page, under the tabs, with the button and no time promised (a game's whole shader set is made again on the phone)
+     */
+    private static void shaderUpdateCard(MainActivity a, LinearLayout content, Game g) {
+        if (Profile.of(g.titleId) == null || !new File(g.gameDir).exists() || !Pack.shaderUpdateAvailable(new File(g.packDir), g.titleId)) return;
+        LinearLayout card = Ui.add(content, Ui.card(a), 12);
+        card.setPadding(Ui.dp(a, 14), Ui.dp(a, 12), Ui.dp(a, 14), Ui.dp(a, 12));
+        card.addView(Ui.text(a, "Shader update available", 15, R.color.bn_text, 700));
+        TextView t = Ui.add(card, Ui.small(a, "Optional: the game plays as it does now. This version of Banana Native makes shaders with an updated translator. "
+                + "Updating makes this game's shaders again on the phone, which can take a long time for a big game: keep the phone charging."), 6);
+        t.setTextSize(13);
+        Ui.add(card, Ui.action(a, 0, "Update shaders", Ui.Kind.PRIMARY, v -> a.updateShaders(g)), 10);
+    }
+
     /** A controller's L1 / R1: the next (+1) or previous (-1) tab of the game's page, round; false when there is nothing to switch to */
     static boolean stepTab(Game g, int delta) {
         String[] keys = Profile.missing(g.titleId, g.name) == null ? new String[] {PERFORMANCE, GAME, SAVES, STORAGE} : new String[] {SAVES, STORAGE};
@@ -91,6 +106,7 @@ final class GameSettings {
                     .toggle(a, on, (b, x) -> { Edition.set(a, id, x); again.run(); });
             ed.addView(s.view);
         }
+        shaderUpdateCard(a, content, g);
         if (!tab.equals(PERFORMANCE) && !tab.equals(GAME)) { a.gameTab(content, g, tab.equals(SAVES)); return; }
         boolean perf = tab.equals(PERFORMANCE);
         if (perf) Ui.add(content, Ui.statusChip(a, chipText(a, id)), 12, Ui.wrap());
@@ -257,6 +273,7 @@ final class GameSettings {
             updateRows.run();
         }
 
+        if (Prefs.cheatsGame(id)) CheatsUi.rows(a, g, options::add, again);   // a profile with cheat files (game.tsv cheats): the switch, off by default, and the files
         if (LinkPlay.has(id))
             options.add(new Ui.Setting(a, "🔗", "Link Play", v -> LinkPlay.dialog(a, g, again)).value(LinkPlay.label(a, id)).chevron(a));
         options.add(new Ui.Setting(a, "🌐", "Game language", v -> language(a, g, again)).value(GameLanguage.label(Prefs.gameLang(a, id), phoneTag())).chevron(a));   // not a tester's knob: with the game's options, never folded
@@ -285,6 +302,10 @@ final class GameSettings {
                 .says("Busy threads off the small cores", "Android places the threads"));
         advanced.add(new Ui.Setting(a, "⏸️", "Pause on return", null).toggle(a, Prefs.pauseOnReturn(a, id), (b, on) -> Prefs.pauseOnReturn(a, id, on))
                 .says("Back from the background: paused until a tap", "Back from the background: runs at once"));
+        Ui.Setting advRow = new Ui.Setting(a, "🛠️", "Advanced switches", null).chevron(a);   // every switch for this game, by area, with search (AdvancedPage.java)
+        advRow.view.setOnClickListener(v -> AdvancedPage.show(a, id, g.name, again));
+        advRow.value(AdvancedSettings.count(a, id) == 0 ? "Search every switch; each starts at Auto" : AdvancedSettings.count(a, id) + " set");
+        advanced.add(advRow);
         String env = Prefs.gameEnv(a, id);
         int envLines = env.isEmpty() ? 0 : env.split("\n").length;
         advanced.add(new Ui.Setting(a, "📝", "Extra environment", v -> env(a, g, again))

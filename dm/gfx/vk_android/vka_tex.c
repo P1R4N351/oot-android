@@ -189,6 +189,9 @@ static vka_img *live_next(const vka_img *im, const uint8_t *mem, int *k) { retur
 static vksm g_cpuw;   // (under g_tmu) serials the CPU wrote before their image existed (a set: vksm with no images)
 static pthread_mutex_t g_tmu = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t g_img_bytes;
+// Since start, for the diagnostics (`ctl stats`, the `image cache pressure` line): what the cache made and what it took back. An eviction a scene undoes by asking for the same
+// texture again is the cost the whole limit exists to weigh, so both sides are counted
+static uint64_t g_img_made_n, g_img_made_b, g_img_evict_n, g_img_evict_b;
 static vksoft_set g_soft_hard; static uint64_t g_soft_n, g_soft_bytes, g_soft_made, g_soft_whole;   // (under g_tmu) soft textures ("Soft textures" below): live, the storage bytes left out, made, made whole
 static int g_zwant;   // (under g_tmu) img_create_ may make a zero-shared image: vka_tex_get's new image whose content is ST_ZERO ("Zero-shared images" below)
 
@@ -215,6 +218,7 @@ void vka_tex_alias_stats(char *b, size_t n) {
              by[0][0] / 1e6, cnt[0], by[0][1] / 1e6, by[1][0] / 1e6, cnt[1], by[1][1] / 1e6, by[2][0] / 1e6, cnt[2], by[2][1] / 1e6, gw / 1e6);
 }
 static _Atomic uint32_t g_tgen, *g_tver, *g_sver;   // the recording thread's view memo: see unref_locked
+static _Atomic uint8_t *g_tisbuf;                   // per texture ID: registered as a buffer texture (vka_tex_id_is_buffer)
 static smap_ent *map_get(uint64_t s) { return vksm_get(&g_smap, s); }
 static void map_put(uint64_t s, vka_img *im) { vksm_put(&g_smap, s, im); }   // (no memory for a new key: the texture has no entry, so its next lookup makes its image again; the old image goes when its refs do)
 static void map_del(uint64_t s) { if (vksm_del(&g_smap, s)) atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release); }   // a tombstone (never a valid serial)
@@ -616,6 +620,7 @@ static vka_img *img_create_(const tex_t *t, const vka_fmt *f, uint32_t base, int
             VLOG("zero-shared image: texture serial %llu %ux%u layers %u levels %u format %#x flags %#x: %.1f MiB of zeroed memory %s (memory of its own at its first write)", (unsigned long long)t->serial,
                  im->w, im->h, im->layers, im->levels, d->format, d->flags, mr.size / 1048576.0, fresh ? "made for its create info" : "shared with images of the same create info");
     } else { im->bytes = mr.size; g_img_bytes += mr.size; vka_mem_grew(mr.size); }
+    g_img_made_n++; g_img_made_b += im->bytes ? im->bytes : fresh ? mr.size : 0;   // (a zero-shared image's bytes are the shared allocation's: counted once, when it is made)
     if (mr.size >= (VkDeviceSize)(VKA_ENVF("DM_VK_BIGIMG_MB", 64.0) * 1048576.0)) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 32)   // large images, for memory walls
         VLOG("large image: texture serial %llu %ux%ux%u layers %u levels %u (base %u) samples %u format %#x target %d flags %#x: %.1f MiB of image memory (storage %.1f MiB at %p, pool flags %#x)",
              (unsigned long long)t->serial, im->w, im->h, im->depth, im->layers, im->levels, im->base, im->samples, t->d.format, t->d.target, t->d.flags, mr.size / 1048576.0,
@@ -737,6 +742,7 @@ typedef struct { uint64_t lo, hi, src, seq, fence; uint32_t kind, value; uint8_t
 static gw_t *g_gw; static int g_ngw, g_gwcap; static uint64_t g_gwseq = 1, g_gw_over, g_gw_late;
 static void gw_add(int kind, uint64_t dst, uint64_t n, uint64_t src, uint32_t value, const void *data) {
     if (!n) return;
+    vka_tbuf_wrote(dst, n);   // (images of buffer textures over it are copied again at their next use)
     pthread_mutex_lock(&g_tmu);
     if (g_ngw == g_gwcap) { g_gwcap = g_gwcap ? 2 * g_gwcap : 256; g_gw = realloc(g_gw, (size_t)g_gwcap * sizeof *g_gw); }
     if (kind == GW_OPAQUE)   // the same range again in this submission (a storage buffer bound by draw after draw): one entry, at the newest place
@@ -1486,11 +1492,22 @@ void vka_tex_soft_stats(char *b, size_t n) { pthread_mutex_lock(&g_tmu); soft_li
 // ---------- Where the image memory goes (diagnostic, the ctl stats) ----------
 // The live images by content and by why the cache keeps them (vktl_evictable's reasons), and the largest ones: for a game whose images in use overrun memory (Mario Kart World,
 // 3.9 GB on a 12 GB device) this says which lever helps - smaller texture assets (soft textures, compressed or resized), render targets (resolution), or images kept by a rule
-static int g_psi_shrink;    // memory pressure past VKTL_PSI_SHRINK at the last update: GPU-written images may go too (vktl_evictable)
+static int g_psi_shrink;    // the pressure policy is pressed past its shrink mark at the last update: GPU-written images may go too (vktl_evictable)
+static int g_img_pinned;    // DM_VK_IMG_LIMIT_MB is set: the pinned limit replaces the policy's rule, its working set and its guard (vktl_ws_active)
+// The texture cache's switches (vka_texlimit.h): DM_VK_IMG_RESERVE_MB picks the RAM reserve's rule, DM_VK_IMG_PSI the pressure policy, and the three marks its thresholds
+static vktl_cfg img_cfg(void) {
+    vktl_cfg c = vktl_cfg_default();
+    c.mb = VKA_ENV("DM_VK_IMG_RESERVE_MB", 0);
+    c.psi = VKA_ENV("DM_VK_IMG_PSI", 1);
+    c.hold = VKA_ENVF("DM_VK_IMG_PSI_HOLD", VKTL_PSI_HOLD);
+    c.ease = VKA_ENVF("DM_VK_IMG_PSI_EASE", VKTL_PSI_EASE);
+    c.shrink = VKA_ENVF("DM_VK_IMG_PSI_SHRINK", VKTL_PSI_SHRINK);
+    return vktl_cfg_check(c);   // (vktl_cfg_check: a hold mark at or under the ease mark flaps, so the defaults fill in for it)
+}
 enum { IK_GPU, IK_ZERO_SHARED, IK_BC, IK_RAW, IK_SPARSE, IK_CLEARED, IK_N };
 static const char *const ik_name[IK_N] = {"GPU-written", "zero-shared, not yet written", "from storage, block-compressed", "from storage, uncompressed", "sparse", "cleared, never written"};
-enum { IR_HELD, IR_NEW, IR_FENCE, IR_RECENT, IR_GPU_GRACE, IR_EVICTABLE, IR_N };
-static const char *const ir_name[IR_N] = {"held", "never used", "GPU not done", "used in the last 2 frames", "GPU-written, kept", "evictable"};
+enum { IR_HELD, IR_NEW, IR_FENCE, IR_RECENT, IR_WS, IR_GPU_GRACE, IR_EVICTABLE, IR_N };
+static const char *const ir_name[IR_N] = {"held", "never used", "GPU not done", "used in the last 2 frames", "in the working set", "GPU-written, kept", "evictable"};
 static int img_kind(const vka_img *im) {
     if (im->gpu_owned) return IK_GPU;
     if (im->m.z) return IK_ZERO_SHARED;
@@ -1498,12 +1515,15 @@ static int img_kind(const vka_img *im) {
     if (im->mode == ST_TRACK || im->mode == ST_FILL) return im->f.bw > 1 ? IK_BC : IK_RAW;
     return IK_CLEARED;
 }
-static int img_keep_reason(const vka_img *im, uint64_t cur, uint64_t done) {
+// Whether the prune would skip this image for the working set, with the switches in force: what makes IR_WS (vktl_skip_ws, the same predicate the prune loop calls)
+static int ws_kept(uint64_t cur, uint64_t last) { vktl_cfg c = img_cfg(); return vktl_skip_ws(&c, g_img_pinned > 0, cur, last); }
+static int img_keep_reason(const vka_img *im, uint64_t cur, uint64_t done, int ws) {   // ws: vktl_skip_ws says this image is the working set
     if (im->holds) return IR_HELD;
     if (!im->last_frame || cur <= im->last_frame) return IR_NEW;
     if (im->last_fence && done < im->last_fence) return IR_FENCE;
     uint64_t age = cur - im->last_frame;
     if (age < VKTL_KEEP_FRAMES) return IR_RECENT;
+    if (ws) return IR_WS;
     if (im->gpu_owned && !(g_psi_shrink && age >= VKTL_GPU_FRAMES)) return IR_GPU_GRACE;
     return IR_EVICTABLE;
 }
@@ -1513,7 +1533,7 @@ void vka_tex_kind_log(void) {
     int kn[IK_N] = {0}, rn[IR_N] = {0}, soft_n = 0;
     enum { TOP = 16 }; vka_img *top[TOP]; int nt = 0;
     for (int i = 0; i < g_nlive; i++) {
-        vka_img *im = g_live[i]; int k = img_kind(im), r = img_keep_reason(im, cur, done);
+        vka_img *im = g_live[i]; int k = img_kind(im), r = img_keep_reason(im, cur, done, ws_kept(cur, im->last_frame));
         kb[k] += im->bytes; kn[k]++; rb[r] += im->bytes; rn[r]++; kr[k][r] += im->bytes;
         if (im->soft) { soft_n++; soft_b += im->bytes; } else if (k == IK_BC && im->bytes >= 4 * 1048576ull) bc_big += im->bytes;
         int j = nt < TOP ? nt++ : TOP; if (j == TOP) { if (im->bytes <= top[TOP - 1]->bytes) continue; j = TOP - 1; }
@@ -1536,7 +1556,7 @@ void vka_tex_kind_log(void) {
         vka_img *im = top[i];
         VLOG("ctl: image %d: serial %llu %ux%ux%u layers %u levels %u (from %u) format %#x vk %d samples %u, %.1f MiB, %s, %s (last used %lld frames ago), %d holds, sampled by %u draws%s%s",
              i + 1, (unsigned long long)im->serial, im->w, im->h, im->depth, im->layers, im->levels, im->base, im->d.format, (int)im->f.vk, im->samples, im->bytes / 1048576.0,
-             ik_name[img_kind(im)], ir_name[img_keep_reason(im, cur, done)], im->last_frame ? (long long)(cur - im->last_frame) : -1LL, im->holds, im->nsamp,
+             ik_name[img_kind(im)], ir_name[img_keep_reason(im, cur, done, ws_kept(cur, im->last_frame))], im->last_frame ? (long long)(cur - im->last_frame) : -1LL, im->holds, im->nsamp,
              im->soft ? ", soft" : "", im->is_video ? ", video" : "");
     }
     pthread_mutex_unlock(&g_tmu);
@@ -1616,10 +1636,34 @@ static void img_evict_locked(vka_img *im) {
     unref_locked(im);
 }
 // The texture cache's limit (vka_texlimit.h): measured from the device every 60 frames (15 under memory pressure), or DM_VK_IMG_LIMIT_MB. Images over it are evicted least recently
-// used first, never one used in this frame or the last; a working set larger than the limit stays (logged), as uploading it again every frame costs far more than the memory
-static uint64_t g_img_lim, g_lim_frame, g_prune_dry;
-static int g_psi_pressed;   // memory pressure past VKTL_PSI_HOLD at the last update: measured every 15 frames instead of 60
+// used first, never one used in this frame or the last, and never one of the working set (the scene's own images, which evicting only makes the next frames upload again); a working
+// set larger than the limit stays (logged), as uploading it again every frame costs far more than the memory
+static uint64_t g_img_lim, g_lim_frame, g_prune_dry, g_img_ws;   // g_img_ws: the working set at the last limit update (vktl_in ws_bytes)
+static vktl_psi g_psi;   // the pressure policy across updates (vktl_psi_update: hysteresis, so a spike does not flap the limit)
 static uint64_t meminfo_kb(const char *buf, const char *key) { const char *p = strstr(buf, key); return p ? strtoull(p + strlen(key), NULL, 10) : 0; }
+// /proc/pressure/memory: the share of the last 10 s that some (full: every) task stalled on memory, in percent (-1 = not known). Android's lmkd decides by these, not by MemAvailable
+static void psi_read(double *some, double *full) {   // either may be NULL
+    if (some) *some = -1;
+    if (full) *full = -1;
+    int fd = open("/proc/pressure/memory", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return;
+    char b[256]; ssize_t n = read(fd, b, sizeof b - 1); close(fd);
+    if (n <= 0) return;
+    b[n] = 0;
+    double sv = vktl_psi_field(b, VKTL_PSI_SOME), fv = vktl_psi_field(b, VKTL_PSI_FULL);
+    if (some && sv >= 0.0) *some = sv;
+    if (full && fv >= 0.0) *full = fv;
+}
+// The bytes of the images used in the last VKTL_WS_FRAMES frames: what the scene is drawing with, which evicting only makes it upload them again (vktl_pressure_limit)
+static uint64_t img_ws_bytes(uint64_t cur_frame) {   // caller holds g_tmu
+    if (!cur_frame) return 0;
+    uint64_t ws = 0;
+    for (int i = 0; i < g_nlive; i++) {
+        const vka_img *im = g_live[i];
+        if (im->last_frame && cur_frame >= im->last_frame && cur_frame - im->last_frame <= VKTL_WS_FRAMES) ws += im->bytes;
+    }
+    return ws;
+}
 // The profile's low-RAM keys (vka_lowram.h): decided once, from MemTotal, which does not change. One line says whether they apply, for a profile that sets them
 int vka_low_ram(void) {
     static _Atomic int on = -1;
@@ -1642,22 +1686,52 @@ int vka_low_ram(void) {
 int vka_low_ram_place_part_mb(void) { return DM_GAME_LOW_RAM_PLACE_PART_MB && vka_low_ram() ? DM_GAME_LOW_RAM_PLACE_PART_MB : 0; }
 // Read by hle_svc.c at the SDK's start, before the Vulkan device: vka_low_ram needs only /proc/meminfo, the switches (vka_ctl.c, getenv until the control thread sets one) and LOG
 int vka_low_ram_app_pool_mb(void) { return DM_GAME_LOW_RAM_APP_POOL_MB && vka_low_ram() ? DM_GAME_LOW_RAM_APP_POOL_MB : 0; }
+// The `image cache pressure` line (DM_VK_IMG_DIAG seconds, 0 = off): the numbers the eviction policy decides on, and what it has cost so far. The `ctl stats` line prints the same
+// state on demand, so a run needs this only to see it over time
+static void img_diag(const vktl_in *in, uint64_t lim, uint64_t imgs, const vktl_cfg *c, int pressed) {   // caller holds g_tmu
+    double secs = VKA_ENVF("DM_VK_IMG_DIAG", 0.0);
+    if (secs <= 0) return;
+    static uint64_t next; static uint64_t last_n, last_b, last_en, last_eb;
+    uint64_t now = now_ns();
+    if (now < next) return;
+    next = now + (uint64_t)(secs * 1e9);
+    double full = -1; if (c->psi) { double some = in->psi_some10; psi_read(&some, &full); }
+    VLOG("image cache pressure: limit %.0f MiB, images %.0f MiB (working set %.0f MiB in %d frames), MemAvailable %.0f MiB of %.0f MiB (reserve %.0f), PSI some avg10 %.1f %% / full %.1f %%; %s; since the last line made %llu images (%.0f MiB), evicted %llu (%.0f MiB)",
+         lim / 1048576.0, imgs / 1048576.0, in->ws_bytes / 1048576.0, VKTL_WS_FRAMES, in->mem_avail / 1048576.0, in->mem_total / 1048576.0, vktl_reserve(in->mem_total, c, pressed) / 1048576.0,
+         in->psi_some10 < 0 ? 0 : in->psi_some10, full < 0 ? 0 : full, !c->psi ? "pressure term off (DM_VK_IMG_PSI=0)" : pressed ? "under memory pressure: an eighth of RAM reserved, what is not the working set given back from the shrink mark" : "no memory pressure: the RAM rule",
+         (unsigned long long)(g_img_made_n - last_n), (g_img_made_b - last_b) / 1048576.0, (unsigned long long)(g_img_evict_n - last_en), (g_img_evict_b - last_eb) / 1048576.0);
+    last_n = g_img_made_n; last_b = g_img_made_b; last_en = g_img_evict_n; last_eb = g_img_evict_b;
+}
+void vka_tex_cache_stats(char *b, size_t n) {   // the `ctl stats` line's texture-cache state (vka_ctl.c): the same numbers as img_diag, plus the counters since start
+    vktl_cfg c = img_cfg();
+    pthread_mutex_lock(&g_tmu);
+    vktl_in in = {.img_bytes = g_img_bytes + vka_imem_zbytes(), .ws_bytes = g_img_ws};
+    int fd = open("/proc/meminfo", O_RDONLY | O_CLOEXEC);
+    if (fd >= 0) { char buf[2048]; ssize_t r = read(fd, buf, sizeof buf - 1); close(fd);
+                   if (r > 0) { buf[r] = 0; in.mem_total = meminfo_kb(buf, "MemTotal:") << 10; in.mem_avail = meminfo_kb(buf, "MemAvailable:") << 10; } }
+    double full = -1; if (c.psi) psi_read(&in.psi_some10, &full);
+    int pressed = g_psi.pressed;
+    snprintf(b, n, "texture cache: limit %.0f MiB, images %.0f MiB in %d (working set %.0f MiB), MemAvailable %.0f of %.0f MiB (reserve %.0f, %s), PSI some avg10 %.1f %% / full %.1f %% (%s); made %llu images (%.0f MiB), evicted %llu (%.0f MiB)",
+             g_img_lim / 1048576.0, in.img_bytes / 1048576.0, g_nlive, g_img_ws / 1048576.0, in.mem_avail / 1048576.0, in.mem_total / 1048576.0,
+             vktl_reserve(in.mem_total, &c, pressed) / 1048576.0, c.mb > 0 ? "DM_VK_IMG_RESERVE_MB" : !c.psi ? "an eighth: no pressure term" : pressed ? "an eighth: under pressure" : "a 32nd: no pressure",
+             in.psi_some10 < 0 ? 0 : in.psi_some10, full < 0 ? 0 : full, c.psi == 0 ? "pressure term off" : pressed ? "pressed" : "the RAM rule",
+             (unsigned long long)g_img_made_n, g_img_made_b / 1048576.0, (unsigned long long)g_img_evict_n, g_img_evict_b / 1048576.0);
+    pthread_mutex_unlock(&g_tmu);
+}
 static void img_limit_update(uint64_t cur_frame) {   // caller holds g_tmu
-    if (g_img_lim && cur_frame < g_lim_frame + (g_psi_pressed ? 15 : 60)) return;
+    vktl_cfg cfg = img_cfg();
+    int env = VKA_ENV("DM_VK_IMG_LIMIT_MB", 0);
+    g_img_pinned = env > 0;
+    if (g_img_lim && cur_frame < g_lim_frame + (g_psi.pressed ? 15 : 60)) return;
     g_lim_frame = cur_frame;
     uint64_t imgs = g_img_bytes + vka_imem_zbytes();
-    int env = VKA_ENV("DM_VK_IMG_LIMIT_MB", 0);
     vktl_in in = {.img_bytes = imgs, .psi_some10 = -1};
     if (env <= 0) {
         int fd = open("/proc/meminfo", O_RDONLY | O_CLOEXEC);
         if (fd >= 0) { char buf[2048]; ssize_t n = read(fd, buf, sizeof buf - 1); close(fd);
                        if (n > 0) { buf[n] = 0; in.mem_total = meminfo_kb(buf, "MemTotal:") << 10; in.mem_avail = meminfo_kb(buf, "MemAvailable:") << 10; } }
-        // Memory pressure (vktl_pressure_limit): "some avg10=" of /proc/pressure/memory; DM_VK_IMG_PSI=0 leaves it out
-        if (VKA_ENV("DM_VK_IMG_PSI", 1)) {
-            int pf = open("/proc/pressure/memory", O_RDONLY | O_CLOEXEC);
-            if (pf >= 0) { char pb[256]; ssize_t pn = read(pf, pb, sizeof pb - 1); close(pf);
-                           if (pn > 0) { pb[pn] = 0; const char *a = strstr(pb, "some avg10="); if (a) in.psi_some10 = strtod(a + 11, NULL); } }
-        }
+        // Memory pressure (vktl_pressure_limit): /proc/pressure/memory, read before the limit so the reserve rule and the pressure term decide on the same state
+        if (cfg.psi) psi_read(&in.psi_some10, NULL);
         uint32_t heap = V.local_type < V.memp.memoryTypeCount ? V.memp.memoryTypes[V.local_type].heapIndex : 0;
         if (heap < V.memp.memoryHeapCount) in.heap_size = V.memp.memoryHeaps[heap].size;
         static PFN_vkGetPhysicalDeviceMemoryProperties2 gmp2;
@@ -1667,20 +1741,24 @@ static void img_limit_update(uint64_t cur_frame) {   // caller holds g_tmu
             VkPhysicalDeviceMemoryProperties2 mp = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2, .pNext = &bp};
             gmp2(V.pd, &mp); in.heap_budget = bp.heapBudget[heap]; in.heap_usage = bp.heapUsage[heap];
         }
+        in.ws_bytes = img_ws_bytes(cur_frame);
     }
-    uint64_t lim = env > 0 ? (uint64_t)env << 20 : vktl_limit(&in), old = g_img_lim;
+    if (env > 0) g_psi.pressed = 0;   // (DM_VK_IMG_LIMIT_MB replaces the limit: pressure is not measured, so its state must not stay pressed: 15-frame updates, no margin)
+    int was = g_psi.pressed, pressed = env <= 0 ? vktl_psi_update(&g_psi, &cfg, in.psi_some10, in.mem_total, in.mem_avail) : 0;
+    uint64_t lim = env > 0 ? (uint64_t)env << 20 : vktl_limit(&in, &cfg, pressed), old = g_img_lim;
     // The profile's low-RAM ceiling (low_ram_img_cache_max_mb, vka_lowram.h): on top of the measured limit, which still acts below it; DM_VK_IMG_LIMIT_MB replaces both
     uint64_t measured = lim, ceil_mb = env <= 0 && DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB && vka_low_ram() ? DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB : 0;
     lim = vklr_ceiling(lim, ceil_mb << 20);
-    int pressed = env <= 0 && in.psi_some10 >= VKTL_PSI_HOLD;
-    g_psi_shrink = env <= 0 && in.psi_some10 >= VKTL_PSI_SHRINK;
-    if (pressed != g_psi_pressed) {
+    // The state vktl_pressure_limit gives RAM back in, and so the one vktl_evictable may take a GPU-written image in: the policy's own shrink mark, not a literal. With the
+    // pressure term off there is no such state, so the gate stays shut, as the build before this rule had it
+    g_psi_shrink = env <= 0 && cfg.psi == 1 && pressed && in.psi_some10 >= cfg.shrink;
+    if (pressed != was) {
         static _Atomic int np;
-        if (atomic_fetch_add(&np, 1) < 32) VLOG("image cache: memory pressure %.1f %% (some avg10): %s, limit %llu MiB, images %.0f MiB", in.psi_some10 < 0 ? 0 : in.psi_some10,
-                                                 pressed ? (in.psi_some10 >= VKTL_PSI_SHRINK ? "shrinking" : "holding") : "eased, the RAM rule again", (unsigned long long)(lim >> 20), imgs / 1048576.0);
-        g_psi_pressed = pressed;
+        if (atomic_fetch_add(&np, 1) < 32) VLOG("image cache: memory pressure %.1f %% (some avg10): %s, limit %llu MiB, images %.0f MiB (working set %.0f MiB, MemAvailable %.0f MiB, reserve %.0f MiB)", in.psi_some10 < 0 ? 0 : in.psi_some10,
+                                                 pressed ? (in.psi_some10 >= cfg.shrink ? "shrinking" : "holding") : "eased, the RAM rule again", (unsigned long long)(lim >> 20), imgs / 1048576.0,
+                                                 in.ws_bytes / 1048576.0, in.mem_avail / 1048576.0, vktl_reserve(in.mem_total, &cfg, pressed) / 1048576.0);
     }
-    g_img_lim = lim;
+    g_img_lim = lim; g_img_ws = in.ws_bytes;
     uint64_t d = lim > old ? lim - old : old - lim;
     static _Atomic int nl;
     if ((!old || d >= 512 * VKTL_MIB) && atomic_fetch_add(&nl, 1) < 16) {
@@ -1688,18 +1766,33 @@ static void img_limit_update(uint64_t cur_frame) {   // caller holds g_tmu
         else if (lim < measured) VLOG("image cache limit %llu MiB: the profile's ceiling on a low-RAM device (low_ram_img_cache_max_mb; measured %llu MiB): images %.0f MiB, MemTotal %.0f MiB, MemAvailable %.0f MiB",
                                       (unsigned long long)(lim >> 20), (unsigned long long)(measured >> 20), imgs / 1048576.0, in.mem_total / 1048576.0, in.mem_avail / 1048576.0);
         else VLOG("image cache limit %llu MiB: images %.0f MiB, MemTotal %.0f MiB, MemAvailable %.0f MiB (reserve %.0f), image heap %.0f MiB, budget %.0f MiB, usage %.0f MiB%s",
-                  (unsigned long long)(lim >> 20), imgs / 1048576.0, in.mem_total / 1048576.0, in.mem_avail / 1048576.0, vktl_reserve(in.mem_total) / 1048576.0,
+                  (unsigned long long)(lim >> 20), imgs / 1048576.0, in.mem_total / 1048576.0, in.mem_avail / 1048576.0, vktl_reserve(in.mem_total, &cfg, pressed) / 1048576.0,
                   in.heap_size / 1048576.0, in.heap_budget / 1048576.0, in.heap_usage / 1048576.0, V.mem_budget ? "" : " (no VK_EXT_memory_budget)");
     }
+    img_diag(&in, lim, imgs, &cfg, pressed);
 }
 typedef struct { vka_img *im; uint64_t last; int gpu; } prune_ent;
 static int prune_cmp(const void *a, const void *b) { const prune_ent *x = a, *y = b; return vktl_order(x->gpu, x->last, y->gpu, y->last); }
 static void vka_tex_prune_locked(void) {
     uint64_t cur_frame = vka_frame();
     if (!cur_frame) return;
+    vktl_cfg cfg = img_cfg();
     img_limit_update(cur_frame);
+    int pressed = g_psi.pressed;
     uint64_t limit_bytes = g_img_lim, total_bytes = g_img_bytes + vka_imem_zbytes();
-    if (!limit_bytes || total_bytes <= limit_bytes || g_prune_dry == cur_frame) return;   // (dry: this frame had nothing to evict; a miss after it finds nothing new)
+    // DM_VK_PRUNE_MS=<ms> (0, the default: all at once): the most replay-thread time a frame gives to evictions. A prune takes the cache from its limit down a sixteenth,
+    // about 900 images in Mario Kart World at a 2300 MiB limit, and that took 0.8-1.2 s in one frame on Turnip (Adreno 740; each race lap met one). With a budget the
+    // evictions go on in the next frames (g_prune_more) until the target is reached; the cache is over its limit by what was made meanwhile
+    static uint64_t prune_frame, prune_ns; static int g_prune_more;
+    uint64_t budget_ns = (uint64_t)VKA_ENV("DM_VK_PRUNE_MS", 0) * 1000000ull, t_prune = 0;
+    if (!budget_ns) g_prune_more = 0;
+    if (!vktl_prune_due(total_bytes, limit_bytes, vktl_target(limit_bytes, g_img_ws, &cfg, pressed), g_prune_more)) { g_prune_more = 0; return; }
+    if (g_prune_dry == cur_frame) return;   // (dry: this frame had nothing to evict; a miss after it finds nothing new)
+    if (budget_ns) {
+        if (prune_frame != cur_frame) { prune_frame = cur_frame; prune_ns = 0; }
+        if (prune_ns >= budget_ns) return;
+        t_prune = now_ns();
+    }
     static prune_ent *c; static int ccap; int nc = 0;
     if (ccap < g_nlive) { ccap = g_nlive + 256; c = realloc(c, (size_t)ccap * sizeof *c); }
     uint64_t done_fence = vka_done(); int video = dm_movie_playing();
@@ -1716,17 +1809,29 @@ static void vka_tex_prune_locked(void) {
             if (se && se->im && se->im->pool_frame != cur_frame) { se->im->pool_frame = cur_frame; npool++; }
         }
     uint64_t gpu_kept = 0; int ngpu_kept = 0;
+    // The shipped pressure policy (DM_VK_IMG_PSI=1) also keeps the working set out of the candidates: the target is never under it, but the array order is the LRU order and
+    // a GPU-only image is protected for 120 frames, so the oldest candidate can be one the scene used 3 frames ago (and g_img_ws is up to 60 frames stale). With the pressure
+    // term off (DM_VK_IMG_PSI=0) there is none of that: the cache is the build before this rule. A pinned limit replaces the rule, and this guard with it
+    int pinned = g_img_pinned > 0;
     for (int i = 0; i < g_nlive; i++) {
         vka_img *im = g_live[i];
         if (pool_keep && im->pool_frame == cur_frame) continue;
         if (im->nkids) continue;   // (a level child's parent: its children see its image)
+        if (vktl_skip_ws(&cfg, pinned, cur_frame, im->last_frame)) continue;
         if (vktl_evictable(cur_frame, im->last_frame, im->holds, im->gpu_owned, im->is_video && video, im->last_fence && done_fence < im->last_fence, g_psi_shrink))
             c[nc++] = (prune_ent){im, im->last_frame, im->gpu_owned != 0};
         else if (im->gpu_owned) { gpu_kept += im->bytes; ngpu_kept++; }
     }
     qsort(c, (size_t)nc, sizeof *c, prune_cmp);
-    uint64_t target = vktl_target(limit_bytes), bytes_freed = 0; int pruned = 0;
+    uint64_t target = vktl_target(limit_bytes, g_img_ws, &cfg, pressed), bytes_freed = 0; int pruned = 0;
+    // An eviction is whole images, so one of them can cross what the target respects: refused when what would be left is under what the policy keeps. A zero-shared image
+    // (im->bytes 0, its bytes the shared allocation's, counted once in total_bytes and released with the last image of its create info) is not predicted here: it is never
+    // in the working set either (that exclusion ran above), and the working set is what this guard protects. The prerequisite is vktl_sub's: a lone image is the whole cache
+    uint64_t last_age = 0;
+    int cut = 0;
     for (int k = 0; k < nc && total_bytes > target; k++) {
+        if (budget_ns && vktl_budget_spent(budget_ns, k, prune_ns + (now_ns() - t_prune))) { cut = 1; break; }
+        if (vktl_guard_ws(&cfg, pinned, total_bytes, (uint64_t)c[k].im->bytes, g_img_ws)) continue;
         uint64_t before = g_img_bytes + vka_imem_zbytes();
         if (c[k].gpu) {   // (only under hard memory pressure: the image comes back empty, so say so)
             static _Atomic int ng;
@@ -1735,15 +1840,19 @@ static void vka_tex_prune_locked(void) {
         }
         img_evict_locked(c[k].im);
         uint64_t after = g_img_bytes + vka_imem_zbytes(), b = before > after ? before - after : 0;
-        pruned++; bytes_freed += b; total_bytes = after;
+        pruned++; bytes_freed += b; total_bytes = after; last_age = cur_frame - c[k].last;   // (skipped candidates break the array's order: not c[pruned - 1])
     }
+    if (budget_ns) { prune_ns += now_ns() - t_prune; g_prune_more = cut; }
+    g_img_evict_n += (uint64_t)pruned; g_img_evict_b += bytes_freed;
     if (pruned) {
-        static _Atomic int n;
-        if (atomic_fetch_add(&n, 1) < 128)
-            VLOG("image cache pruned: evicted %d images unused for %llu+ frames (%.1f MiB freed, %d live remaining, %.1f MiB, limit %.0f MiB)",
-                 pruned, (unsigned long long)(cur_frame - c[pruned - 1].last), bytes_freed / 1048576.0, g_nlive, total_bytes / 1048576.0, limit_bytes / 1048576.0);
+        static _Atomic int n; static int was_cut;   // (a prune spread over frames is one line, its first)
+        int quiet = was_cut; was_cut = cut;
+        if (!quiet && atomic_fetch_add(&n, 1) < 128)
+            VLOG("image cache pruned: evicted %d images unused for %llu+ frames (%.1f MiB freed, %d live remaining, %.1f MiB, limit %.0f MiB)%s",
+                 pruned, (unsigned long long)last_age, bytes_freed / 1048576.0, g_nlive, total_bytes / 1048576.0, limit_bytes / 1048576.0,
+                 cut ? "; the frame's budget is spent, the rest in the next frames (DM_VK_PRUNE_MS)" : "");
     }
-    if (total_bytes > limit_bytes) {   // what is left is in use: kept over the limit (logged when the excess first appears and each time it grows by 256 MiB)
+    if (total_bytes > limit_bytes && !cut) {   // what is left is in use: kept over the limit (logged when the excess first appears and each time it grows by 256 MiB)
         g_prune_dry = cur_frame;
         static uint64_t logged; static _Atomic int n;
         if (total_bytes >= logged + 256 * VKTL_MIB && atomic_fetch_add(&n, 1) < 8) {
@@ -2457,7 +2566,12 @@ static void treg(int id, const tex_t *t, const view_t *v, int img) {
     dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id);
     if (!g_tver) g_tver = calloc(1 << 20, sizeof *g_tver);
     if (g_tver) atomic_fetch_add_explicit(&g_tver[id], 1, memory_order_release);
+    if (!g_tisbuf) g_tisbuf = calloc(1 << 20, 1);
+    if (g_tisbuf) atomic_store_explicit(&g_tisbuf[id], (v && v->set_target ? v->target : t->d.target) == NVN_TEXTURE_TARGET_BUFFER, memory_order_release);
     pthread_mutex_unlock(&g_tmu);
+}
+int vka_tex_id_is_buffer(int id) {   // (no lock: the draw path asks it for every texture binding)
+    return id > 0 && id < (1 << 20) && g_tisbuf && atomic_load_explicit(&g_tisbuf[id], memory_order_acquire);
 }
 void mtl_reg_tex(int id, const tex_t *t, const view_t *v) { treg(id, t, v, 0); }
 void mtl_reg_image(int id, const tex_t *t, const view_t *v) { treg(id, t, v, 1); }
@@ -2960,6 +3074,21 @@ int vka_tex_id_target(int id) {
     pthread_mutex_unlock(&g_tmu);
     return t;
 }
+// A buffer texture (NVN_TEXTURE_TARGET_BUFFER, as the texture or its view names it) of texture ID id: its storage's guest address, its element count and its NVN format (the
+// view's when it sets one). 0 = not a live buffer texture (vka_tbuf.c, which binds them: images are not made of them, img_create_)
+int vka_tex_id_buffer(int id, uint64_t *addr, uint32_t *elems, int *format) {
+    pthread_mutex_lock(&g_tmu);
+    int r = 0;
+    if (id > 0 && id < g_ntreg && g_treg[id].t.serial) {
+        const treg_ent *e = &g_treg[id];
+        int target = e->has_v && e->v.set_target ? e->v.target : e->t.d.target;
+        if (target == NVN_TEXTURE_TARGET_BUFFER && e->t.mem && !treg_dead(id, e)) {
+            *addr = (uint64_t)(uintptr_t)e->t.mem; *elems = e->t.d.width; *format = e->has_v && e->v.set_format ? e->v.format : e->t.d.format; r = 1;
+        }
+    }
+    pthread_mutex_unlock(&g_tmu);
+    return r;
+}
 int vka_tex_id_storage_pending(int id) {
     pthread_mutex_lock(&g_tmu);
     smap_ent *e = id > 0 && id < g_ntreg && g_treg[id].t.serial ? map_get(g_treg[id].t.serial) : NULL;
@@ -2969,7 +3098,7 @@ int vka_tex_id_storage_pending(int id) {
 }
 int vka_tex_id_pending(int id) {
     pthread_mutex_lock(&g_tmu);
-    int r = id > 0 && id < g_ntreg && g_treg[id].t.serial && !map_get(g_treg[id].t.serial);
+    int r = id > 0 && id < g_ntreg && g_treg[id].t.serial && (g_treg[id].t.d.target != NVN_TEXTURE_TARGET_BUFFER || !VKA_ENV("DM_VK_TBUF", 1)) && !map_get(g_treg[id].t.serial);   // (a buffer texture never gets an image here: vka_tbuf.c)
     pthread_mutex_unlock(&g_tmu);
     return r;
 }
@@ -3105,10 +3234,13 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     static uint64_t seen, vseen, vw_seen, ve_seen; uint64_t now = nvn_dirty_now(), vnow = nvn_sparse_gen(), vw = dm_codec_video_writes(), ve = dm_codec_video_epoch();
     int vid_new = vw != vw_seen || ve != ve_seen;
     static int g_wbf_wait; static uint64_t g_wbf_up, g_wbf_waits; int g_wbf_on = VKA_ENV("DM_VK_WB_FOLLOW", 1) != 0; uint64_t done = vka_done();   // g_wbf_wait: a GPU-written linear texture waited for its copy-back in the last scan
-    if (now != seen || vnow != vseen || vid_new || g_wbf_wait) {
+    int full_scan = now != seen || vnow != vseen || vid_new;   // (else the scan runs only for the images that waited for a copy-back: vka_wbfollow.h wbf_visit)
+    if (full_scan || g_wbf_wait) {
         seen = now; vseen = vnow; vw_seen = vw; ve_seen = ve; g_wbf_wait = 0;
         for (int i = 0; i < g_nlive; i++) {
             vka_img *im = g_live[i];
+            if (!wbf_visit(full_scan, im->wbf_waiting)) continue;
+            im->wbf_waiting = 0;   // (set again below while it still waits)
             if (img_pool_dead(im)) continue;
             if (!im->is_video && im->mem && im->vep != ve) {
                 uint32_t vs = 0; im->vep = ve;
@@ -3149,7 +3281,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
             // Mario Tennis Fever clears its 8192x2048 R8 glyph cache on the GPU and rasterizes glyphs into it on the CPU; skipped, every text box was blank). While the copy-back
             // is queued or on the GPU the image waits, and the scan runs again at the next prepare even if the CPU writes nothing more (g_wbf_wait)
             if (!wbf_follows(im->gpu_owned, img_wb_kind(im) && g_wbf_on, im->wb_pending, im->wb_fence, done)) {
-                if (g_wbf_on && im->gpu_owned && img_wb_kind(im) && (im->wb_pending || done < im->wb_fence)) { g_wbf_wait = 1; g_wbf_waits++; }
+                if (g_wbf_on && im->gpu_owned && img_wb_kind(im) && (im->wb_pending || done < im->wb_fence)) { g_wbf_wait = 1; im->wbf_waiting = 1; g_wbf_waits++; }
                 continue;
             }
             int wbf = im->gpu_owned;   // (counted below once its pages were found written: DM_VK_WB_FOLLOW's line)

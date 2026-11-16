@@ -42,7 +42,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `game` → `host` | memory pools placed by parts from a smaller size on a device of 12 GB or less | memory | gap | judgement | 1 | `low_ram_place_part_mb`: [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | less placed memory where RAM is short; a size for every game once the part size's cost is measured on the other games |
 | `game` → `host` | Metal encoding on its own thread on the Mac | frame rate | gap | judgement | 1 | `enc_thread`: [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | what iOS does for every game: a default for every game after `regress.py check` on the games |
 | `game` → `host` | MTL4Compiler pipelines on iOS | rendering | gap | judgement | 1 | `pso_mtl4`: [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | a setting the game was tested with on an iPhone: a default for every game after `regress.py check` on the games |
-| `game` → `host` | one vertex shader's visibility counter (VertexCounterLowering) | shaders | gap | judgement | — | [Program.cs:303](../../dm/gfx/tools/dmsh_xlate/Program.cs#L303) | a general lowering of subgroup ballots in vertex shaders would cover any shader that counts that way |
+| `game` → `host` | one vertex shader's visibility counter (VertexCounterLowering) | shaders | gap | judgement | — | [Program.cs:314](../../dm/gfx/tools/dmsh_xlate/Program.cs#L314) | a general lowering of subgroup ballots in vertex shaders would cover any shader that counts that way |
 | `game` → `host` | present snapshots | rendering | gap | judgement | 1 | `present_snap`: [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | a setting the game was tested with: a default for every game after `regress.py check` on the games |
 | `build` → `engine` | the dynamic resolution's level lists, lowered at load to fit DM_WINDOW_SIZE (the Android launcher's Game resolution) | rendering | gap | judgement | 1 | `res_levels`: [Pokemon Pokopia](../../dm/games/0400A3A01EE4C000/README.md) | KTGL's size table and level lists, at fixed offsets per main build; a fingerprint of the controller that picks the list (oe::GetOperationMode, oe::GetCurrentGraphicsScale, the 34-level table) could find them in other KTGL games |
 | `build` → `engine` | the dynamic resolution's range steered while the game runs (DM_DRS, the Android launcher's Dynamic resolution) | rendering | gap | judgement | 1 | `drs_ctl`: [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md) | four places in sead / agl's MaintainGpuPercentage controller, at fixed offsets per main build (each checked for its instruction); a fingerprint of the controller could find them in other games on that engine |
@@ -85,12 +85,16 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `game` | FPS Unlock: optional elapsed-time update step | frame rate | blocked: one full build ID and update hook verified | judgement | 1 | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | the game update derives a fractional step from its integer frame rate |
 | `build` → `game` | frame step floor 2 → 1 vsync, and its frame step | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md) | the game's own clock floor and step |
 | `build` → `game` | frame step: the frame-rate controller's interval and fps from the host | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | the game's own 30 fps mode (interval 2), chosen by the host's step so presentation and game time agree |
+| `build` → `game` | layout panes on a picture narrower than 16:9: full-screen picture panes cover the picture, panes near the top and bottom of the 16:9 layer move to its edges | rendering | blocked: one build on hand; the constructor and the two build ends are plain code a function fingerprint could find | checked: v458752 by disassembly, 2026-11-13: the three words read from the main image, x19 / x23 live at each site | 1 | [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md) | nn::ui2d's pane constructor and Layout::Build are SDK code linked into main, and the game's own layout class is its own; the three gate sites and the pane and layout offsets are fixed for this build. The names of the groups left as authored are this game's layouts |
 | `build` → `game` | Mario Kart World camera and 2D layer aspect callback in main 1.8.0 | rendering | blocked: one build on hand; the aspect stores and the getter calls could be found by function fingerprint | judgement | 1 | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | the callback reads sead's PerspectiveProjection fields and nn::ui2d's DrawInfo matrix, the same in every title of this engine, but its five gates (two camera aspect stores, two projection getter calls and one rows read) are fixed addresses of this build |
+| `build` → `game` | Mario Tennis Fever scene size callback in nro0 1.1.1 (Phone 540p) | rendering | blocked: one build on hand; the join of the size function could be found by function fingerprint (the 4/5 and 2/3 multiplies after GetCurrentGraphicsScale) | judgement | 1 | [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md) | the callback writes the scene's size record the game's own size function fills, a layout of this build at a fixed gate address |
 | `build` → `game` | Max Resolution: optional full-scale dynamic resolution path | rendering | blocked: one full build ID and branch verified | judgement | 1 | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | the title has its own dynamic resolution controller and full-scale branch |
 | `build` → `game` | movie player: the plain player instead of the NDVE-enhanced one | frame rate | blocked: one build on hand; the faster tensor path is translator work (docs/reference/shaders.md, Ampere HMMA through simdgroup_matrix, Open) | judgement | 1 | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | a workaround: the tensor network costs 47.5 ms of GPU a movie frame; a function fingerprint could carry it over updates, and once the translator keeps LDSM / MOVM / HMMA chains in matrices the cut can go |
 | `build` → `game` | Ocarina of Time camera and 2D layer aspect callback in main v131072 | rendering | blocked: one build on hand; the projection reads are plain sead code a function fingerprint could find | judgement | 1 | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | the callback reads sead's PerspectiveProjection fields, the same in every title of this engine, but its eight gates (five cameras, the HUD canvas, the movie viewport and the save picture) are fixed addresses of this build |
 | `build` → `game` | Pokopia camera aspect hooks in main v2.0.1 | rendering | blocked: future game builds require exact offset and original-word validation | checked: main 76a489f3bd3642fa5e18bd83d32c98ba (Fold 7 observation, 2026-11-11) | 1 | [Pokemon Pokopia](../../dm/games/0400A3A01EE4C000/README.md) | camera layout/offsets are specific to this exact game build |
+| `build` → `game` | scene size: the scenes drawn below the smallest size the graphics scales give (Game settings > Resolution, Phone 540p) | rendering | blocked: one build on hand; the join could be found by function fingerprint (the 4/5 and 2/3 multiplies after GetCurrentGraphicsScale) | judgement | 1 | [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md) | the size function is the game's own code at a fixed address of this build; no Horizon query gives a smaller size |
 | `build` → `game` | Texture Pool x2: optional larger initial graphics allocation | memory | blocked: one full build ID and allocator call verified | judgement | 1 | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | the allocator is in the game and full-scale rendering can exhaust the original pool |
+| `build` → `game` | the allocators' NaN fill of new blocks: off | memory | blocked: one build of program 1; program 0 not yet checked for the same fill | checked: the five fill sites (movn w9, #0x8040, lsl #16 in main) and their no-fill checks, 2026-11-14 | 1 | [Kirby and the Forgotten Land - Nintendo Switch 2 Edition](../../dm/games/04004D300C5AE001/README.md) | HAL's allocator wrappers; a function-matched rule could carry it over the game's updates and to program 0 if its allocators fill as well |
 | `build` → unreviewed | Fire Emblem Fortune's Weave native 4:3 variant (VARIANT_CUTS['43']: camera aspect and ui2d pane rules) | rendering | unreviewed | judgement | 1 | [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | an opt-in variant (Game settings › Aspect ratio) of about 230 words in code caves of this main; each ui2d rule names panes of this build's layouts |
 
 ## Summary
@@ -100,7 +104,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [ASTRAL CHAIN](#astral-chain) | 0 | 0 | 112 | 0 | 0 | `build` → `game` |
 | [Batman: Arkham Knight](#batman-arkham-knight) | 8 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
 | [DARK SOULS: REMASTERED](#dark-souls-remastered) | 2 | 0 | 0 | 0 | 0 | `build` → `game` |
-| [Donkey Kong Bananza](#donkey-kong-bananza) | 2 | 4 | 0 | 0 | 2 | `build` → `game` ×3, `build` |
+| [Donkey Kong Bananza](#donkey-kong-bananza) | 2 | 7 | 0 | 0 | 2 | `build` → `game` ×4, `build` |
 | [EA SPORTS FC 27](#ea-sports-fc-27) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition](#final-fantasy-crystal-chronicles-remastered-edition) | 8 | 0 | 0 | 0 | 0 | `build` → `engine` |
 | [FINAL FANTASY TACTICS - The Ivalice Chronicles](#final-fantasy-tactics---the-ivalice-chronicles) | 2 | 0 | 0 | 0 | 0 | `build` → `game` |
@@ -108,10 +112,12 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Fire Emblem Fortune's Weave](#fire-emblem-fortunes-weave) | 0 | 0 | 0 | 0 | 0 | `build` → unreviewed |
 | [Fire Emblem: Three Houses](#fire-emblem-three-houses) | 12 | 0 | 0 | 0 | 0 | `build` → `game`, `build` → `host` |
 | [Hyrule Warriors: Age of Calamity](#hyrule-warriors-age-of-calamity) | 0 | 0 | 3 | 0 | 0 | `build` → `game` |
+| [Kirby and the Forgotten Land - Nintendo Switch 2 Edition](#kirby-and-the-forgotten-land---nintendo-switch-2-edition) | 5 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Luigi's Mansion 3](#luigis-mansion-3) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Mario + Rabbids Kingdom Battle](#mario--rabbids-kingdom-battle) | 6 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Mario + Rabbids® Sparks of Hope](#mario--rabbids-sparks-of-hope) | 7 | 0 | 0 | 0 | 0 | `build` → `game` ×2 |
 | [Mario Kart World](#mario-kart-world) | 0 | 5 | 0 | 0 | 1 | `build` → `game` ×2 |
+| [Mario Tennis Fever](#mario-tennis-fever) | 0 | 1 | 0 | 0 | 1 | `build` → `game` ×2 |
 | [Monster Hunter Rise](#monster-hunter-rise) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Need For Speed™ Hot Pursuit Remastered](#need-for-speed-hot-pursuit-remastered) | 1 | 0 | 0 | 0 | 5 | `build` → `game`, `build` → `engine` |
 | [NieR:Automata The End of YoRHa Edition (010056B015FE8000)](#nierautomata-the-end-of-yorha-edition-010056b015fe8000) | 8 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
@@ -292,6 +298,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 - **`build` → `game`**, rendering, gap, judgement: frame buffer scale: the scene at the window's full size instead of 80 %. The game's own per-mode table entry, multiplied in at two fixed offsets; a function fingerprint of the scene setup (the two fmul after the table load) could carry it over the game's updates
 - **`build`**, frame rate, at goal, checked: v0 and v458752 by disassembly, 2026-11-10: the search finds main+0x1eadf0 and main+0x204b20, nso_fnmap.py maps one to the other exactly: sead's frame-rate controller's place for v458752, named whatever the search finds. An override and fallback of the rewriter's search (nso_code.py sead_find), which finds the same place in every build of this game by the controller's code
 - **`build` → `game`**, rendering, blocked: one build on hand; the projection update and the matrix copy are plain code a function fingerprint could find, checked: v458752 by disassembly, 2026-11-13: every original word read from the main image; the prior art's sites (dkbwide set) match the same words; the layout uniform block seen on the phone (DM_VK_UB_PEEK): camera aspect and 2D layer: the 3D camera follows the picture shape and the layout perspective stays in the middle 16:9 (Game settings > Aspect ratio / Screen shape). Sead::PerspectiveProjection and the draw info's projection copy are engine code, but the three gate sites (the scene camera updater's projection update and the two layout projection setups after their copies) are fixed addresses of this build
+- **`build` → `game`**, rendering, blocked: one build on hand; the constructor and the two build ends are plain code a function fingerprint could find, checked: v458752 by disassembly, 2026-11-13: the three words read from the main image, x19 / x23 live at each site: layout panes on a picture narrower than 16:9: full-screen picture panes cover the picture, panes near the top and bottom of the 16:9 layer move to its edges. Nn::ui2d's pane constructor and Layout::Build are SDK code linked into main, and the game's own layout class is its own; the three gate sites and the pane and layout offsets are fixed for this build. The names of the groups left as authored are this game's layouts
 - **`build` → `game`**, rendering, blocked: one build on hand, judgement: Donkey Kong Bananza camera and layout aspect callback in main v458752. The callback reads the scene camera updater's aspect and fovy and the layout draw info's projection at fixed offsets, and the gates sit at fixed addresses of this build; the projection update and the layout setup are plain code a function fingerprint could find
 
 - **v458752 `main`** `e25c90c1…` ([patches.py:7](../../dm/games/040074A01BF12000/patches.py#L7))
@@ -301,7 +308,10 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - gate 4896 at `+0x45e238`: scene camera updater projection update, before it reads the fovy (ldr s0,[x19,#0x104]); x19 the updater (aspect +0x100, fovy degrees +0x104)
   - gate 8224 at `+0x45f9e0`: layout system projection setup main+0x45f840, after its copy main+0xb1314 (ldr s0,[x20,#0xc]); x0 the draw info, the perspective matrix at +0x10
   - gate 8224 at `+0x803c9c`: the second layout projection setup main+0x803b60 (the scene's layouts: HUD), after its copy main+0xb1314 (mov x8,sp; the adrp before it is not relocatable); x0 the draw info
-  - host [dkb_wide.c:32](../../dm/host/android/dkb_wide.c#L32): build check
+  - gate 16416 at `+0x861a00`: pane constructor main+0x8615e0, after it stored the size (ldp x22,x21,[sp]); x19 the pane (size +0x50, translate +0x30), x23 its layout file record
+  - gate 24608 at `+0x850d3c`: nn::ui2d::Layout::Build main+0x850680, its build done (mov w0,#1); x19 the layout, the root pane at +0x18
+  - gate 24608 at `+0x13cb50`: the game's own layout class's build main+0x13c94c, done (ldp x20,x19,[sp,#0x1e0]: x19 is still the layout); the root pane at +0x18
+  - host [dkb_wide.c:34](../../dm/host/android/dkb_wide.c#L34): build check
   - host [hle_fpslock.c:45](../../dm/host/hle_fpslock.c#L45): engine frame limit set to fps_target: sead frame-rate controller minimum interval
 
 ### EA SPORTS FC 27
@@ -387,6 +397,19 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - frame step `+0x166dab4`: KIDS frame task: fps and the frame-rate block = the cap, vsyncs per update marked; device frame rate 59.94 / vsyncs (state page target fps; 0 = the game's 30)
   - frame step `+0x166dc60`: KIDS frame task: the frame-rate object's steps × its fps × vsyncs per update / 60 (state page target fps; 0 = as the game sets them)
 
+### Kirby and the Forgotten Land - Nintendo Switch 2 Edition
+
+[Kirby and the Forgotten Land - Nintendo Switch 2 Edition](../../dm/games/04004D300C5AE001/README.md), `04004D300C5AE001`, [patches.py](../../dm/games/04004D300C5AE001/patches.py).
+
+- **`build` → `game`**, memory, blocked: one build of program 1; program 0 not yet checked for the same fill, checked: the five fill sites (movn w9, #0x8040, lsl #16 in main) and their no-fill checks, 2026-11-14: the allocators' NaN fill of new blocks: off. HAL's allocator wrappers; a function-matched rule could carry it over the game's updates and to program 0 if its allocators fill as well
+
+- **1.1.0 `main`** `395fc326…` ([patches.py:9](../../dm/games/04004D300C5AE001/patches.py#L9))
+  - cut `+0x863910`: main allocator: no NaN fill of a new block (cbnz w8 on the global no-fill byte → b, the same target)
+  - cut `+0x869604`: allocator (main+0x869400 kind): no NaN fill of a new block (cbnz w8 on the no-fill byte at +9 → b, the same target)
+  - cut `+0x8698c4`: allocator (main+0x869400 kind): no NaN fill of a new block (cbnz w8 on the no-fill byte at +9 → b, the same target)
+  - cut `+0x869e24`: allocator (main+0x869400 kind): no NaN fill of a new block (cbnz w8 on the no-fill byte at +9 → b, the same target)
+  - cut `+0x86d018`: StandardAllocator wrapper (main+0x86ce00): no NaN fill of a new block (cbnz w8 on the no-fill byte at +9 → b, the same target)
+
 ### Luigi's Mansion 3
 
 [Luigi's Mansion 3](../../dm/games/0100DCA0064A6000/README.md), `0100DCA0064A6000`.
@@ -440,6 +463,17 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - gate 16417 at `+0x1805f18`: nn::ui2d text setup, before its bl to the same getter; x0 pointed at a scaled copy, pane in x21
   - gate 24609 at `+0x17f5088`: view-projection product made on the CPU, after ldp q0,q4,[x21,#0x10]; q0 (x row) or q4 (y row) scaled
   - host [mkw_wide.c:33](../../dm/host/android/mkw_wide.c#L33): build check
+
+### Mario Tennis Fever
+
+[Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md), `0400D4201C6EA000`, [patches.py](../../dm/games/0400D4201C6EA000/patches.py).
+
+- **`build` → `game`**, rendering, blocked: one build on hand; the join could be found by function fingerprint (the 4/5 and 2/3 multiplies after GetCurrentGraphicsScale), judgement: scene size: the scenes drawn below the smallest size the graphics scales give (Game settings > Resolution, Phone 540p). The size function is the game's own code at a fixed address of this build; no Horizon query gives a smaller size
+- **`build` → `game`**, rendering, blocked: one build on hand; the join of the size function could be found by function fingerprint (the 4/5 and 2/3 multiplies after GetCurrentGraphicsScale), judgement: Mario Tennis Fever scene size callback in nro0 1.1.1 (Phone 540p). The callback writes the scene's size record the game's own size function fills, a layout of this build at a fixed gate address
+
+- **v327680 `nro0`** `250a510a…` ([patches.py:9](../../dm/games/0400D4201C6EA000/patches.py#L9))
+  - gate 34 at `+0x125eb98`: scene size after the graphics scale (ldr w10,[x19,#0x108], where the scale paths join); x20 the size record (u16 width +0x1c, height +0x1e), w9 its width
+  - host [mtf_size.c:18](../../dm/host/android/mtf_size.c#L18): build check
 
 ### Monster Hunter Rise
 
@@ -727,7 +761,7 @@ Applied to the `sdk` of any build without CUTS, found by function fingerprint ([
 - node area 1 GB → 62 MB: SDK 19.3.11 (Pokémon Legends: Z-A), 19.3.13 (Octopath Traveler 0), 20.5.19 (BALL x PIT), 20.5.22 (Tears of the Kingdom)
 - node area 1 GB → 62 MB: SDK 22.2.0 (EA SPORTS FC 27, Well Dweller): the SDK 19 / 20 constructor, instruction for instruction up to its cold path, which gives each failing result its own abort (32 bytes more)
 - node area 1 GB → 62 MB: SDK 22.2.0 built for the Switch 2 (Fire Emblem Fortune's Weave): the constructor at sdk+0x16ba30 with return address signing and its own frame. The host's StandardAllocator cap counts on the 62 MB (alias_room): with 1 GB the capped region did not fit the alias region
-- node area 1 GB → 62 MB: SDK 19.3.3 (Mario Kart World), 20.5.15 (Yoshi and the Mysterious Book, Hyrule Warriors: Age of Imprisonment), 20.5.19 (Donkey Kong Bananza) built for the Switch 2: the constructor at sdk+0x14df00 on 20.5.15, with return address signing. Unreal's engine region takes what the alias region has room for, counting on the 62 MB (alias_room): with 1 GB nninitStartup's AllocateAddressRegion fails and it exits
+- node area 1 GB → 62 MB: SDK 19.3.3 (Mario Kart World), 20.5.15 (Yoshi and the Mysterious Book, Hyrule Warriors: Age of Imprisonment), 20.5.19 (Donkey Kong Bananza), and 19.3.7 (Kirby and the Forgotten Land - Nintendo Switch 2 Edition, sdk 5e81e793...) built for the Switch 2: the constructor at sdk+0x14df00 on 20.5.15 (sdk+0x14a9c0 on 19.3.7), with return address signing. Unreal's engine region takes what the alias region has room for, counting on the 62 MB (alias_room): with 1 GB nninitStartup's AllocateAddressRegion fails and it exits. Kirby's nninitStartup asks StandardAllocator::Initialize(nullptr, 20 GB) (returning to main+0x86cf10), which aborted in nn::diag (sdk+0x13c5d8) without the cut: the region did not fit after the 1 GB node area
 - node area 1 GB → 62 MB: SDK 21.4.1 (Sonic Frontiers Definitive Edition), 21.4.2 (Orbitals), 21.4.3 (Resident Evil 4), 21.4.4 (Splatoon Raiders) built for the Switch 2: the constructor at sdk+0x16db70 in all four, with return address signing: the 20.5 build's instructions in another order, with 32 more bytes on its cold path (an abort code per failing result). Unreal's engine region counts on the 62 MB (alias_room), as Yoshi and the Mysterious Book's. Region placement aligns to 64 KB or 2 MB only (sdk+0x16dd14), as SDK 20
 - regions of 4 MB and more aligned to 2 MB, as SDK 20: SDK 7.3.2 (DRAGON QUEST XI S), 8.2.1 (Super Smash Bros. Ultimate), 8.3.1 (Paper Mario: The Origami King), 10.4.1 (Advance Wars 1+2), 10.4.8 (Pikmin 4)
 - regions of 4 MB and more aligned to 2 MB, as SDK 20: SDK 11.4.0 (Pokémon Legends: Arceus, Kirby and the Forgotten Land): the next rule's size classes with 8 more bytes of body; the 4 GB StandardAllocator region of Arceus's nninitStartup (the host's cap) fits after the 62 MB node area only with it
@@ -736,7 +770,7 @@ Applied to the `sdk` of any build without CUTS, found by function fingerprint ([
 
 ## Translator rules keyed by a shader's code
 
-- [Program.cs:303](../../dm/gfx/tools/dmsh_xlate/Program.cs#L303): Tears of the Kingdom 1.4.3 visibility counter (one vertex shader, exact code SHA-256 below) (**`game` → `host`**, gap: a general lowering of subgroup ballots in vertex shaders would cover any shader that counts that way)
+- [Program.cs:314](../../dm/gfx/tools/dmsh_xlate/Program.cs#L314): Tears of the Kingdom 1.4.3 visibility counter (one vertex shader, exact code SHA-256 below) (**`game` → `host`**, gap: a general lowering of subgroup ballots in vertex shaders would cover any shader that counts that way)
 
 ## Profile switches
 
@@ -745,6 +779,7 @@ Profile keys (`game.tsv`) whose value changes what the host does, set away from 
 | Key and value | Games | Binding | Why |
 |---|---|---|---|
 | `android_window 1920x1080` | [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | `game`, at goal | the same default as without the key (Phone 1080p), named in the profile so that one line changes the game's default output (Fire Emblem Fortune's Weave: handheld; original would give docked) |
+| `android_window original` | [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md) | `game`, at goal | a game with graphics_scale rows whose start is not Phone 1080p keeps that start as its default (Mario Tennis Fever: console scale 1, 2048x1152), so adding the rows changes no player's picture |
 | `av1_decoder dav1d` | [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | `game` → `host`, gap | the default decoder drops frames of this game's movies on the phone; frame-parallel dav1d for every game once it is checked on the other games' movies |
 | `draw_barriers game` | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | `game` → `host`, gap | what NVN specifies: a default for every game after `regress.py check` on the games |
 | `drs_ctl e25c90c1c136638885659fd55bf8a03b 0x38e100 0x38de2c 0x38dcbc 0x38dbc8` | [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md) | `build` → `engine`, gap | four places in sead / agl's MaintainGpuPercentage controller, at fixed offsets per main build (each checked for its instruction); a fingerprint of the controller could find them in other games on that engine |
@@ -753,7 +788,6 @@ Profile keys (`game.tsv`) whose value changes what the host does, set away from 
 | `fps_steps d00e4f399e411d0613aa8d26b1c02fef 0x37c8410 0x8 0x210 0x214` | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | `build` → `engine`, gap | the framework at a fixed global per main build; a fingerprint of its frame function (the step pick from the mode, then the update loop over the count and the present interval set to it) could find it in the game's updates |
 | `fps_target 30` | [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | `game`, at goal | a choice per game |
 | `game_env DOTNET_GCRegionRange=60000000` | [Absolum](../../dm/games/0100A83022A22000/README.md) | `game`, at goal | measured for the game's regions |
-| `graphics_scale original 1 console` | [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | `game`, at goal | the game sizes its 3D scenes by the graphics scale, not by its window; which crop each scale gives was measured on the game |
 | `low_ram_app_pool_mb 5632` | [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | `game`, at goal | the total the game's SDK sizes its cache of freed pages from, measured on the game; the pool and the map limit stay the profile's |
 | `low_ram_img_cache_max_mb 1024` | [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | `game`, at goal | the most image memory the game's scenes need, measured on the game; the measured limit still acts below it |
 | `low_ram_place_part_mb 256` | [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | `game` → `host`, gap | less placed memory where RAM is short; a size for every game once the part size's cost is measured on the other games |
@@ -776,6 +810,7 @@ Profile keys (`game.tsv`) whose value changes what the host does, set away from 
 | `fps_hold off` | [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md), [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md) | `game`, at goal | the game's pacing |
 | `fps_limit 60` | [Pokemon Pokopia](../../dm/games/0400A3A01EE4C000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | `game`, at goal | a choice per game: steady frames and less heat where its own rate wanders below 60 |
 | `graphics_scale 2560x1440 1 console` | [Mario Kart World](../../dm/games/0400C3F00006E000/README.md), [Splatoon Raiders](../../dm/games/0400380020056000/README.md) | `game`, at goal | the game sizes its 3D scenes by the graphics scale, not by its window; which crop each scale gives was measured on the game |
+| `graphics_scale original 1 console` | [Mario Tennis Fever](../../dm/games/0400D4201C6EA000/README.md), [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) | `game`, at goal | the game sizes its 3D scenes by the graphics scale, not by its window; which crop each scale gives was measured on the game |
 | `perf_mode boost` | [Big Brain Academy: Brain vs. Brain](../../dm/games/0100620012D6E000/README.md), [Rhythm Heaven Groove](../../dm/games/0100D9F01D474000/README.md) | `game`, at goal | a combination a Switch 1 never reports: a choice per game |
 | `tex_dyn_slots on` | [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md), [FINAL FANTASY RESONANCE (Asian release)](../../dm/games/0100B8A026F14000/README.md), [OCTOPATH TRAVELER 0](../../dm/games/01005270232F2000/README.md) | `game` → `host`, gap | right only where the handle comes from c2's tables: the translator could prove that per shader |
 | `alloc_big_align on` | [13 Sentinels: Aegis Rim](../../dm/games/01003FC01670C000/README.md), [13 Sentinels: Aegis Rim (Asia)](../../dm/games/01008D7016438000/README.md), [13 Sentinels: Aegis Rim (Japan)](../../dm/games/010045C014650000/README.md), [Unicorn Overlord](../../dm/games/010069401ADB8000/README.md), [Unicorn Overlord (Asia)](../../dm/games/010054B01AD92000/README.md) | `game` → `host`, gap | the cause is a memory pool's GPU address, big-page aligned on hardware and the CPU address here: pool GPU addresses aligned as hardware does, or this alignment for every game |

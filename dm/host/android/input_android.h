@@ -70,6 +70,19 @@ int android_text_input(const char *title, const char *sub, const char *guide, co
 typedef int (*nxhost_user_select_fn)(void *ctx, const char *const *names, const int *offered, int n, int def);
 NXHOST_API void nxhost_user_select_callback(nxhost_user_select_fn fn, void *ctx);
 int android_user_select(const char *const *names, const int *offered, int n, int def);   // host-internal (front_android.c): -2 without a callback
+// The controller applet's join screen (nn::hid::ShowControllerSupport, pad_join.h). The host calls fn(ctx, 1) from the guest thread when the screen opens and fn(ctx, 0) when
+// it ends (a short call each: the launcher shows or hides its screen on its own thread). While it is open, the pad keys the launcher sends go to the screen, not the game:
+// L and R held together join a controller, A on a joined one ends it once enough have joined, B cancels; sticks and touches are held. With no controller on player 1 the
+// phone's on-screen controls are player 1's (the console's handheld controller), and they join by the screen's own button (NXHOST_CTRL_JOIN_TOUCH). The launcher reads the
+// screen with nxhost_ctrl_state and presses its buttons with nxhost_ctrl_button (Back and a closed screen cancel). Without a callback the applet answers at once
+typedef void (*nxhost_ctrl_fn)(void *ctx, int open);
+NXHOST_API void nxhost_ctrl_callback(nxhost_ctrl_fn fn, void *ctx);
+// The screen's state as text, one line each, fields by tabs: "open\t<min>\t<max>\t<single>\t<can end>\t<touch can join>" (or "closed"), then for each player up to max
+// "<player>\t<device, -1 open, -2 the on-screen controls>\t<name>\t<colour RRGGBBAA or ->\t<the game's text>"; returns the length (cut to n - 1)
+NXHOST_API int nxhost_ctrl_state(char *buf, int n);
+enum { NXHOST_CTRL_CANCEL = 0, NXHOST_CTRL_OK = 1, NXHOST_CTRL_JOIN_TOUCH = 2 };
+NXHOST_API void nxhost_ctrl_button(int what);
+int android_controller_support(const void *arg, int *count);   // host-internal (front_android.c): -2 without a callback
 
 // ---- Lifecycle ----
 // event: 0 onPause, 1 onStop, 2 onStart (after onStop), 3 onResume, 4 pause, 5 continue. The app is suspended while it is stopped (1 until 2) or paused (4 until 5):

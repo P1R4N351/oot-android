@@ -1,7 +1,9 @@
 """scripts/pack_android.py's NROs (the modules a game loads at run time with nn::ro): collected from the dump by dm/tools/nro_collect.py into the work folder (reused while
 its inputs are unchanged), rewritten with the modules, and listed in the pack's nro.tsv, which the host reads beside the modules (loader.c preload_nros). The phone's pack step
 (--keep-code) checks that every NRO's rewrite finished, as it does for the modules."""
+import errno
 import hashlib
+import os
 import importlib.util
 import struct
 import tempfile
@@ -52,9 +54,33 @@ class Collect(unittest.TestCase):
         self.assertEqual(self.collect(), {})
         self.assertFalse((self.work / 'android-nro').exists())
 
+    def test_no_folder_rename(self):
+        """A folder renamed under /storage/emulated may be refused with EPERM by MediaProvider (issues #1, #296): the collection must not rename one"""
+        real = os.replace
+        def replace(src, dst, *a, **kw):
+            if os.path.isdir(src): raise PermissionError(errno.EPERM, 'Operation not permitted', str(src), None, str(dst))
+            return real(src, dst, *a, **kw)
+        with mock.patch.object(pack_android.os, 'replace', replace), mock.patch.object(pack_android.os, 'rename', replace), \
+             mock.patch.object(pack_android.shutil, 'move', side_effect=AssertionError('folder moved')), \
+             mock.patch.object(Path, 'rename', lambda self, t: replace(self, t)), mock.patch.object(Path, 'replace', lambda self, t: replace(self, t)):
+            got = self.collect()
+        self.assertEqual(list(got), ['nro0']); self.assertEqual(got['nro0'].read_bytes(), self.body)
+        self.assertEqual(pack_android.collected_nros(self.work), self.work / 'android-nro')
+
+    def test_unfinished_collection_is_redone(self):
+        self.collect()
+        (self.work / 'android-nro.key').unlink()   # stopped after nro_collect.py wrote its files, before the marker
+        self.assertIsNone(pack_android.collected_nros(self.work), 'a collection without its key is not used')
+        (self.work / 'android-nro' / 'stale.nro').write_bytes(b'old')
+        (self.work / 'android-nro.partial').mkdir(); (self.work / 'android-nro.partial' / 'nro.tsv').write_text('# old\n')   # left by the earlier rename
+        self.assertEqual(list(self.collect()), ['nro0'])
+        self.assertFalse((self.work / 'android-nro' / 'stale.nro').exists()); self.assertFalse((self.work / 'android-nro.partial').exists())
+        self.assertTrue((self.work / 'android-nro.key').is_file())
+
     def test_missing_nro_is_an_error(self):
         (self.rom / 'mod.nro').unlink()
         with self.assertRaises(pack_android.Error): self.collect()
+        self.assertIsNone(pack_android.collected_nros(self.work), 'a failed collection is not used')
 
 
 class Manifest(unittest.TestCase):
@@ -82,7 +108,7 @@ class Split(unittest.TestCase):
     def split_env(self, with_nros):
         with tempfile.TemporaryDirectory() as d:
             work = Path(d) / 'work'; (work / 'android-nro').mkdir(parents=True)
-            if with_nros: (work / 'android-nro' / 'nro.tsv').write_text('# name\n')
+            if with_nros: (work / 'android-nro' / 'nro.tsv').write_text('# name\n'); (work / 'android-nro.key').write_text('k\n')
             seen = {}
             def run(argv, env=None, **kw): seen.update(env or {}); return mock.Mock(returncode=1)
             a = mock.Mock(shader_python=None); g = mock.Mock(id='0400D4201C6EA000', dir=Path(d) / 'profile')

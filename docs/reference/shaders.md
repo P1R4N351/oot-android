@@ -394,6 +394,27 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Reader:** `uepak.py` writes them out as version 2 archives, so the split reads them as any other.
 - **Found on:** [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md) (Unreal Engine 5.6.1): 73,496 unique shaders (9,253 vertex, 61,305 pixel, 2,934 compute, 4 geometry).
 
+### Images whose handle is in the game's uniform buffer
+
+- **Symptom:** the Android library build fails compute shaders with `NotSupportedException: SUATOM handle in bank 3` (and `SURED handle in bank 3`), and its summary counts many more under `shaders with a binding whose slot was not decoded`, as `IMG cp_i_cb3_0_`, `cp_i_cb3_2_` … (`fp_i_cb3_…` in pixel shaders): images the replay would bind as null.
+- **Cause:** Unreal Engine 5.6 on the Switch 2 keeps the handle of every image a compute shader writes in the game's first uniform buffer, `c[3]` (bank 3), one 32-bit word each, and the shader reads it there, as `TEX_UBO`'s textures. The translator took the bank of a SULD's or SUST's handle (`ATexHandle`) but refused SUATOM and SURED with another bank than 2, and the Android ABI had no kind for an image named by a uniform buffer: `decode_tex` reads bank 2's image slots only.
+- **Fix:** three parts. The translator passes the bank on for SUATOM and SURED as for SULD and SUST (`InstEmitAmpereMem.cs` `ASuatom` / `ASured`, `InstEmitSurface.cs` `EmitSuatom` / `EmitSured`; upstream nxnative does the same). The library build files `<stage>_i<type>_cb<3..16>_<handle>` as `IMG_UBO` (`vk_android_build.py` `ubo_img`: uniform slot bank − 3, byte offset the handle's word × 4; flags `ATOMIC` and `RW` as `IMG`'s). The replay reads the handle at bind time and binds the storage image of its texture ID with the pool base, as `TEX_UBO` and upstream's Metal `IMGU` do (`vka_bind.c`). The kind moves `DMSH_VK_ABI`; the previous ABI is a row of `vka_abi_compat.h` with no differences, since none of its libraries holds the kind, so they keep playing until their update.
+- **Found on:** [Orbitals](../../dm/games/040032B023CA4000/README.md): 1,034 compute shaders refused (1,006 SUATOM, 28 SURED), 2,871 bindings with no slot in 2,820 compute, 50 pixel and 1 vertex shader (handles at `c[3]` words 0 to 0xE). With the fix, 7,044 `img_ubo` bindings and no binding without a slot.
+
+### An image write's coordinate lost by promote_locals
+
+- **Symptom:** the Android library build fails shaders with `spirv-val failed  error: line …: ID '…' has not been defined`, the undefined id the coordinate (or the image) of an `OpImageWrite`; the translator's own module validates.
+- **Cause:** `promote_locals` (`vk_android_spv.py`) replaces the loads of a single-store Function variable with the stored value, deletes the loads, and rewrites their uses with `_remap_operands`, which takes an instruction's ids from operand 3 unless its opcode is in `NO_RESULT_OPS`. `OpImageWrite` has no result, so its image and coordinate are operands 1 and 2, and it was not in the set: a coordinate kept in a local (the translator's temporary for a buffer image's index) lost its load. The same set tells the passes which instructions define their operand 2, so the write was also taken for the coordinate's definition.
+- **Fix:** `NO_RESULT_OPS` holds every instruction with no result and id operands the modules have: `OpImageWrite`, `OpCopyMemory`, `OpCopyMemorySized`, the geometry stream instructions, `OpAtomicStore`, `OpEmitMeshTasksEXT`, `OpSetMeshOutputsEXT` (`dm/gfx/tests/test_vk_image_ops.py` `PromoteImageWrite`).
+- **Found on:** [Orbitals](../../dm/games/040032B023CA4000/README.md): 189 compute shaders.
+
+### Shared memory with a buffer's array stride
+
+- **Symptom:** `spirv-val failed  error: line …: [VUID-StandaloneSpirv-None-10684] Invalid explicit layout decorations on type '…[%_arr_uint_uint_8]', the Workgroup storage class has an explicit layout from the ArrayStride decoration`, in the translator's own module.
+- **Cause:** the translator's SPIR-V generator reuses an identical type, so a shared (or local) memory of 8 words took the support buffer's `uint[8]`, which carries `ArrayStride 16`; Workgroup and Private variables may have no explicit layout.
+- **Fix:** shared and local memory arrays get a type of their own (`CodeGen/Spirv/Declarations.cs` `DeclareMemories`, `TypeArray(…, forceIdAllocation: true)`).
+- **Found on:** [Orbitals](../../dm/games/040032B023CA4000/README.md): 24 compute shaders.
+
 ### IoStore patch containers keep their shader groups in the base container
 
 - **Symptom:** `ValueError: …/Glow-Switch_0_P.utoc: shader group 0 has no chunk` from `uepak.py io_archive` while the NSP script decodes the shaders (`decode_ue_shaders`, after `[4/8] UE shader decode`).

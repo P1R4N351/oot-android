@@ -12,6 +12,7 @@
 #   build_src.sha256, rewrite_<module>.log
 #   scene_res/<preset>/<RomFS path>, scene_res.tsv   for a profile with scene_scale_palette rows: the game's dynamic resolution palette rewritten, one RomFS overlay folder per
 #                scene_scale row and per res_preset row with a floor or fixed scene (dm/tools/scene_res.py), which the launcher's Resolution passes as DM_ROMFS_OVERLAY; made from the dump's own RomFS
+#   cheats/<build>.txt   the profile's Atmosphère-format cheat files (game.tsv cheats rows; place_cheats), for the launcher's Game settings › Cheats; not in the rewrite key
 # The RomFS is not in the pack (the app gives the host <game folder>/<romfs> as DM_ROMFS) and neither is anything else of the dump but the rewritten code.
 # The game may be a NUP file instead of a folder (android/NUP.md): its packages are read in place (pack_dump.scan, dm/tools/nup.py), the modules and the RomFS are
 # named `<name>.nup:update/<version>/...` (or `:base/...`), the DLC `<name>.nup:addon/<title ID>/romfs`, and pack.tsv's paths are relative to the folder holding the file.
@@ -249,24 +250,28 @@ def pack_nros(d):   # the NROs d/nro.tsv lists with files (a 'refused' row, an o
 
 def collect_nros(exe, romfs, work, in_process=False):
     """The NROs the game registers: {name: collected .nro} in <work>/android-nro/ (dm/tools/nro_collect.py, with the version's own ExeFS for a boot stub's NRO),
-    {} without NRRs. Reused while nro_key is unchanged (Super Smash Bros. Ultimate's scan takes minutes). in_process: in this Python, without a pool (the phone)"""
+    {} without NRRs. Reused while nro_key is unchanged (Super Smash Bros. Ultimate's scan takes minutes). in_process: in this Python, without a pool (the phone).
+    Written in place, its key file the marker (deleted first, written last, by a file's rename): a folder renamed under /storage/emulated goes through MediaProvider,
+    which may refuse it with EPERM (BananaNative issues #1 and #296; android/app Outputs.java)"""
     work = Path(work); coll, kf = work / 'android-nro', work / 'android-nro.key'
     nrrs = nrr_files(romfs)
     if not nrrs:
-        shutil.rmtree(coll, ignore_errors=True); kf.unlink(missing_ok=True); return {}
+        kf.unlink(missing_ok=True); shutil.rmtree(coll, ignore_errors=True); return {}
     key = nro_key(exe, romfs, nrrs)
-    if not ((coll / 'nro.tsv').is_file() and kf.is_file() and kf.read_text().strip() == key):
+    if collected_nros(work) is None or kf.read_text().strip() != key:
         work.mkdir(parents=True, exist_ok=True); kf.unlink(missing_ok=True)
-        tmp = work / 'android-nro.partial'; shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(work / 'android-nro.partial', ignore_errors=True)   # left by a version that renamed the folder into place
+        if coll.exists(): shutil.rmtree(coll)
+        coll.mkdir()
         stage(f'finding the NROs {len(nrrs)} NRR file{"s" if len(nrrs) != 1 else ""} register{"" if len(nrrs) != 1 else "s"}')
-        args, log = [str(romfs), str(tmp), '--exefs', str(exe)], work / 'nro_collect.log'
+        args, log = [str(romfs), str(coll), '--exefs', str(exe)], work / 'nro_collect.log'
         if in_process: rc = run_in_process(REPO / 'dm/tools/nro_collect.py', args, {'DM_NRO_COLLECT_J': '1'}, log)
         else:
             with open(log, 'w') as f: rc = subprocess.run([sys.executable, str(REPO / 'dm/tools/nro_collect.py'), *args], env=child_env(), stdout=f, stderr=subprocess.STDOUT).returncode
         if rc:
             tail = log.read_text(errors='replace').splitlines()[-20:]
             raise Error(f'nro_collect.py exit code {rc} (full output: {log}):\n' + '\n'.join(tail))
-        shutil.rmtree(coll, ignore_errors=True); os.replace(tmp, coll); write_lf(kf, key + '\n')
+        tmp = work / 'android-nro.key.tmp'; write_lf(tmp, key + '\n'); os.replace(tmp, kf)
     got = {n: coll / f'{n}.nro' for n in pack_nros(coll)}
     print(f'  NROs: {len(got)} the game loads at run time' + (f' ({", ".join(got)})' if len(got) <= 8 else ''), flush=True)
     return got
@@ -393,7 +398,7 @@ def rewriter_src(src, out, m):
     """The file patch_nso.py reads for module m: src itself, or for a module in a NUP package (`game.nup:update/<v>/exefs/main`) a copy in the pack's
     .nup-src/<module>/ under the module's own name. The rewriter then reads a plain file, so its files (REWRITER, rewrite_key) are the same for a NUP
     file and a folder, and a pack made from either keeps the other's rewritten modules"""
-    if '.nup:' not in str(src): return src
+    if '.nup:' not in str(src) and '.nsp:' not in str(src): return src
     d = out / '.nup-src' / m; d.mkdir(parents=True, exist_ok=True)
     f = d / src.name; f.write_bytes(src.read_bytes()); return f
 
@@ -543,6 +548,11 @@ def map_keys(path):
     with open(path) as f: return {c[3] for c in (l.rstrip('\n').split('\t') for l in f) if len(c) > 4 and c[0].endswith('.bin')}
 
 
+def table_lines(path):
+    """A table's lines less its comment lines ('#'), as shader_split.py's targeted scan compares them"""
+    with open(path, encoding='utf-8') as f: return [l for l in f.read().splitlines() if not l.startswith('#')]
+
+
 def selected_keys(profile_dir):
     """The shaders the phone's shaders step builds for a profile with a selected set (shader_seen.tsv): its keys that the map has, sorted, each once, as
     ShaderLibs.selection reads them (the map's column 4 of every row but comments and the header); None without a shader_seen.tsv (the whole map). vk_android_build.py
@@ -557,9 +567,10 @@ def selected_keys(profile_dir):
 
 
 def collected_nros(work):
-    """The folder of the NROs collect_nros collected into work, or None when it has none (shader_split.py reads a CRA archive's file table from them: DM_NRO_DIR)"""
-    d = work / 'android-nro'
-    return d if (d / 'nro.tsv').is_file() else None
+    """The folder of the NROs collect_nros collected into work, or None when it has none or its collection did not finish (no key file) (shader_split.py reads a CRA
+    archive's file table from them: DM_NRO_DIR)"""
+    d = Path(work) / 'android-nro'
+    return d if (d / 'nro.tsv').is_file() and (Path(work) / 'android-nro.key').is_file() else None
 
 
 def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: the version's (romfs, exefs) when they are not vdir's own (pack_dump.version_part); aoc: add-on RomFS roots to split too; nros: collected_nros
@@ -583,7 +594,7 @@ def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: th
             raise Error(f'the dump\'s shaders lack {len(hard)} of the {len(want)} in the profile\'s shader_map.tsv (e.g. {", ".join(hard[:3])}): the dump is of another version '
                         f'or incomplete, and the profile\'s shader library cannot be built from it (the split is in {tmp})')
         for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv'):
-            if (g.dir / f).is_file() and (g.dir / f).read_bytes() != (tmp / f).read_bytes():
+            if (g.dir / f).is_file() and table_lines(g.dir / f) != table_lines(tmp / f):   # the comment lines name the game and the split's wording at the time
                 print(f'shaders: the dump\'s {f} differs from the profile\'s ({len(have - want)} shaders more); the library is the profile\'s, its shaders found in the package by key')
     shutil.rmtree(pkg, ignore_errors=True); (tmp / 'pkg').rename(pkg)
     absent = sorted(want - have) if (g.dir / 'shader_map.tsv').is_file() else []   # the keys only another registered build has (shader_optional.tsv): listed for a library build to leave out
@@ -682,6 +693,23 @@ def commit():   # the packer's commit; DM_PACKER_COMMIT when the repository's to
     return r or os.environ.get('DM_PACKER_COMMIT') or 'unknown'
 
 
+def place_cheats(g, out):
+    """The profile's cheat files (game.tsv cheats rows, game.Game.cheats: Atmosphère-format, named <build>.txt) into <out>/cheats/, from where the launcher copies them into
+    its own cheats folder for the game when Game settings › Cheats is on (Cheats.java). Not in the rewrite key: they change no code, only what the host writes while the game
+    runs, so a new or changed cheat file needs a Prepare (this copy) but never makes a pack's code stale. A file of a row the profile no longer has is removed"""
+    try: files = g.cheats()
+    except ValueError as e: raise Error(str(e)) from None
+    d = out / 'cheats'
+    if files: d.mkdir(exist_ok=True)
+    for f in files:
+        tmp = d / (f.name + '.partial'); shutil.copyfile(f, tmp); os.replace(tmp, d / f.name)
+    if d.is_dir():
+        for old in d.iterdir():
+            if old.name not in {f.name for f in files}: old.unlink()
+        if not files: d.rmdir()
+    if files: print(f'cheats: {", ".join(f.name for f in files)} into {d}')
+
+
 def main():
     ap = argparse.ArgumentParser(description='Pack a dumped game for the Android launcher: its code modules rewritten with --target android, no RomFS')
     ap.add_argument('game', type=Path, help='the game folder (base/exefs, base/romfs or an update\'s romfs, updates/<version>/, dlc/), or a .nup file')
@@ -768,9 +796,10 @@ def main():
             place_nros(work / 'android-nro' if nros else None, out)
         if a.code_only: print(f'done: the modules in {out} (--code-only: pack.tsv and the shaders unchanged)'); return
         if a.keep_code:
-            coll = folder.parent / f'{app:016X}-work' / 'android-nro'   # the collected NROs the keys were made from, when this machine collected them
-            upgrade_keys(srcs | {n: coll / f'{n}.nro' for n in pack_nros(out) if (coll / f'{n}.nro').is_file()}, out, g)   # before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
+            coll = collected_nros(folder.parent / f'{app:016X}-work')   # the collected NROs the keys were made from, when this machine collected them
+            upgrade_keys(srcs | {n: coll / f'{n}.nro' for n in pack_nros(out) if coll and (coll / f'{n}.nro').is_file()}, out, g)   # before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
         shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
+        place_cheats(g, out)
         # a program n > 0 splits program 0's RomFS (its conorig) and the add-ons with its own main: its own RomFS holds no shaders (Wonder's program 1: one text file)
         shaders = None if a.no_shaders else pack_shaders(a, g, work, out, vdir, (conorig, exe) if a.program else (romfs, exe), list(dlc.values()) if a.program else ())
         scenes = scene_overlays(g, romfs, out)

@@ -135,6 +135,12 @@ final class Native {
     /** The gamepad becomes player 1 (PadOrder); player 1's device moves to its old player. 0, or -1 (every player taken, or not in this host). */
     static native int deviceFirst(int device, String name);
 
+    /** The controller applet's join screen (CtrlScreen): its state as UTF-8 text (nxhost_ctrl_state: "closed", or "open" and a line per player). */
+    static native byte[] ctrlState();
+
+    /** The join screen's own buttons: 0 cancel (Back), 1 OK, 2 the on-screen controls join as player 1 (nxhost_ctrl_button). */
+    static native void ctrlButton(int what);
+
     /** Rumble (Rumble.java): the listener's onRumble(player, intensity, sharpness) gets every change of a player's vibration; set once, before start. False without rumble in this host. */
     static native boolean setRumbleListener(Object listener);
 
@@ -149,9 +155,17 @@ final class Native {
     static native void decoupleSet(boolean on);
     /** Hold 60 fps while the game runs (games whose profile has fps_steps: Prefs.steps; hle_fpslock.c nxhost_fps_hold60_set) */
     static native void hold60Set(boolean on);
+    /** A cheat on or off while the game runs, by its key (Cheats.Entry.key: the name, "Name #2" for a duplicate's second entry), for a game started with its Cheats switch on
+     *  (hle_cheats.c nxhost_cheat_set, which also rewrites the folder's &lt;build&gt;.enabled): 1 now in that state, 0 no plain cheat, -1 no such key, -2 not in this host */
+    static native int cheatSet(String key, boolean on);
     /** Game resolution while the game runs, for a game with graphics_scale rows (Profile.resolutionLive): the graphics scale (0-2, -1 following the operation mode) and the operation mode
      *  (0 handheld, 1 console, -1 the profile's own); the host posts the console's change notifications and the game queries them again (hle_oe.c nxhost_graphics_mode_set). False when this host has no such call */
     static native boolean graphicsModeSet(int scale, int opmode);
+    /** Game resolution while the game runs with a graphics size too (DM_GRAPHICS_SIZE, a game whose size gate draws below its scales; 0x0 the game's own): the scale, mode and size
+     *  set together, one round of notifications (hle_oe.c nxhost_graphics_set). False when this host has no such call */
+    static native boolean graphicsStateSet(int scale, int opmode, int width, int height);
+    /** Profile.resolutionLive's {scale, mode, width, height} while the game runs */
+    static boolean graphicsSet(int[] m) { return graphicsStateSet(m[0], m[1], m[2], m[3]); }
     /** Resolution and Upscaling quality while the game runs, for a game with a render_cfg row (Profile.renderCfg): the output height (0 Original), the render scale in percent and the
      *  graphics quality (1 quality, 0 performance), -1 keeping one; the host writes them at the game's next notification 31, clamped to the render target pool the game started with
      *  (hle_render.c nxhost_render_set). False when this host has no such call */
