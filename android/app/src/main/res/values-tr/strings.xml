@@ -125,6 +125,7 @@
     <string name="home_ready">Hazır</string>
     <string name="home_ready_game_code_update_paused">Hazır · oyun kodu güncellemesi duraklatıldı</string>
     <string name="home_ready_game_code_update_waits">Hazır · oyun kodu güncellemesi bekliyor</string>
+    <string name="home_ready_game_code_update_stopped">Hazır · oyun kodu güncellemesi durdu, tekrar denemek için dokunun</string>
     <string name="home_ready_shaders_need_one_update">Hazır · gölgelendiricilerin bir güncellemeye ihtiyacı var</string>
     <string name="home_ready_update">Hazır · güncelleme</string>
     <string name="home_ready_updating_game_code">Hazır · oyun kodu güncelleniyor</string>
@@ -175,6 +176,8 @@
     <string name="settings_on_the_controller_or_the">Kumandada veya kumandasız telefonda</string>
     <string name="settings_overlay">Bindirme</string>
     <string name="settings_picture_from_the_release_notes">Sürüm notlarından resim</string>
+    <string name="settings_small_fix_updates">Küçük düzeltme güncellemeleri</string>
+    <string name="settings_small_fix_updates_help">Uygulama açılırken küçük düzeltme sürümlerini öner. Kapalıysa yalnızca büyük güncellemeler önerilir; Güncellemeleri denetle yine en yenisini gösterir. Sonraki büyük güncelleme tüm düzeltmeleri içerir.</string>
     <string name="settings_player_wiki">Oyuncu wikisi</string>
     <string name="settings_remove_leftovers_and_old_files">Artıkları ve eski dosyaları kaldırır; kayıtlara asla dokunmaz</string>
     <string name="settings_sample_games">Örnek oyunlar</string>

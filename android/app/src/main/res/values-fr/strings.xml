@@ -125,6 +125,7 @@
     <string name="home_ready">Prêt</string>
     <string name="home_ready_game_code_update_paused">Prêt · mise à jour du code du jeu en pause</string>
     <string name="home_ready_game_code_update_waits">Prêt · mise à jour du code du jeu en attente</string>
+    <string name="home_ready_game_code_update_stopped">Prêt · mise à jour du code du jeu arrêtée, touchez pour réessayer</string>
     <string name="home_ready_shaders_need_one_update">Prêt · les shaders ont besoin d\'une mise à jour</string>
     <string name="home_ready_update">Prêt · mise à jour</string>
     <string name="home_ready_updating_game_code">Prêt · mise à jour du code du jeu</string>
@@ -175,6 +176,8 @@
     <string name="settings_on_the_controller_or_the">Sur la manette, ou sur le téléphone sans manette</string>
     <string name="settings_overlay">Surimpression</string>
     <string name="settings_picture_from_the_release_notes">Image des notes de version</string>
+    <string name="settings_small_fix_updates">Mises à jour de petits correctifs</string>
+    <string name="settings_small_fix_updates_help">Propose les versions de petits correctifs au démarrage. Désactivé : seules les grosses mises à jour sont proposées ; Rechercher des mises à jour montre toujours la plus récente. La prochaine grosse mise à jour contient tous les correctifs.</string>
     <string name="settings_player_wiki">Wiki des joueurs</string>
     <string name="settings_remove_leftovers_and_old_files">Retire les restes et les anciens fichiers ; jamais les sauvegardes de jeu</string>
     <string name="settings_sample_games">Jeux d\'exemple</string>

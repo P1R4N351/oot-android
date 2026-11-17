@@ -706,6 +706,9 @@ public final class MainActivity extends Activity {
         LinearLayout upd = settingsCard(content);
         updateRow = new Ui.Setting(this, "🔄", Tx.s(R.string.common_check_for_updates), v -> Updater.checkNow(this)).chevron(this);
         upd.addView(updateRow.view);
+        upd.addView(new Ui.Setting(this, "🩹", Tx.s(R.string.settings_small_fix_updates), null)
+                .toggle(this, Prefs.hotfixUpdates(this), (b, on) -> Prefs.hotfixUpdates(this, on))
+                .value(Tx.s(R.string.settings_small_fix_updates_help)).view);
         upd.addView(new Ui.Setting(this, "📖", Tx.s(R.string.settings_player_wiki), v -> openLink(WIKI_URL)).chevron(this)
                 .value(Tx.s(R.string.settings_guides_what_every_setting_does)).view);
 
@@ -1685,7 +1688,12 @@ public final class MainActivity extends Activity {
                     if (Ondevice.autoCodeUpdate(this, new File(g.gameDir), new File(g.packDir))) {
                         state(st, Tx.s(R.string.home_ready_updating_game_code), R.color.bn_leaf, ST_SOFT | ST_WORKING);
                         updating.put(st, g); updateTick();
-                    } else state(st, Tx.s(R.string.home_ready_game_code_update_waits), R.color.bn_leaf, ST_SOFT);   // a game or another job runs (or it was tried this run): the next check starts it
+                    } else {
+                        boolean stopped = Ondevice.codeUpdateTried(new File(g.gameDir)) && !Ondevice.busy(this);   // started this run and the code is still not new (stopped, failed): nothing starts it again by itself
+                        state(st, Tx.s(stopped ? R.string.home_ready_game_code_update_stopped : R.string.home_ready_game_code_update_waits), stopped ? R.color.bn_accent : R.color.bn_leaf, ST_SOFT);
+                        // a tap runs Prepare again either way (it asks first): the chip may wait for a game or a job that is stuck, and a chip that does nothing when tapped is the report this answers
+                        st.setOnClickListener(v -> { if (!needAccess(new File(g.gameDir))) Ondevice.prepare(this, new File(g.gameDir), true); });
+                    }
                     return;
                 }
                 // A pack whose code other tools made shows no chip: it usually runs; the game page offers Prepare again

@@ -125,6 +125,7 @@
     <string name="home_ready">Listo</string>
     <string name="home_ready_game_code_update_paused">Listo · actualización del código del juego en pausa</string>
     <string name="home_ready_game_code_update_waits">Listo · actualización del código del juego en espera</string>
+    <string name="home_ready_game_code_update_stopped">Listo · actualización del código del juego detenida, toca para reintentar</string>
     <string name="home_ready_shaders_need_one_update">Listo · los shaders necesitan una actualización</string>
     <string name="home_ready_update">Listo · actualización</string>
     <string name="home_ready_updating_game_code">Listo · actualizando el código del juego</string>
@@ -175,6 +176,8 @@
     <string name="settings_on_the_controller_or_the">En el mando, o en el teléfono si no hay mando</string>
     <string name="settings_overlay">Superposición</string>
     <string name="settings_picture_from_the_release_notes">Imagen de las notas de la versión</string>
+    <string name="settings_small_fix_updates">Actualizaciones de correcciones pequeñas</string>
+    <string name="settings_small_fix_updates_help">Ofrece las versiones de correcciones pequeñas al iniciar la app. Desactivado: solo se ofrecen las actualizaciones grandes; Buscar actualizaciones sigue mostrando la más reciente. La próxima actualización grande incluye todas las correcciones.</string>
     <string name="settings_player_wiki">Wiki para jugadores</string>
     <string name="settings_remove_leftovers_and_old_files">Quita sobras y archivos antiguos; nunca partidas</string>
     <string name="settings_sample_games">Juegos de ejemplo</string>

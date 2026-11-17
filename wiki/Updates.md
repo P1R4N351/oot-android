@@ -8,6 +8,10 @@ Since v0.1.4 the app offers a newer release at start (**Update** or **Later**), 
 
 An update keeps the app's storage, so your saves, packs and copied games stay.
 
+### Big updates and small fixes (0.3.42)
+
+Every release says what kind it is in its notes: **major** (new things, the default), **hotfix** (a small fix, optional) or **critical** (a small fix everyone should take). Settings > **Updates** > **Small fix updates** decides what the app offers when it starts. Turn it off and the app offers only major and critical releases; the next major release always carries every small fix before it, so nothing is lost by skipping them. **Check for updates** always shows the newest release of any kind.
+
 ## After an app update
 
 A new version may come with new shaders. What you see depends on what changed:

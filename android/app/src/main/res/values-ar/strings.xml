@@ -125,6 +125,7 @@
     <string name="home_ready">جاهز</string>
     <string name="home_ready_game_code_update_paused">جاهز · تحديث رمز اللعبة متوقف مؤقتًا</string>
     <string name="home_ready_game_code_update_waits">جاهز · تحديث رمز اللعبة في الانتظار</string>
+    <string name="home_ready_game_code_update_stopped">جاهز · توقف تحديث رمز اللعبة، المس للمحاولة مجددًا</string>
     <string name="home_ready_shaders_need_one_update">جاهز · المُظلِّلات تحتاج إلى تحديث واحد</string>
     <string name="home_ready_update">جاهز · تحديث</string>
     <string name="home_ready_updating_game_code">جاهز · جارٍ تحديث رمز اللعبة</string>
@@ -175,6 +176,8 @@
     <string name="settings_on_the_controller_or_the">على ذراع التحكم، أو على الهاتف بدونها</string>
     <string name="settings_overlay">الطبقة العلوية</string>
     <string name="settings_picture_from_the_release_notes">صورة من ملاحظات الإصدار</string>
+    <string name="settings_small_fix_updates">تحديثات الإصلاحات الصغيرة</string>
+    <string name="settings_small_fix_updates_help">اعرض إصدارات الإصلاحات الصغيرة عند بدء التطبيق. عند الإيقاف: تُعرض التحديثات الكبيرة فقط؛ ويظل «التحقق من التحديثات» يعرض الأحدث. التحديث الكبير التالي يتضمن كل الإصلاحات.</string>
     <string name="settings_player_wiki">ويكي اللاعبين</string>
     <string name="settings_remove_leftovers_and_old_files">إزالة البقايا والملفات القديمة؛ لا يحذف الحفظ أبدًا</string>
     <string name="settings_sample_games">ألعاب تجريبية</string>

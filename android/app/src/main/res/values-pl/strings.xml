@@ -125,6 +125,7 @@
     <string name="home_ready">Gotowe</string>
     <string name="home_ready_game_code_update_paused">Gotowe · aktualizacja kodu gry wstrzymana</string>
     <string name="home_ready_game_code_update_waits">Gotowe · aktualizacja kodu gry czeka</string>
+    <string name="home_ready_game_code_update_stopped">Gotowe · aktualizacja kodu gry zatrzymana, dotknij, aby ponowić</string>
     <string name="home_ready_shaders_need_one_update">Gotowe · shadery wymagają aktualizacji</string>
     <string name="home_ready_update">Gotowe · aktualizacja</string>
     <string name="home_ready_updating_game_code">Gotowe · aktualizacja kodu gry</string>
@@ -175,6 +176,8 @@
     <string name="settings_on_the_controller_or_the">Na kontrolerze lub na telefonie bez niego</string>
     <string name="settings_overlay">Nakładka</string>
     <string name="settings_picture_from_the_release_notes">Obraz z notatek wydania</string>
+    <string name="settings_small_fix_updates">Aktualizacje drobnych poprawek</string>
+    <string name="settings_small_fix_updates_help">Proponuj wydania z drobnymi poprawkami przy uruchomieniu. Wyłączone: tylko duże aktualizacje; Sprawdź aktualizacje nadal pokazuje najnowszą. Następna duża aktualizacja zawiera wszystkie poprawki.</string>
     <string name="settings_player_wiki">Wiki dla graczy</string>
     <string name="settings_remove_leftovers_and_old_files">Usuwa pozostałości i stare pliki; nigdy zapisów</string>
     <string name="settings_sample_games">Przykładowe gry</string>

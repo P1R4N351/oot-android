@@ -138,6 +138,7 @@
     <string name="home_ready">Ready</string>
     <string name="home_ready_game_code_update_paused">Ready · game code update paused</string>
     <string name="home_ready_game_code_update_waits">Ready · game code update waits</string>
+    <string name="home_ready_game_code_update_stopped">Ready · game code update stopped, tap to retry</string>
     <string name="home_ready_shaders_need_one_update">Ready · shaders need one update</string>
     <string name="home_ready_update">Ready · update</string>
     <string name="home_ready_updating_game_code">Ready · updating game code</string>
@@ -190,6 +191,8 @@
     <string name="settings_on_the_controller_or_the">On the controller, or the phone without one</string>
     <string name="settings_overlay">Overlay</string>
     <string name="settings_picture_from_the_release_notes">Picture from the release notes</string>
+    <string name="settings_small_fix_updates">Small fix updates</string>
+    <string name="settings_small_fix_updates_help">Offer small fix releases when the app starts. Off: only big updates are offered; Check for updates still shows the newest. The next big update carries every fix.</string>
     <string name="settings_player_wiki">Player wiki</string>
     <string name="settings_remove_leftovers_and_old_files">Remove leftovers and old files; never saves</string>
     <string name="settings_sample_games">Sample games</string>

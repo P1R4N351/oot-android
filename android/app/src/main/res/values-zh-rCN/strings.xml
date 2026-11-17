@@ -125,6 +125,7 @@
     <string name="home_ready">就绪</string>
     <string name="home_ready_game_code_update_paused">就绪 · 游戏代码更新已暂停</string>
     <string name="home_ready_game_code_update_waits">就绪 · 游戏代码更新等待中</string>
+    <string name="home_ready_game_code_update_stopped">就绪 · 游戏代码更新已停止，点按重试</string>
     <string name="home_ready_shaders_need_one_update">就绪 · 着色器需要更新一次</string>
     <string name="home_ready_update">就绪 · 更新</string>
     <string name="home_ready_updating_game_code">就绪 · 正在更新游戏代码</string>
@@ -175,6 +176,8 @@
     <string name="settings_on_the_controller_or_the">使用手柄，或不带手柄时使用手机</string>
     <string name="settings_overlay">浮层</string>
     <string name="settings_picture_from_the_release_notes">来自更新说明的图片</string>
+    <string name="settings_small_fix_updates">小修复更新</string>
+    <string name="settings_small_fix_updates_help">启动时提供小修复版本。关闭后只提供大更新；“检查更新”仍会显示最新版本。下一个大更新包含所有修复。</string>
     <string name="settings_player_wiki">玩家 Wiki</string>
     <string name="settings_remove_leftovers_and_old_files">清除残留和旧文件；绝不会删除存档</string>
     <string name="settings_sample_games">示例游戏</string>
