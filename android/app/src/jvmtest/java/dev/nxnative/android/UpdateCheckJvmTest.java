@@ -220,6 +220,14 @@ public final class UpdateCheckJvmTest {
         int[] cur = UpdateCheck.appVersion("0.1.3");
         eq("v0.1.4", pick(cur, rel("v0.1.4", false, true, apk("v0.1.4")), rel("v0.1.3", false, true, apk("v0.1.3"))), "a newer pre-release counts");
         eq("v0.1.4", pick(cur, rel("v0.1.4", false, false, apk("v0.1.4"))), "a full release too");
+        // the experimental Android 12 build's asset (..-android12.apk) is taken only by that build, and the other apps never take it, whatever the order
+        UpdateCheck.Asset a12 = new UpdateCheck.Asset("banana-native-v0.1.4-android12.apk", "https://github.com/moceure/BananaNative/releases/download/v0.1.4/banana-native-v0.1.4-android12.apk", 123456789, "sha256:" + HEX);
+        eq("banana-native-v0.1.4.apk", UpdateCheck.apk(rel("v0.1.4", false, false, a12, apk("v0.1.4"))).name, "a normal app skips the android12 asset even when it is listed first");
+        eq(null, UpdateCheck.apk(rel("v0.1.4", false, false, a12)), "a release with only the android12 asset is no update for a normal app");
+        UpdateCheck.android12 = true;
+        eq("banana-native-v0.1.4-android12.apk", UpdateCheck.apk(rel("v0.1.4", false, false, apk("v0.1.4"), a12)).name, "the android12 build takes its asset");
+        eq(null, pick(cur, rel("v0.1.4", false, false, apk("v0.1.4"))), "the android12 build is offered no normal APK (it could not install it)");
+        UpdateCheck.android12 = false;
         eq(null, pick(cur, rel("v0.1.3", false, true, apk("v0.1.3")), rel("v0.1.2", false, true, apk("v0.1.2"))), "nothing newer");
         eq(null, pick(cur, rel("v0.1.5", true, true, apk("v0.1.5"))), "a draft is skipped");
         eq("v0.1.4", pick(cur, rel("v0.1.5", true, true, apk("v0.1.5")), rel("v0.1.4", false, true, apk("v0.1.4"))), "the newest that is no draft");

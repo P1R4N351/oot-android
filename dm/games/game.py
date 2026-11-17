@@ -366,10 +366,10 @@ def header(g):
         sys.exit(f'{g.id}: mesh_vegetation_cut: at most 64 pairs, with unique keys')
     for r in g.values('option'):
         if len(r) < 3 or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', r[0]) or not r[1].strip() or not r[2].strip():
-            sys.exit(f'{g.id}: option takes <ENV name> <label> <one-line description> [restart|live] [implies=<ENV>] [needs=<marker>]: {r}')
+            sys.exit(f'{g.id}: option takes <ENV name> <label> <one-line description> [restart|live|settings] [implies=<ENV>] [needs=<marker>]: {r}')
         for col in r[3:]:
             for tok in col.split():
-                if tok in ('restart', 'live'):
+                if tok in ('restart', 'live', 'settings'):
                     pass
                 elif tok.startswith('implies='):
                     imp = tok.split('=', 1)[1]
@@ -380,7 +380,7 @@ def header(g):
                     if not re.fullmatch(r'[A-Za-z0-9_]+', mk):
                         sys.exit(f'{g.id}: option needs takes a fixup marker: {tok}')
                 else:
-                    sys.exit(f'{g.id}: option unknown attribute (expected restart|live, implies=<ENV>, needs=<marker>): {tok}')
+                    sys.exit(f'{g.id}: option unknown attribute (expected restart|live|settings, implies=<ENV>, needs=<marker>): {tok}')
     # Shaders whose subgroup operations run as subgroups of one invocation on Qualcomm's own driver even where the device has them (vka_shader.c single_lane, one_lane_forced;
     # a workaround, Android): one key per row
     sol = []

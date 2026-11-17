@@ -24,6 +24,14 @@ Shader updates can take a long time on a phone for games with many shaders (for 
 
 A game that asks for a shader your pack lacks gets it built on the phone while you play, with a **Building shaders (N)** label. See [Live shader building](Live-Shader-Building).
 
+## What is new in 0.3.41
+
+- **Fix:** Prepare stopped at "Finding the shaders" with `No module named 'pack_dump'` for games with add-ons (Ocarina of Time, Donkey Kong Bananza, others). Prepare again; nothing else needs doing.
+- **Fix:** button prompts show pictures again instead of "?".
+- **Fix:** with no game added, the **+** (Add game) button now stays on Home.
+- **Home:** a layout choice (row, grid with names, list), an options menu for each game (hold it, or **X** on a controller: Move, Set cover image, Remove game), your own cover pictures with a crop screen, a hint strip at the bottom ([Playing](Playing)).
+- **Pokopia (experimental):** Online events, Mods, Host a world ([Pokopia](Game-Pokemon-Pokopia)).
+
 ## What is new in 0.3.40
 
 - **Shaders are built while you play**, and Prepare can skip them: [Live shader building](Live-Shader-Building). After an app update a quick sample check can keep your old shaders.

@@ -111,7 +111,13 @@ HLE_FORCE("_ZN2nn4time16LoadTimeZoneRuleEPNS0_12TimeZoneRuleERKNS0_12LocationNam
           void *rule, const char *name) { (void)rule; LOG("time::LoadTimeZoneRule %.36s (host time zone used instead)", name ? name : "?"); return RES_OK; }
 HLE_FORCE("_ZN2nn4time14ToCalendarTimeEPNS0_12CalendarTimeEPNS0_22CalendarAdditionalInfoERKNS0_9PosixTimeERKNS0_12TimeZoneRuleE", "conversion with an explicit time zone rule; same as the device zone (host localtime_r)",
           Result, h_time_ToCalendarTimeRule, CalendarTime *ct, CalendarAdditionalInfo *ai, const int64_t *pt, const void *rule) { (void)rule; return h_time_ToCalendarTime(ct, ai, pt); }
-HLE_FORCE("_ZN2nn4time26StandardNetworkSystemClock20IsAccuracySufficientEv", "network clock accuracy (time service): offline, never sufficient", unsigned, h_time_NetAccurate, void) { return 0; }
+// The network clock: unavailable offline; with DM_ONLINE=1 it reads the user clock (DM_TIME moves both, so a game that prefers the network date sees one date) and is accurate
+HLE_FORCE("_ZN2nn4time26StandardNetworkSystemClock14GetCurrentTimeEPNS0_9PosixTimeE", "network clock (offline, unavailable; the user clock with DM_ONLINE=1)", Result, h_time_NetNow, int64_t *out) {
+    NET_TRACE("time::StandardNetworkSystemClock::GetCurrentTime -> %s", dm_online() ? "user clock" : "fail");
+    if (!dm_online()) return RES_FAIL;
+    int64_t ft = fixed_time(); *out = ft >= 0 ? ft : user_now(); return RES_OK;
+}
+HLE_FORCE("_ZN2nn4time26StandardNetworkSystemClock20IsAccuracySufficientEv", "network clock accuracy (time service): offline, never sufficient (always with DM_ONLINE=1)", unsigned, h_time_NetAccurate, void) { NET_TRACE("time::StandardNetworkSystemClock::IsAccuracySufficient -> %d", dm_online()); return dm_online(); }
 // Clock snapshot (Tears of the Kingdom: CreateWithStandardSystemClock asks the time service, which the host never opens → abort in sm::Initialize). 0xD0 bytes, laid out
 // as Ryujinx lays out the service's ClockSnapshot and as this SDK's constructor clears it (its last store is the byte at +0xcd): +0x00 user clock context {offset,
 // steady time point}, +0x20 network clock context, +0x40 user time, +0x48 network time, +0x50 / +0x58 user / network calendar, +0x60 / +0x78 their additional info,

@@ -813,6 +813,13 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Fix:** hooked: `time::ToPosixTime` (host `mktime`), and `time::ToPosixTime` with an explicit rule (the host's zone, as for `ToCalendarTime`); `time::LoadTimeZoneRule` and the `ToCalendarTime` overload with a rule (the host's zone is used); `time::StandardNetworkSystemClock::IsAccuracySufficient` (offline: no). `time::GetDayOfWeek` is a pure computation and needs nothing.
 - **Found on:** [13 Sentinels: Aegis Rim](../../dm/games/01003FC01670C000/README.md) (SDK 11, `ToPosixTime`); [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md) (SDK 11, the rest); [Octopath Traveler 0](../../dm/games/01005270232F2000/README.md) (`GetDayOfWeek`); [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md) (19.3.11, `ToPosixTime` with an explicit rule, found in the imports before it was met).
 
+### DM_ONLINE: what a game's online check reads
+
+- **Symptom:** Pokopia shows OFFLINE and hides an event that needs a first online connection although `nifm::IsNetworkAvailable` and the network clock report online.
+- **Cause:** the game's checks go through more than nifm: a monitor thread polling `IsNetworkAvailable` every 3 s, a request task (Submit, on-hold query, availability, `HandleNetworkRequestErrorResult`), and an HTTP layer asking `nifm::GetCurrentProxySetting` and `nsd::ResolveEx` before each request. Which of them the label reads is open; a label that follows a server answer cannot be faked here.
+- **Fix:** with `DM_ONLINE=1` the proxy query succeeds with no proxy and `nsd::Resolve` / `ResolveEx` keep the name (sockets still fail, nothing is sent). `DM_NET_TRACE=1` logs each such call with its result (`[net]` lines) so a phone run shows the order. Open: the decision path.
+- **Found on:** [Pokemon Pokopia](../../dm/games/0400A3A01EE4C000/README.md).
+
 ### Steady clock, clock snapshots and user clocks
 
 - **Symptom:** SDK calls that reach the time service, each aborting in `sm::Initialize` (or found in the imports before they were met).

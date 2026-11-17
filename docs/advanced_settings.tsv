@@ -158,6 +158,7 @@ DM_MTF_SKIP_EARLY	developer	Performance			text			both				0400D4201C6EA000
 DM_MTF_SKIP_LOG	developer	Performance			text			both				0400D4201C6EA000			
 DM_MTF_SKIP_MAX	developer	Performance			text			both				0400D4201C6EA000			
 DM_MTF_SKIP_TEST	developer	Performance			text			both				0400D4201C6EA000			
+DM_NET_TRACE	developer	Diagnostics			text			both							
 DM_NICK	developer	Game			text			both							
 DM_NRO	developer	Game			text			both							
 DM_NRO_COLLECT_J	developer	Game			text			both							
@@ -271,6 +272,7 @@ DM_NVN_XV	developer	Graphics			text			both
 DM_NVN_ZBLOCK	developer	Diagnostics			text			both							
 DM_NVN_ZSKIP	developer	Graphics			text			both							
 DM_OE_SCRIPT	developer	Diagnostics			text			both							
+DM_ONLINE	developer	Game			text			both							
 DM_OODLE_HOST	internal	Diagnostics			text			both						Mac or iOS only	
 DM_OODLE_JOB	developer	Diagnostics			text			both							
 DM_OODLE_MODULES	internal	Diagnostics			text			both						Mac or iOS only	

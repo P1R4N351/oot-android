@@ -15,6 +15,10 @@ pad_layout	full
 link_play	1
 # Pokopia's day/night cycle follows the user clock: the Game tab offers the launcher's Time of day (DM_TIME).
 time_of_day	1
+# Data mods: folders of replacement files over the RomFS (Game settings > Mods; DM_ROMFS_OVERLAY).
+mods	1
+# Online events: events that need an internet connection the first time (Apples to Applin, 2026-11-16 to 2026-12-01) stay hidden on a console with none. The switch only reports a connection (DM_ONLINE); nothing is sent.
+option	DM_ONLINE	Online events	Tells the game it is online so events that need a connection, such as Apples to Applin, can start. Nothing is sent. Experimental	settings
 
 # ---- Versions ----
 # v655360 is the update's title version; a dump has no control data to name a display version

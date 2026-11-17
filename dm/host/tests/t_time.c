@@ -1,8 +1,11 @@
 // Clock snapshot arithmetic (hle_time.c, from PR #36): CalculateSpanBetween and CalculateStandardUserSystemClockDifferenceByUser looked up by their mangled names in the real swforce
 // registrations, run on both host snapshot entries and on edited copies
 #include "../hle_time.c"
+#include "../hle_net.c"   // DM_ONLINE: nifm proxy setting and nsd name resolution
 #include <mach-o/getsect.h>
 
+void dm_guest_sleep_ns(int64_t ns) { (void)ns; }   // hle_net.c (socket Poll) links these
+void *guest_sym(const char *n) { (void)n; return NULL; }
 uint64_t guest_ns(void) { return clock_gettime_nsec_np(CLOCK_MONOTONIC); }
 static int checks, fails;
 extern const struct mach_header_64 _mh_execute_header;
@@ -26,7 +29,26 @@ int main(void) {
     uint8_t a[0xd0], b[0xd0], c[0xd0]; int64_t ts = -1;
     // Before the first snapshot: h_time_GetCurrentTime reads DM_FIXED_TIME once and caches it
     setenv("DM_FIXED_TIME", "1700000000", 1);
+    setenv("DM_ONLINE", "1", 1);   // read once: the network clock then follows the user clock
     setenv("TZ", "UTC", 1); tzset();
+    {   // DM_ONLINE=1: the network clock reads the user clock and is accurate (offline both fail)
+        Result (*net)(int64_t *) = hook("_ZN2nn4time26StandardNetworkSystemClock14GetCurrentTimeEPNS0_9PosixTimeE");
+        unsigned (*acc)(void) = hook("_ZN2nn4time26StandardNetworkSystemClock20IsAccuracySufficientEv");
+        int64_t nt = 0;
+        CHECK(net && net(&nt) == RES_OK && nt == 1700000000, "online: the network clock is the user clock");
+        CHECK(acc && acc() == 1, "online: the network clock is accurate");
+    }
+    {   // DM_ONLINE=1: the proxy query succeeds with no proxy, the nsd resolution keeps the name (offline both fail)
+        Result (*proxy)(void *) = hook("_ZN2nn4nifm22GetCurrentProxySettingEPNS0_12ProxySettingE");
+        Result (*resex)(void *, const void *) = hook("_ZN2nn3nsd9ResolveExEPNS0_4FqdnERKS1_");
+        Result (*res)(void *, const void *) = hook("_ZN2nn3nsd7ResolveEPNS0_4FqdnERKS1_");
+        uint8_t ps[0xaa]; memset(ps, 0xaa, sizeof ps);
+        CHECK(proxy && proxy(ps) == RES_OK && ps[0] == 0 && ps[0xa9] == 0, "online: no proxy, buffer cleared");
+        char in[256] = "receive-lp1.dg.srv.nintendo.net", out[256]; memset(out, 0x7f, sizeof out);
+        CHECK(resex && resex(out, in) == RES_OK && !strcmp(out, in) && out[255] == 0, "online: ResolveEx keeps the name");
+        CHECK(res && res(out, in) == RES_OK && !strcmp(out, in), "online: Resolve keeps the name");
+        CHECK(resex && resex(NULL, in) != RES_OK, "online: ResolveEx without a buffer fails");
+    }
     CHECK(snap(a) == RES_OK, "snapshot a");
     CHECK(a[0xcd] == 1, "standard snapshot type is 1");
     // Both entries must stay inside the SDK's 0xd0-byte buffer, including the type near its end.
