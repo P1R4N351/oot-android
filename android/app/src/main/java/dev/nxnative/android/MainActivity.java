@@ -1726,7 +1726,7 @@ public final class MainActivity extends Activity {
             saves.addView(new Ui.Setting(this, "💾", Tx.s(R.string.home_back_up_saves), v -> SaveUi.backup(this, g)).value(SaveUi.backupLine(this, g)).chevron(this).view);
             saves.addView(new Ui.Setting(this, "♻️", Tx.s(R.string.home_restore_saves), v -> SaveUi.restoreList(this, g)).value(Tx.s(R.string.home_from_a_backup_the_current)).chevron(this).view);
             saves.addView(new Ui.Setting(this, "📥", Tx.s(R.string.home_import_save), v -> SaveUi.importPick(this, g)).value(Tx.s(R.string.home_a_zip_or_a_save)).chevron(this).view);
-            File save = Folders.save(this, g);
+            File save = Folders.userSave(this, g);   // the save of the user games start with (Back up / Restore / Import act on it)
             TextView where = Ui.add(content, Ui.small(this, Tx.s(R.string.home_the_save_at, save != null ? save.getPath() : Tx.s(R.string.home_not_set))), 6);
             where.setTextSize(12);
             where.setTextIsSelectable(true);

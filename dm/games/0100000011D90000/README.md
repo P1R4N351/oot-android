@@ -52,12 +52,14 @@ Build with `scripts/build_ipa_from_nsp.py <dump folder> --platform mac`; its fin
 
 ## Found on this game
 
+- **A code mod's `subsdk1` without `eh_frame_hdr` stopped the rewrite** (`KeyError: 15`): [A module without `eh_frame_hdr` stops the rewrite](../../../docs/reference/rewriter.md#a-module-without-eh_frame_hdr-stops-the-rewrite-with-keyerror-15).
 - SDK 11.4.3's instance of [the SDK's address-region node area](../../../docs/reference/memory.md#the-sdks-address-region-node-area), with the cut keyed by the shared SDK build ID.
 - Legacy kernels held directly in [Unity ComputeShader objects](../../../docs/reference/shaders.md#unity-computeshader-objects).
 - [VP8 decoding through libvpx](../../../docs/reference/movies.md#vp8-uses-the-same-libvpx-worker-and-output-paths).
 - [Zero initialization of depth and stencil textures](../../../docs/reference/rendering.md#new-textures-start-as-zero).
 - [AudioOut stop releases pending buffers](../../../docs/reference/audio.md#stopping-an-audioout-releases-its-pending-buffers), reported on 1.0.0 in PR #190.
 - [Unity's integer target frame rate](../../../docs/reference/frame-rate.md#unitys-integer-target-frame-rate).
+- [Unity's vSyncCount and targetFrameRate, found through the internal-call table](../../../docs/reference/frame-rate.md#unitys-vsynccount-and-targetframerate-found-through-the-internal-call-table) (upstream on the Mac; on Android the build row stays, and the found field is written once with it).
 
 ## Open
 
