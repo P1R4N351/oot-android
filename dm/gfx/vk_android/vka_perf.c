@@ -105,12 +105,15 @@ void vka_perf_thread(int nice) {
 // replay thread's time, GPU its busy time; the target p % of the period, at most 33.3 ms (so a game the controller dropped to 20 fps still aims at 30: with the 50 ms
 // period as target the session would lower the clocks until the frame took 50 ms and keep it there). Each frame is reported once. Not phone-checked (STUTTER-TEST.md)
 // Since 2026-11-05 the period is the game's shortest (vka_dev.c vka_floor_period_ns: 16.7 ms unless the game asked for less, or DM_VK_GPU_FLOOR_PERIOD), not the current
-// one capped at 33.3 ms: at 30 fps a frame the controller could only take back to 60 fps once it fits in a vsync. Unset (-1), DM_VK_ADPF_SPAN is 100 when the session is
-// the GPU clock floor (vka_floor_adpf: neither VK_QCOM_queue_perf_hint nor the KGSL constraint) and 0 otherwise. With the queue hint or KGSL as the floor the session still
-// sets the CPU clocks and cores of the replay's threads, and the old reports read a frame recorded in 30 ms at 20 fps as on target against the 50 ms period; whether that
-// holds the frame rate low after the phone cools is open (docs/reference/frame-rate.md "A dynamic interval that does not step back up after the phone cools on the Vulkan
-// replay"): DM_VK_ADPF_SPAN=100 is that A/B arm, the default stays until a phone run shows it helps
-static int span_pct(void) { int vka_floor_adpf(void); int p = VKA_ENV("DM_VK_ADPF_SPAN", -1); if (p < 0) p = vka_floor_adpf() ? 100 : 0; return p <= 0 ? 0 : p > 100 ? 100 : p; }
+// one capped at 33.3 ms: at 30 fps a frame the controller could only take back to 60 fps once it fits in a vsync. Unset (-1), DM_VK_ADPF_SPAN is 100 whenever a GPU clock
+// floor is on (vka_floor_on: VK_QCOM_queue_perf_hint, the KGSL constraint or this session) and 0 with DM_VK_GPU_FLOOR=0. Before 2026-11-18 it was 100 only when the session
+// was the floor, and with the queue hint or KGSL the reports went against the present period with the frame's GPU time. On a host-DCVS Adreno (830, System Driver v800.72)
+// the system caps the GPU from userspace (kgsl-3d0 max_pwrlevel: level 5, 734 MHz, a few seconds after launch, with or without this session) and moves that cap with these
+// reports: 0.3 ms of GPU time against 16.7 ms in a menu walked it down to 389-525 MHz in 5 of 6 runs, and when the game's frames began there it took 39 ms of GPU time, the
+// controller went to 20 fps, and 39 against the new 50 ms target read as on target, so the cap never rose (OoT, 1 run of 6 stuck at 734 MHz for good). The floor itself
+// held: KGSL's "highest" is the cap. Against the shortest period the same frame reads 2-3 times over target (docs/reference/frame-rate.md "The GPU stays at a low clock
+// after a menu: the system's cap, moved by the ADPF reports")
+static int span_pct(void) { int vka_floor_on(void); int p = VKA_ENV("DM_VK_ADPF_SPAN", -1); if (p < 0) p = vka_floor_on() ? 100 : 0; return p <= 0 ? 0 : p > 100 ? 100 : p; }
 static int64_t span_target(double period_s, int pct) { (void)period_s; int64_t vka_floor_period_ns(void); return vka_floor_period_ns() * pct / 100; }
 uint64_t vka_floor_span_of(uint64_t f); uint64_t vka_frame_start_ns(uint64_t f); uint64_t now_ns(void);
 static void pace_tick(double period_s);
