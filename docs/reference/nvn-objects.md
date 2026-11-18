@@ -197,6 +197,14 @@ A game may tell NVN objects apart by their bytes, without an NVN call. A host re
 - **Check:** `make -C dm/host/tests GAME=<id> run` (`t_android_texown`: a copy finalized before and after its original, a re-Initialize of a copy, a moved original, many owners).
 - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#found-on-this-game) (upstream on the Mac: about 15,000 first uploads a frame in Kokiri Forest); on the phone pending a check.
 
+### A pool registered over memory an earlier pool held counts older stamps as written
+
+- **Symptom:** content kept by its dirty-page stamp is used again after a load although the game wrote new data over it: the game destroyed a memory pool, wrote the next area's data into the same memory and made a new pool over it, and a copy taken from the old data stays, with no red line. A cold start into the same place is right. Upstream found it in a fork that keeps vertex and index bytes on the GPU by these stamps: Skyward Sword HD drew Skyloft with the opening's meshes after a new game (crates one flat grey shape or missing, large flat green, grey or magenta shapes, flat grey sky).
+- **Cause:** `nvn_dirty_remove_range` makes a destroyed pool's pages writable and retires its range, so the game's next writes there fault nowhere. A pool registered over that memory reuses a slot with every page's generation back at 0, so a stamp taken in the old pool's time, or while no pool held the memory, saw no newer generation, and `nvn_dirty_since` and its variants answered "not written". A caller that keeps a stamp, or a range handle (`nvn_dirty_span`), past the pool's end meets it.
+- **Fix:** each range keeps the clock at its registration (`born`, `nvn_dirty.c`), and `nvn_dirty_since_span` (behind `nvn_dirty_since`) and `nvn_dirty_bounds_since` count a stamp older than it as written (all of the span), through a kept handle too. A stamp taken after the registration is unaffected. Ported from upstream nxnative (b65b9b0f, PR #2356).
+- **Check:** `make -C dm/gfx/tests GAME=<id> t_dirty_slots`: a pool destroyed, a write with no pool registered, and a new pool over the same memory: the older stamp is dirty through `nvn_dirty_since`, a kept handle and `nvn_dirty_bounds_since` (all of it), and a stamp taken after the new registration is clean.
+- **Found on:** The Legend of Zelda: Skyward Sword HD (`01002DA013484000`, no profile here), from a new game into Skyloft, upstream's report; not checked on Android.
+
 ### Dead texture serials kept in a ghost table
 
 - **Symptom:** the serial table grows by about 10 entries a frame (276,000 after 25,000 frames).
@@ -254,6 +262,13 @@ A game may tell NVN objects apart by their bytes, without an NVN call. A host re
 - **Cause:** our command records are larger than real NVN commands, so command buffers the game sizes for hardware overflow; when the game's out-of-memory callback declines to add memory, the host lends a segment. Many small command buffers each overflowing once per frame exhausted a fixed pool of 64 × 1 MB.
 - **Fix** (`hle_nvn.c`): the pool now grows on demand (256 KB segments, abort only beyond 1 GB; `hostseg_take`). A segment is released only when the game re-grants memory overlapping the guest bytes of the recording that jumped into it (`hostseg_release` in `AddCommandMemory`): the game records setup blocks once and keeps `CallCommands`-ing them for many frames, so recycling segments after a fixed number of frames would overwrite live recordings. An empty-pool grant of at most 4 KB outside a recording gets a 4 KB segment, a record larger than 256 KB gets a segment that holds it, and the cap counts every segment's bytes (`hostseg_size`). Such a grant has no guest range, so its segment is never reclaimed. On hardware a null pool cannot be written to, so a game that grants one has run out of the command memory it measured for itself: the host's records were larger than the driver's ([Model heaps sized by the host's command record sizes](memory.md#model-heaps-sized-by-the-hosts-command-record-sizes)). That is fixed in the record sizes; the host does not try to recycle these segments by guessing which recording a grant replaces.
 - **Found on:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md) (the many small command buffers: its opening course, per the comment at `HOSTSEG_SZ` in `hle_nvn.c`), [Super Mario Odyssey](../../dm/games/0100000000010000/README.md) (it hands out many 512-byte grants before recording, and with no recording to reclaim them by, 256 KB each reached the cap entering the Wooded Kingdom: the 4 KB segments; 1.4.1 still reached it after 11 minutes of play, about 260,000 4 KB segments, because its display-list heap was full and each re-recording took a new one; fixed by the cause, [Model heaps sized by the host's command record sizes](memory.md#model-heaps-sized-by-the-hosts-command-record-sizes)).
+
+### Small command-memory grants lose their guest origin
+
+- **Symptom:** `FATAL NVN command memory: the game's pool is empty` after the host-lent segment pool grows to 1 GiB, despite the game reusing its command-memory ring.
+- **Cause:** `AddCommandMemory` rejected non-null grants smaller than 64 bytes, although a callback can legitimately give 40 or 56 bytes. Recording started in host memory instead of the guest grant, so overflow had no guest origin for the game's later grants over it to release ([Host-lent command memory segments](#host-lent-command-memory-segments)).
+- **Fix** (`hle_nvn.c`): accept guest grants of at least 24 bytes: the 16-byte JUMP this host writes at the write position when a recording changes segment, after up to 7 bytes of alignment (upstream accepts a record header, 8 bytes, as its segment chain is not written into guest memory). `cmd_alloc_keep` still checks every full record's capacity. The host-segment cap and command-memory accounting are unchanged.
+- **Found on:** Borderlands 3 1.0.3 ([PR #826](https://github.com/seedds/nxnative/pull/826)), which has no profile in this repository: the author reports exhaustion near frame 3,005 on the Mac and an isolated minimum-grant fix stabilizing at 51 segments / 13 MiB through frame 5,909.
 
 ### What `GetCommandMemoryUsed` counts
 
@@ -566,6 +581,14 @@ Games read this count as a position in their own command memory and size their h
 - **Found on:** the source names no game.
 - **Check:** `t_dirty_slots` covers it.
 
+### Cached dirty-range lookups with overlapping pools
+
+- **Symptom:** sparse-texture checks spend substantial submission CPU time searching thousands of memory pools; a cache that returns any containing live range instead can miss writes to a shared host page and leave texture content stale.
+- **Cause:** each sparse physical run calls `nvn_dirty_since`, and `find_span` scanned every registered range from slot zero (Mario Kart World has about 5,000 pools). After host-page rounding several ranges can hold one span ([Dirty-page ranges of pools that share a host page](#dirty-page-ranges-of-pools-that-share-a-host-page)), but only the one that was protected has its writes stamped: a never-protected neighbour can still have generation zero. A cache that changes which range wins therefore changes correctness (upstream's "last range found" shortcut did), and reusing an earlier slot can change the first match even while a cached later range stays live.
+- **Fix** (`nvn_dirty.c`): each thread keeps its last eight selections, each with the bounds that made every earlier live range fail that lookup; a hit must keep failing them as well as fit the selected range, so it is the scan's own answer. Registration and retirement bracket their changes with an odd epoch, and every thread drops entries from another epoch, slot reuse included. Only descriptors and copied bounds are cached, never page generations or clean / dirty answers; the fault path is unchanged. Upstream measured a lookup alternating among four or eight late pools of 5,000 at about 6 to 7 ns instead of about 4,500 ns (synthetic, Apple M6), and about 1.2 ns more for a single repeated pool.
+- **Found on:** [Mario Kart World](../../dm/games/0400C3F00006E000/README.md): its slow-run sample reaches the scan through sparse-texture checks (upstream PR #1227). The missed write is reproduced by the CPU fixture, not by a gameplay image.
+- **Check:** `t_dirty_slots`: both orders of adjacent pools sharing a host page, a cached later range superseded by an earlier reused slot on another thread, and retirement of a cached match. The pool offsets are a quarter host page, so the cases hold on 4 KB pages as well as 16 KB ones.
+
 ### Writes beside a packaged texture in a shared host page
 
 - **Symptom:** packaged textures re-uploaded at every use with unchanged content; upload staging and frame times rising.
@@ -695,7 +718,7 @@ Games read this count as a position in their own command memory and size their h
 
 - **Symptom:** `[RED] NVN unimplemented function called: nvnTextureBuilderGetMemoryOffset`, then `nvnTextureBuilderGetRawStorageClass`.
 - **Cause:** the renderer reads a texture builder's storage back before it initializes the texture; the host had the texture's getters (`nvnTextureGetMemoryPool` / `Offset` / `RawStorageClass`) but not the builders'.
-- **Fix:** the texture, buffer and event builders return the pool and offset `SetStorage` stored (the pool getters return its address, as `nvnTextureGetMemoryPool` does; the header the prototypes come from declares the builders' by value, so they are `NVN_NOPROTO`), and the texture builder's raw storage class is the texture's (1): it only names the page kind a virtual pool maps (`NVNmappingRequest.storageClass`), which the host's virtual pools do not distinguish.
+- **Fix:** the texture, buffer and event builders return the pool and offset `SetStorage` stored (the pool getters return its address, as `nvnTextureGetMemoryPool` does; the [buffer and texture query declarations are now corrected](#builder-queries-return-pointers-and-retained-state); the event queries still use `NVN_NOPROTO`), and the texture builder's raw storage class is the texture's (1): it only names the page kind a virtual pool maps (`NVNmappingRequest.storageClass`), which the host's virtual pools do not distinguish.
 - **Found on:** [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md) (SDK 22, Frostbite's NVN renderer NRO).
 
 ### `Map` of a pool without CPU access returns NULL
@@ -704,6 +727,37 @@ Games read this count as a position in their own command memory and size their h
 - **Cause:** NVN maps a buffer or pool created with `NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS` to NULL, and the game depends on it: Frostbite's renderer (`OpcodeCopySubresource` in `Engine.Render.Core2.PlatformNvn.nro`) takes a buffer's GPU address as `nvnBufferGetAddress + (its data pointer − nvnBufferMap)`, with a null data pointer for a GPU-only buffer. The host's storage is CPU memory, and its `Map` returned the same pointer `GetAddress` does, so the sum came to 0 (traced to a `BufferMap` of a pool with flags `0x21`, CPU_NO_ACCESS | GPU_CACHED, right before the copy).
 - **Fix:** `nvnBufferMap` and `nvnMemoryPoolMap` return NULL when the pool has no CPU access, as in NVN (`hle_nvn.c`). The host's own accesses to the storage go through the pool, not through `Map`.
 - **Found on:** [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md) (SDK 22): the first match load.
+
+### CPU mappings and physical backing pools
+
+- **Symptom:** `MemoryPoolMap` or `BufferMap` returns a writable pointer for a virtual GPU range; a buffer initializes directly on a physical backing pool.
+- **Cause:** the host uses one address for CPU access, GPU storage and virtual aliases. The [`CPU_NO_ACCESS` check](#map-of-a-pool-without-cpu-access-returns-null) did not also exclude virtual ranges, and buffer initialization accepted physical backing pools. A virtual pool has a GPU address but no CPU mapping; its physical backing can have a CPU mapping of its own.
+- **Fix** (`hle_nvn.c`): `pool_cpu_map` excludes `CPU_NO_ACCESS` and `VIRTUAL` pools, and `BufferMap` adds the buffer's offset only to a non-null mapping. `BufferInitialize` rejects a `PHYSICAL` pool and clears the object on failure, as the driver does. The host's own accesses to the storage keep going through the pool.
+- **Found on:** synthetic mapping and initialization tests (upstream PR #1285); no game-specific crash is claimed.
+- **Check:** `t_nvn.c` (`pool_access`): both mapping entry points with a nonzero buffer offset, the GPU address of CPU-inaccessible storage, the physical backing's mapping, and a virtual pool before and after it maps physical pages.
+
+### Buffer flushes publish the corresponding pool range
+
+- **Symptom:** a CPU-cached buffer holds texture pixels, but a texture sharing its storage reads back as zeros after `nvnBufferFlushMappedRange`.
+- **Cause:** the host treated the buffer flush as a no-op because memory is unified. The host's textures can be separate copies of that memory (Metal textures, Vulkan images), and the no-op bypassed both the first-use flush tracking (`nvn_flushed`) and the texture-upload tracking of flushed ranges. A buffer flush names a range relative to its buffer, so the buffer's offset in its pool is added before it reaches the pool.
+- **Fix** (`hle_nvn.c`): `nvnBufferFlushMappedRange` forwards to `nvnMemoryPoolFlushMappedRange` with the buffer's pool offset plus the requested offset, and the same size, under the pool flush's lifetime, virtual-pool and upload rules.
+- **Found on:** upstream's ABI audit, a synthetic Metal readback with nonzero buffer and flush offsets (PR #1285): before the fix the pool-flush control uploaded the pixels and the buffer flush returned zeros.
+
+### Native NVN defaults
+
+- **Symptom:** a default sampler selects mipmaps unexpectedly; a builder reset loses the assigned device or reports another initial state than NVN's.
+- **Cause:** `SamplerBuilderSetDefaults` used OpenGL's minification filter and minimum LOD. Pool defaults cleared the device and left the flags zero; texture dimensions started at one; alpha-to-coverage dithering started off.
+- **Fix** (`hle_nvn.c`): NVN's defaults. Linear minification and magnification without mip filtering, LOD clamp `[0, 1000]`; pool flags `CPU_NO_ACCESS | GPU_CACHED` (`0x21`) with storage and size cleared and the device kept; texture dimensions unset (`0`; the layout and the Vulkan image read a zero as 1) with one level; alpha-to-coverage dither on. The dither changes what the state reads back, not how the host draws.
+- **Found on:** synthetic tests through the public entry points (upstream PR #1285); no game-specific visual result is claimed.
+- **Check:** `t_nvn.c` (`native_defaults`).
+
+### Builder queries return pointers and retained state
+
+- **Symptom:** querying a configured builder logs `[RED] NVN unimplemented function called`, or returns a null storage or device pointer.
+- **Cause:** nine pure queries were still stubs. The header also declared `MemoryPoolBuilderGetMemory` as returning `void`, and the buffer and texture builders' `GetMemoryPool` as returning a whole `NVNmemoryPool`, not the pointer native NVN returns in one register.
+- **Fix:** the declarations are corrected in `include/nvn.h` and `nvn_protos.h` regenerated (`gen_protos.py`). Implemented: the device builder's flags; the memory-pool builder's device, memory, size and flags; the buffer, texture and sampler builders' device; the texture builder's packaged-data pointer. Each reads the builder's state, including the device kept and the storage cleared by `SetDefaults`.
+- **Found on:** synthetic tests through the public entry points (upstream PR #1285).
+- **Check:** `t_nvn.c` (`builder_queries`), through the signature-checked types and the public procedure lookup.
 
 ### NVN calls that were red stubs
 

@@ -28,6 +28,7 @@ The game keeps about 4 to 6 GB of images. A memory saver (soft textures) keeps b
 
 ## Known issues
 
+- **GPU lost after some minutes (Turnip):** in about half of our runs on 0.3.43 the GPU was lost after some minutes and the game exited. It is an older known problem; the cause is open.
 - **Frame rate in races:** the game's own controller switches between 60 and 30 by load (interval 1 and 2). One report (issue 181) of 10-20 fps on a Snapdragon 8 Gen 3 with Turnip T30 led to the GPU waits being switched off in the profile (34-39 against 52-60 fps on V39 with them on). Whether a cut costs the replay is open.
 - **Heat:** races ran at 22-23 ms a frame on a warm phone, with CPU clocks capped by heat in some runs. See [Heat and battery](Heat-and-Battery).
 - **Texture detail:** large terrain arrays start at a coarser level on phones that lack sparse residency for some compressed formats (so the ground can be blurrier near the camera).

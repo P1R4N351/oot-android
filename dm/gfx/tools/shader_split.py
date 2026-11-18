@@ -41,6 +41,7 @@
 #   · BERG (Snowdrop, Mario + Rabbids Sparks of Hope): shader objects in the individually zstd-compressed records of its SDF data slices, see snowdrop_shaders
 #   · bnd2 (Criterion's Bundle 2, Need for Speed: Hot Pursuit Remastered): whole GLSLC outputs in the zlib resources of SHADERS.BNDL, see bnd2_resources and bnd2_shaders
 #   · Heaps (Dead Cells): whole GLSLC outputs in base64 after the GLSL of the engine's shader cache (shaders.cache.nx), inside its PAK archive, see heaps_pak_files and heaps_shaders
+#   · igArchive (Vicarious Visions' Alchemy, Crash Team Racing Nitro-Fueled): whole GLSLC outputs in the shader .igz files of its .pak archives (LZMA in 0x8000-byte blocks), see iga_entries and iga_shaders
 #   · Frostbite (EA SPORTS FC 27): the CompiledBytecode resources of the bundles its superbundle tables (.toc) list, in its cas files (Oodle Leviathan, decoded by the game's own decoder in the
 #       Mac host), each a VNVN record with one code area and control section (frostbite.py), see frostbite_jobs and frostbite_shaders
 #   · PDAT (the engine with the namespace phx, Kirby Air Riders): flatbuffer records tagged PMAP, zstd frames in the .dat archives, each holding a program's control sections and code areas, see pdat_jobs and pdat_shaders
@@ -2517,10 +2518,25 @@ def ue_inline_shaders(d, label, out):
         out.append((f'{label}#UE{at:x}', st, bytes(ctl), bytes(code)))
 
 def arh_entries(d):
-    """Monolith ARH1 index → (path, ARD offset, stored size). The XOR trie
+    """Monolith ARH1/ARH2 index → (path, ARD offset, stored size). The ARH1 XOR trie
     reconstructs full paths; the metadata table supplies the actual file bounds.
     Format: https://github.com/roccodev/ard-tools/blob/master/docs/arh1.md
     Xenoblade 3 2.2.1: 76,445 entries in bf3.arh, 9.05 GB in bf3.ard."""
+    if d[:4] == b'arh2':
+        # ARH2 (Xenoblade X DE) replaces paths with hashes. Entries are
+        # (u64 hash, u32 disk size, u32 expanded size); offsets accumulate
+        # aligned disk sizes, which already include any XBC1 wrapper.
+        # Layout: Nenkai/XbxDeTool, ArchiveHeaderFile.cs; checked against sts.arh.
+        if len(d) < 16: red('ARH2: truncated header')
+        count, align = struct.unpack_from('<2I', d, 4)
+        if not align or align & (align - 1): red('ARH2: invalid file alignment')
+        if count > (len(d) - 16) // 16: red('ARH2: index table out of bounds')
+        out, off = [], 0
+        for i in range(count):
+            key, size, _ = struct.unpack_from('<Q2I', d, 16 + i * 16)
+            if size: out.append((f'/#{key:016x}', off, size))
+            off += (size + align - 1) & -align
+        return out
     if len(d) < 48 or d[:4] != b'arh1': return []
     _, count, so, sn, no, nn, fo, fn, key = struct.unpack_from('<9I', d, 4)
     if nn != count * 8 or any(o > len(d) or n > len(d) - o for o, n in ((so, sn), (no, nn), (fo, fn * 24))): red('ARH1: index table out of bounds')
@@ -2555,13 +2571,13 @@ def arh_jobs(files, parts=64):
     for path, rel in files:
         if not path.endswith('.arh'): continue
         with open(path, 'rb') as f: d = f.read()
-        if d[:4] != b'arh1': continue
+        if d[:4] not in (b'arh1', b'arh2'): continue
         ard = path[:-4] + '.ard'
-        if not os.path.isfile(ard): red(f'{rel}: ARH1 index has no ARD data file')
+        if not os.path.isfile(ard): red(f'{rel}: ARH index has no ARD data file')
         entries = arh_entries(d); length = os.path.getsize(ard)
         if any(o > length or n > length - o for _, o, n in entries): red(f'{rel}: ARD entry out of bounds')
         step = max(1, (len(entries) + parts - 1) // parts)
-        jobs += [(ard, rel[:-4] + '.ard', (b'ARH1', entries[i:i + step])) for i in range(0, len(entries), step)]
+        jobs += [(ard, rel[:-4] + '.ard', (b'ARH', entries[i:i + step])) for i in range(0, len(entries), step)]
         used.update((path, ard))
     return jobs, used
 
@@ -2626,12 +2642,16 @@ def hcps_shaders(d, base, label):
             # 768-byte vertex + 256-byte geometry, two 0x880 controls). NVSD's
             # vertex size covers both; each NVN control gives its own code size.
             while c < pend:
-                if c + 0x708 > pend: red(f'{label} HCPS: truncated control')
-                nc = struct.unpack_from('<I', ctls, c + 0x20)[0]
-                nk = struct.unpack_from('<I', ctls, c + 0x704)[0]
-                if nc < 0x760 or c + nc > pend or not nk or k + nk > kend: red(f'{label} HCPS: shader exceeds program range')
+                # One asset can contain both Maxwell and NVN2 HCPS programs
+                # (Xenoblade X DE). Read each control's own version and lengths.
+                if c + NVN2_KEY_CTL > pend: red(f'{label} HCPS: truncated control')
+                nvn2 = nvn2_ctl(ctls[c:c + NVN2_KEY_CTL])
+                if not nvn2 and c + 0x708 > pend: red(f'{label} HCPS: truncated control')
+                nc = struct.unpack_from('<I', ctls, c + (0x30 if nvn2 else 0x20))[0]
+                nk = struct.unpack_from('<I', ctls, c + (0x44 if nvn2 else 0x704))[0]
+                if nc < (NVN2_KEY_CTL if nvn2 else 0x760) or c + nc > pend or not nk or k + nk > kend: red(f'{label} HCPS: shader exceeds program range')
                 ctl, code = ctls[c:c + nc], codes[k:k + nk]; c += (nc + 7) & ~7; k += nk
-                st = glslc_stage(ctl, code)
+                st = nvn2_stage(ctl, code) if nvn2 else glslc_stage(ctl, code)
                 why = check(label, st, ctl, code) if st else 'unknown stage'
                 if why: red(f'{label} HCPS SLCT {i} variant {j}: {why}')
                 out.append((f'{label}#HCPS@{base:#x}#var{i}.{j}', st, ctl, code))
@@ -2882,7 +2902,7 @@ def unity_compute(x, base, trees):
     Unity 2022.3 lists a kernel's variants in uniqueVariants; Unity 2020.3 keys them by keyword set in variantMap (AI: THE SOMNIUM FILES - nirvanA Initiative's bundles, whose type trees say so).
     Unity 2019.4 has no variant wrapper: each named kernel holds its code directly (Pokemon Brilliant Diamond's GPU skinning)."""
     import unityfs
-    out = []
+    out = []; empty = []   # the kernel variants without code (below)
     try:
         for cid, pid, o in unityfs.serialized_objects(x, COMMON, {unityfs.CLASS_COMPUTE_SHADER}, trees):
             for v in o['variants']:
@@ -2890,7 +2910,11 @@ def unity_compute(x, base, trees):
                     variants = k['uniqueVariants'] if 'uniqueVariants' in k else [p['second'] for p in k['variantMap']] if 'variantMap' in k else [k]
                     for i, u in enumerate(variants):
                         where = f'{base}#{o["m_Name"]}#{k["name"]}.{i}'
+                        # a kernel variant with 0 bytes of code is no program (My Time at Sandrock's `shader` bundle: SkyboxCompute's CubemapFilteringSecondPassCS).
+                        # unity_program raised on it, and the whole file went as unreadable, its 152 Shader objects with it
+                        if not u['code']: empty.append(where); continue
                         out.extend((where, st, ctl, cd) for st, ctl, cd in unity_program(u['code'], where, 'cs'))
+        if empty: print(f'unity compute: {len(empty)} kernel variant(s) without code left out (first: {empty[0]})', flush=True)   # counted, not silent
     except unityfs.NoTree as e:
         if not TREES: raise
         print(f'[RED] {base}: ComputeShader objects that no bundle lends a type tree to and unityfs.py has no layout for, their kernels are left out ({e})', flush=True)
@@ -2926,7 +2950,7 @@ def unity_shaders(d, label, out, trees):
     """Shaders and compute shaders in a UnityFS bundle or serialized file → out and legacy pass pairs; raises NoTree when no type tree is available"""
     import unityfs
     if COMMON is None: red(f'{label}: a Unity asset, but main has no Unity common string table')
-    pairs = set()
+    pairs = set(); empty = []   # the subprograms without code (below)
     sers = unityfs.bundle_files(d) if d[:8] == b'UnityFS\0' else [('', d)]
     for node, x in sers:
         if not unityfs.is_serialized(x): continue
@@ -2936,13 +2960,17 @@ def unity_shaders(d, label, out, trees):
             legacy = {}
             for plat, k, sp in unityfs.shader_programs(o, unity_code_blobs(o)):
                 where = f'{label}{":" + node if node else ""}#{name}#var{plat}.{k}'
-                code = unityfs.subprogram(sp)[4]
+                # a blob entry of 0 bytes, or one whose program code is 0 bytes, is no program: left out and counted, as unity_compute does for a kernel without
+                # code. Reading it raised, and the whole file went as unreadable. None was met in a game's files yet
+                code = unityfs.subprogram(sp)[4] if sp else b''
+                if not code: empty.append(where); continue
                 programs = unity_program(code, where, stages.get(k))
                 out.extend((where, st, ctl, cd) for st, ctl, cd in programs)
                 if len(code) >= 0x14 and code[0x10:0x14] == CTL_MAGIC: legacy[plat, k] = programs[0]
             pairs |= unity_pass_pairs(o, legacy)
         out.extend(unity_compute(x, f'{label}{":" + node if node else ""}', trees))
         out.extend(unity_text_glslc(x, f'{label}{":" + node if node else ""}'))
+    if empty: print(f'unity shaders: {len(empty)} subprogram(s) without code left out (first: {empty[0]})', flush=True)   # counted, not silent
     return pairs
 
 def unity_text_glslc(x, base):
@@ -3133,6 +3161,72 @@ def heaps_shaders(d, label):
     if not found: red(f'{label}: no GLSLC output in //BIN= comments')
     return found
 
+# Alchemy's igArchive (iga_entries, iga_member, iga_shaders), first met on Crash Team Racing Nitro-Fueled
+IGA = b'IGA\x1a'
+IGA_BLOCK = 0x8000
+
+def iga_entries(f):
+    """The files of an Alchemy igArchive version 13 (Vicarious Visions, Crash Team Racing Nitro-Fueled: 401 .pak files, 9.6 GB), open at +0 → (sector size, [(name, offset, length, blocks)]).
+    Header: 'IGA\x1a', u32 version, u32 table size, u32 file count, u32 sector size (0x800), two hash search words, u32 counts of the large, medium and small block tables,
+    u64 name table offset, u32 name table size, u32 flags. Then a u32 hash per file, a 16-byte record per file {u32 offset, u32 ordinal, u32 length, u32 mode}, the large (u32),
+    medium (u16) and small (u8) block tables, and at the name table offset a u32 offset per file to its two names (the build path, then the path in the archive).
+    mode 0xFFFFFFFF: the file is stored as it is (blocks None). Else its top 4 bits name the compression (2 = LZMA, the only one this game has) and the rest is the index of the
+    file's first entry in a block table: the small one for a file of at most 0x7F sectors, the medium one up to 0x7FFF sectors, else the large one (none in this game: read by the
+    same rule, not checked on a file). A file has one entry per 0x8000 bytes: the top bit says the block is compressed, the other bits are its sector from the file's offset.
+    Checked on all 74,311 files of the game's 401 archives: every block decodes to its length"""
+    h = f.read(0x38)
+    if len(h) < 0x38 or h[:4] != IGA: return None
+    ver, _, nf, sector, _, _, nl, nm, ns = struct.unpack_from('<9I', h, 4)
+    noff, nsz = struct.unpack_from('<QI', h, 0x28)
+    if ver != 13: red(f'igArchive version {ver}: only 13 is known')
+    if not sector or nf > 1 << 24 or max(nl, nm, ns) > 1 << 26 or nsz > 1 << 28: red('igArchive: a header count out of range')
+    base = 0x38 + 4 * nf; tl = base + 16 * nf; tm = tl + 4 * nl; ts = tm + 2 * nm
+    f.seek(0); t = f.read(ts + ns); f.seek(noff); names = f.read(nsz)
+    if len(t) < ts + ns or len(names) < 4 * nf: red('igArchive: its tables end past the file')
+    tabs = ((ts, 1, ns), (tm, 2, nm), (tl, 4, nl)); out = []
+    for i in range(nf):
+        off, _, length, mode = struct.unpack_from('<4I', t, base + 16 * i)
+        a = struct.unpack_from('<I', names, 4 * i)[0]; a = names.find(b'\0', a) + 1; b = names.find(b'\0', a)
+        if a <= 0 or b < 0: red(f'igArchive: file {i} has no name')
+        name = names[a:b].decode('utf-8', 'replace')
+        if mode == 0xFFFFFFFF: out.append((name, off, length, None)); continue
+        if mode >> 28 != 2: red(f'igArchive: {name}: compression {mode >> 28} is not known (2, LZMA, is)')
+        n = -(-length // IGA_BLOCK); at, w, cnt = tabs[0 if length <= 0x7f * sector else 1 if length <= 0x7fff * sector else 2]
+        first = mode & 0xfffffff
+        if first + n > cnt: red(f'igArchive: {name}: its blocks end past the block table')
+        vals = struct.unpack_from('<' + ' BH I'[w] * n, t, at + w * first); top = 1 << 8 * w - 1
+        out.append((name, off, length, tuple((v & top - 1, bool(v & top)) for v in vals)))
+    return sector, out
+
+def iga_member(f, sector, off, length, blocks):
+    """A file of an igArchive (iga_entries), decoded. A compressed block: u32 stored length, the 5 LZMA property bytes, then the raw LZMA stream of at most 0x8000 bytes"""
+    if blocks is None: f.seek(off); return f.read(length)
+    import lzma
+    out = bytearray()
+    for sec, packed in blocks:
+        want = min(IGA_BLOCK, length - len(out)); f.seek(off + sec * sector)
+        if not packed: out += f.read(want); continue
+        h = f.read(9)
+        if len(h) < 9: red('igArchive: a block ends past the file')
+        n, = struct.unpack_from('<I', h); pr = h[4]
+        if pr >= 9 * 5 * 5: red('igArchive: a block with LZMA properties out of range')
+        flt = dict(id=lzma.FILTER_LZMA1, dict_size=max(struct.unpack_from('<I', h, 5)[0], 4096), lc=pr % 9, lp=pr // 9 % 5, pb=pr // 45)
+        try: d = lzma.LZMADecompressor(lzma.FORMAT_RAW, filters=[flt]).decompress(f.read(n), max_length=want)
+        except lzma.LZMAError as e: red(f'igArchive: a block does not decode ({e})')
+        if len(d) != want: red(f'igArchive: a block decodes to {len(d)} bytes, not {want}')
+        out += d
+    if len(out) != length: red(f'igArchive: {len(out)} bytes read of a file of {length}')
+    return bytes(out)
+
+def iga_shaders(path, rel, found):
+    """Whole GLSLC outputs in the files of an igArchive (Crash Team Racing Nitro-Fueled: 2,582 in the 86 shader .igz files of archives/shaders_nx.pak, one stage each; its other
+    400 archives hold none). Every file is decoded and looked at, by no name"""
+    with open(path, 'rb') as f:
+        sector, ents = iga_entries(f)
+        for name, off, length, blocks in ents:
+            d = iga_member(f, sector, off, length, blocks)
+            if b'\x91\x68\x86\x19' in d: found += glslc_shaders(d, f'/{rel}/{name}', need=False)
+
 UE_TAG ={'SV': 'vs', 'SH': 'hs', 'SD': 'ds', 'SG': 'gs', 'SP': 'ps', 'SC': 'cs'}
 def main_imports(img):   # the names main imports (its dynamic symbols)
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../tools')); import nso_syms
@@ -3250,7 +3344,7 @@ def scan_file_in(args):
     if ext in ('.data', '.patch', '.debug', '.nxpc') and os.path.exists(stem + '.dict'): return rel, {}, set(), {}   # read through its Next Level Games index (nlg_shaders)
     with open(path, 'rb') as f: head = f.read(16)
     found = Shaders(); trees = {}
-    if len(args) > 2 and args[2][0] == b'ARH1':
+    if len(args) > 2 and args[2][0] == b'ARH':   # ARH1 and ARH2 share archive jobs
         arh_shaders(path, rel, args[2][1], found)
         return rel, uniq_keys(found), var_pairs(found), trees
     if head[:4] == NLG_DICT:
@@ -3300,6 +3394,9 @@ def scan_file_in(args):
         return rel, uniq_keys(found), var_pairs(found), trees
     if head[:4] == BND2:   # a Criterion Bundle 2 (Need for Speed: Hot Pursuit Remastered's SHADERS.BNDL): GLSLC outputs in its zlib resources (bnd2_shaders)
         found += bnd2_shaders(open(path, 'rb').read(), '/' + rel)
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if head[:4] == IGA:   # an Alchemy igArchive (Crash Team Racing Nitro-Fueled's .pak files): GLSLC outputs in its LZMA files (iga_shaders)
+        iga_shaders(path, rel, found)
         return rel, uniq_keys(found), var_pairs(found), trees
     if head[:3] == b'PAK':   # a Heaps PAK archive (Dead Cells): only its shader cache is read, not its 2 GB of other files (heaps_pak_files, heaps_shaders)
         with open(path, 'rb') as f:
@@ -3601,14 +3698,27 @@ def pooled(ex, jobs, total, start=0, chunk=1, cache=None):
     return [r for first, _ in batches for r in kept[first]]
 
 
+# A list argument (RomFS, main, DLC) whose paths may hold a comma. The lists were parted at every ',', so one game file named with a comma ("Yoru, Tomosu
+# [0100C2901153C000].nup", or a folder above it) became two paths that do not exist and the split stopped with FileNotFoundError.
+LIST_SEP = '\x1f'   # ASCII unit separator: not a character of a Windows file name, and not one anybody types into a POSIX one
+
+def path_list(arg):
+    """The paths of a list argument: parted at LIST_SEP when it has one; else the argument whole when it names something that is there (a file, a folder, a
+    node of a .nup: what the phone's split and pack_android.py pass, one path each); else parted at ',' as before (scripts/build_ipa_from_nsp.py's lists)"""
+    if LIST_SEP in arg: return arg.split(LIST_SEP)
+    try: there = os.path.exists(arg)
+    except ValueError: there = False   # a list whose first part names a file that is no .nup
+    return [arg] if there else arg.split(',')
+
+
 def main():
     romfs_l, main_l, pkg, mapout, factsout = sys.argv[1:6]
     pairsout = sys.argv[6] if len(sys.argv) > 6 else None
     psopairsout = sys.argv[7] if len(sys.argv) > 7 else None   # pso_pairs.tsv: supplemental BAHS program variations and legacy Unity pass-input covers
-    dlc_v = sys.argv[8].split(',') if len(sys.argv) > 8 and sys.argv[8] else []   # extra content has no ExeFS; each root is the extracted DLC index
-    # Several versions (base game + update): the RomFS and main arguments are comma-separated and paired one to one; the output is their union (keys are content hashes, shaders shared by versions appear once).
+    dlc_v = path_list(sys.argv[8]) if len(sys.argv) > 8 and sys.argv[8] else []   # extra content has no ExeFS; each root is the extracted DLC index
+    # Several versions (base game + update): the RomFS and main arguments are lists (path_list: LIST_SEP, or ',' when the argument names nothing that is there) paired one to one; the output is their union (keys are content hashes, shaders shared by versions appear once).
     # The first version's source column is unchanged; later versions are prefixed with their workspace directory name (e.g. v327680): /v327680/Shader/…, main@v327680. They sort after the first version, so existing rows keep their package indices.
-    romfs_v, main_v = [nup.default_romfs(r) for r in romfs_l.split(',')], main_l.split(',')
+    romfs_v, main_v = [nup.default_romfs(r) for r in path_list(romfs_l)], path_list(main_l)
     dump_aoc = [] if dlc_v else dump_addons(os.environ.get('DM_SPLIT_DUMP'))
     dlc_v = [nup.default_romfs(r) for r in dlc_v] + dump_aoc
     if len(romfs_v) != len(main_v): red(f'{len(romfs_v)} RomFS and {len(main_v)} main: they must pair one to one')

@@ -126,7 +126,7 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a) {
         for (int f = 0; f < 2; f++) if (b->face & (1 << f)) { if (b->which == 0) d->st_vmask[f] = (uint32_t)b->value_mask; else if (b->which == 1) d->st_wmask[f] = (uint32_t)b->mask; else d->st_ref[f] = (uint32_t)b->ref; }
         break; }
     case OP_POLY_OFFSET: d->po = *(const p_poly_offset *)a; break;
-    case OP_VIEWPORTS: { const p_viewports *b = a; for (int i = 0; i < b->n && b->first + i < 16; i++) memcpy(d->vp[b->first + i], b->v[i], 16); d->has_vp = 1; break; }
+    case OP_VIEWPORTS: { const p_viewports *b = a; for (int i = 0; i < b->n && b->first + i < 16; i++) { memcpy(d->vp[b->first + i], b->v[i], 16); d->vp_origin[b->first + i] = (uint8_t)b->origin; } d->has_vp = 1; break; }
     case OP_DEPTH_RANGE: { const p_depth_range *b = a; d->dr[0] = b->n; d->dr[1] = b->f; break; }
     case OP_DEPTH_CLAMP: d->depth_clamp = ((const p_depth_clamp *)a)->on; break;
     case OP_VP_SWIZZLE: { const p_vp_swizzle *b = a; if (b->first >= 0 && b->first + b->n <= 16) memcpy(d->vp_sw[b->first], b->sw, 4 * (size_t)b->n); break; }
@@ -1306,15 +1306,20 @@ static int gmem_log(VkDescriptorBufferInfo *bi) {
 
 // Placeholders for unbound images when the device has no null descriptors: 1x1 images of the shapes a shader may declare, zero (float, sint and uint views)
 VkImageView placeholder(uint8_t dim, int storage) {
-    static vka_img *im2, *im3, *im1; static VkImageView cache[3][7][3];
+    static vka_img *images[3][3]; static VkImageView cache[3][7][3];   // shape and numeric class each own their image
     int cls = dim & DMSH_VK_DIM_SINT ? 1 : dim & DMSH_VK_DIM_UINT ? 2 : 0, d = dim & DMSH_VK_DIM_MASK, a = (dim & DMSH_VK_DIM_ARRAY) != 0;
     if ((dim & DMSH_VK_DIM_MS) || d == 0) return VK_NULL_HANDLE;   // 1D shapes: the replay makes no 1D images (vka_tex.c img_create) and the translator declares none
     VkImageViewType vt = d == 0 ? (a ? VK_IMAGE_VIEW_TYPE_1D_ARRAY : VK_IMAGE_VIEW_TYPE_1D) : d == 2 ? VK_IMAGE_VIEW_TYPE_3D : d == 3 ? (a ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE) : a ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
     if (cache[storage][vt][cls]) return cache[storage][vt][cls];
-    vka_img **pim = d == 2 ? &im3 : d == 0 ? &im1 : &im2;
+    // An integer placeholder has an integer image from its first use. A shared RGBA8 image has only its UNORM / sRGB formats in its format list:
+    // SINT / UINT views of it fell back to UNORM ("which its format list does not have: viewed in its own format"). Unbound descriptors read a typed
+    // zero without learning formats (rendering.md, Integer unbound-image placeholders using normalized views)
+    int shape = d == 2 ? 1 : d == 0 ? 2 : 0;
+    vka_img **pim = &images[shape][cls];
     if (!*pim) {   // a texture of our own, made through the same path as the game's (zeroed at first use)
-        static tex_t t[3]; tex_t *tt = &t[d == 2 ? 1 : d == 0 ? 2 : 0]; memset(tt, 0, sizeof *tt);
-        tt->d.target = d == 2 ? NVN_TEXTURE_TARGET_3D : d == 0 ? NVN_TEXTURE_TARGET_1D_ARRAY : NVN_TEXTURE_TARGET_CUBEMAP_ARRAY; tt->d.format = NVN_FORMAT_RGBA8;
+        static const int formats[3] = {NVN_FORMAT_RGBA8, NVN_FORMAT_RGBA8I, NVN_FORMAT_RGBA8UI};
+        static tex_t t[3][3]; tex_t *tt = &t[shape][cls]; memset(tt, 0, sizeof *tt);
+        tt->d.target = d == 2 ? NVN_TEXTURE_TARGET_3D : d == 0 ? NVN_TEXTURE_TARGET_1D_ARRAY : NVN_TEXTURE_TARGET_CUBEMAP_ARRAY; tt->d.format = formats[cls];
         tt->d.width = 1; tt->d.height = 1; tt->d.depth = d == 2 ? 1 : 6; tt->d.levels = 1; tt->d.flags = NVN_TEXTURE_FLAGS_IMAGE;
         nvn_tex_layout(&tt->d, &tt->L); tt->serial = nvn_new_serial();
         *pim = vka_tex_get(tt, g_cb);
@@ -2027,6 +2032,15 @@ static int skip_fs(uint64_t fs) {
     for (int i = 0; i < nk; i++) if (keys[i] == fs) return 1;
     return 0;
 }
+// DM_VK_BIND_LOG=<hex key>[,…] (live): whether a or b (0: none) is one of its keys. The keys are parsed when a switch changes (vka_env_gen, as skip_fs), not read
+// with getenv at every draw and dispatch: that walk of the environment was 5.6 % of the replay thread's CPU in a game of ~4,000 draws a frame with the switch unset
+static int bind_log_hit(uint64_t a, uint64_t b) {
+    static uint32_t gen = ~0u; static uint64_t keys[64]; static int nk;
+    uint32_t g = atomic_load_explicit(&vka_env_gen, memory_order_relaxed);
+    if (g != gen) { gen = g; nk = 0; for (const char *q = getenv("DM_VK_BIND_LOG"); q && *q && nk < 64;) { char *e; unsigned long long k = strtoull(q, &e, 16); if (e == q) break; keys[nk++] = k; q = *e == ',' ? e + 1 : e; } }
+    for (int i = 0; i < nk; i++) if ((a && keys[i] == a) || (b && keys[i] == b)) return 1;
+    return 0;
+}
 
 // DM_VK_BISECT=<stage>:<mask hex>:<value hex> (live): drops the draws (stages 0-4) or dispatches (stage 5) whose shader of that stage has
 // key & mask == value; a draw without a shader in that stage is kept, and so is one with a geometry shader unless the stage is 2. To find a shader by halving: mask 0 drops every draw that has the stage at all
@@ -2395,8 +2409,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     PT(2);
     walk_all(d, sh);
     {   // DM_VK_BIND_LOG: a draw whose vertex or pixel shader is one of those keys logs its stages' bindings too, as a dispatch does (the first 12 draws in all)
-        const char *bl = getenv("DM_VK_BIND_LOG"); static _Atomic int nb; int hit = 0;
-        for (const char *q = bl; q && *q && !hit;) { char *e; unsigned long long k = strtoull(q, &e, 16); if (e == q) break; hit = (sh[0] && k == sh[0]->key) || (sh[1] && k == sh[1]->key); q = *e == ',' ? e + 1 : e; }
+        static _Atomic int nb; int hit = bind_log_hit(sh[0] ? sh[0]->key : 0, sh[1] ? sh[1]->key : 0);
         if (hit && atomic_fetch_add(&nb, 1) < 12)
             for (int st = 0; st < VKA_NSTAGE; st++) if (sh[st]) for (int i = 0; i < g_wk.n[st]; i++) { const vka_res *x = &g_wk.r[st][i]; char why[320] = "";
                 if ((x->what == VKA_R_TEX || x->what == VKA_R_IMG) && x->tid) vka_tex_id_desc(x->tid, why, sizeof why);
@@ -2557,7 +2570,9 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     // Viewport and scissor. The translator writes clip space for Metal (y up, origin upper left): Metal's viewport, flipped for a lower-left window origin as on Metal, then given
     // a negative height, maps it as Metal does (android/SHADERS.md "Depth and Y")
     float vx = d->has_vp ? d->vp[0][0] : 0, vy = d->has_vp ? d->vp[0][1] : 0, vw = d->has_vp ? d->vp[0][2] : (float)R.full_w, vh = d->has_vp ? d->vp[0][3] : (float)R.full_h;
-    if (vka_origin_ll()) { vy += vh; vh = -vh; }
+    // The window origin is the one the viewport was recorded with (p_viewports.origin), not the device's now: the replay runs behind the game's thread, which may have
+    // switched it since. A capture from before the origin was recorded, and the implicit full-target viewport, take the device's
+    if (d->has_vp && d->vp_origin[0] ? d->vp_origin[0] == NVN_WINDOW_ORIGIN_MODE_LOWER_LEFT + 1 : vka_origin_ll()) { vy += vh; vh = -vh; }
     { uint32_t sw; memcpy(&sw, d->vp_sw[0], 4);
       if (sw == 0x100) { vy += vh; vh = -vh; }
       else if (sw) VRED_ONCE("viewport swizzle %d,%d,%d,%d not implemented (drawn unswizzled)", d->vp_sw[0][0], d->vp_sw[0][1] ^ 2, d->vp_sw[0][2] ^ 4, d->vp_sw[0][3] ^ 6); }
@@ -2762,7 +2777,8 @@ int vka_is_ndve_key(uint64_t k) {
 // through R32_UINT texture views, agl_ndsr_vr_light a335c1db6270c355): on the Switch the shader's registers are written as the bound format's integers, bit for bit. The
 // translator types such an image float (its format is not in the shader facts), and a float view of the same size in its place (vka_tex.c class_twin) converts the bits as
 // floats. So the dispatch uses a pipeline whose module has those images retyped to the texture's class (vka_shader_img_module), and their records ask for views of that class.
-// From the walk (walk_all, just before); the base pipeline p when nothing is retyped or the module cannot be made. DM_VK_IMG_RETYPE=0: never (the class twin views, as before)
+// From the walk (walk_all, just before); the base pipeline p when nothing is retyped or the module cannot be made; VK_NULL_HANDLE while the retyped pipeline is made in the
+// background (vka_pso_wait set: the caller skips the dispatch). DM_VK_IMG_RETYPE=0: never (the class twin views, as before)
 static VkPipeline img_retype(vka_shader *cs, const vka_layout *lay, VkPipeline p) {
     if (!VKA_ENV("DM_VK_IMG_RETYPE", 1)) return p;
     vka_res *r = g_wk.r[5]; uint64_t um = 0, sm = 0, fm = 0;
@@ -2777,7 +2793,7 @@ static VkPipeline img_retype(vka_shader *cs, const vka_layout *lay, VkPipeline p
     uint64_t mixed = (um & sm) | ((um | sm) & fm); um &= ~mixed; sm &= ~mixed;   // (an array binding with elements of more than one class keeps its float type)
     if (!(um | sm)) return p;
     VkPipeline q = vka_cs_pipeline_img(cs, lay, um, sm);
-    if (!q) return p;
+    if (!q) return vka_pso_wait ? VK_NULL_HANDLE : p;   // being made in the background (DM_VK_CS_ASYNC): the dispatch skipped, not run with the base pipeline; cannot be made: the base one
     for (int i = 0; i < g_wk.n[5]; i++) if ((r[i].what == VKA_R_IMG || r[i].what == VKA_R_TEX) && r[i].binding < 64 && ((um | sm) >> r[i].binding & 1)) r[i].dim |= um >> r[i].binding & 1 ? DMSH_VK_DIM_UINT : DMSH_VK_DIM_SINT;
     return q;
 }
@@ -3132,9 +3148,9 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     walk_all(d, sh);
     if (g_do_nk || g_do_all) dobj_note(sh[5]->key, g_wk.r[5], g_wk.n[5]);   // DM_VK_DISP_OBJ (g_do_nk -1: not read yet)
     p = img_retype(sh[5], &lay, p);
+    if (!p) { g_skipped++; if (vks_pipeline_counts(vka_pso_wait)) g_skip_dev[VKS_PIPELINE]++; return; }   // (its retyped pipeline still being made, as the base one above)
     {   // DM_VK_BIND_LOG=<hex key>[,…]: the binding records of those compute shaders' dispatches (the first 12 in all) (what each binding is bound to), to follow a pass's inputs and outputs
-        const char *bl = getenv("DM_VK_BIND_LOG"); static _Atomic int nb; int hit = 0;
-        for (const char *q = bl; q && *q && !hit;) { char *e; unsigned long long k = strtoull(q, &e, 16); if (e == q) break; hit = k == sh[5]->key; q = *e == ',' ? e + 1 : e; }
+        static _Atomic int nb; int hit = bind_log_hit(sh[5]->key, 0);
         if (hit && atomic_fetch_add(&nb, 1) < 12)
             for (int i = 0; i < g_wk.n[5]; i++) { const vka_res *x = &g_wk.r[5][i]; char why[320] = "";
                 if ((x->what == VKA_R_TEX || x->what == VKA_R_IMG) && x->tid) vka_tex_id_desc(x->tid, why, sizeof why);

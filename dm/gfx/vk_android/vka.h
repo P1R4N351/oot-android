@@ -70,6 +70,19 @@ static inline double vka_env_c(vka_envc *c, const char *key, double def) {
 #define VKA_ENVF(key, def) ({ static vka_envc c_; vka_env_c(&c_, key, def); })
 #define VKA_ENV(key, def) ((int)VKA_ENVF(key, def))
 int vka_env_str(const char *key, char *out, size_t n);   // a string switch as live control sees it (1 = set); not cached: for switches read rarely
+// A thread that calls the driver's shader compiler (vkCreate*Pipelines: prewarm, the asynchronous and optimizer threads, the replay worker) is started with the stack of a
+// process's main thread, VKA_COMPILER_STACK: Android's default for a pthread is about 1 MiB, and a compiler that recurses over a long chain of dependent instructions can
+// need more. Qualcomm's compiler (driver v863.1, Adreno 740) overflowed a prewarm thread's 1 MiB stack in notllvm-qgl.so while making Pokémon Pokopia's compute pipelines
+// (SIGSEGV on the guard page under the stack, 2026-11-18). The pages are only used as far as the stack grows. A stack the system refuses: the default one, as before
+enum { VKA_COMPILER_STACK = 8 << 20 };
+static inline int vka_compiler_thread(pthread_t *th, void *(*fn)(void *), void *arg) {
+    pthread_attr_t a; int r = -1;
+    if (!pthread_attr_init(&a)) {
+        if (!pthread_attr_setstacksize(&a, VKA_COMPILER_STACK)) r = pthread_create(th, &a, fn, arg);
+        pthread_attr_destroy(&a);
+    }
+    return r ? pthread_create(th, NULL, fn, arg) : 0;
+}
 void vka_floor_span(uint64_t frame, uint64_t ns);   // vka_exec.c: a submission of frame ended ns after the frame began (the adaptive floor)
 void vka_floor_stats(char *b, size_t n);
 void vka_floor_commit(int counted);   // DM_VK_GPU_FLOOR_AUTO=2: a submission counted by vka_floor_tail_add handed to the queue / done
@@ -123,6 +136,13 @@ extern vka_dev V;
 // system libvulkan.so. vka_driver_open returns the libvulkan handle (NULL = use the system one); vka_driver_tag is a file-name-safe name of the custom driver in use, NULL for the system's
 void *vka_driver_open(void);
 const char *vka_driver_tag(void);
+// The system's Vulkan loader, opened when no custom driver is (vka_dev.c, vka_readiness.c): libvulkan.so on Android (the NDK's name); libvulkan.so.1 on Linux,
+// the loader's soname, since a desktop distribution has libvulkan.so only with its -dev package
+#ifdef NX_LINUX
+#define VKA_SYSTEM_LOADER "libvulkan.so.1"
+#else
+#define VKA_SYSTEM_LOADER "libvulkan.so"
+#endif
 int vka_init(void);   // 1 = the device is up (idempotent, any thread); 0 = no Vulkan: every op logs and does nothing
 #include "vka_fpenv.h"
 // The host's FPCR (0) on this thread (vka_fpenv.h): who names a thread the host made, logged the first few times one started with the game's FPCR (NULL: not logged);
@@ -311,6 +331,7 @@ typedef struct vka_img {
     // The texture cache's own bookkeeping (vka_tex.c "Live images"): its place in the live list + 1 (0: not in it), the next live image in its storage address's chain,
     // and the video pool registrations count (dm_codec_video_epoch) at which it was last checked for lying in a video pool
     int live_ix; struct vka_img *mnext; uint64_t vep;
+    uint32_t smap_n;   // its entries in the serial map (vka_smap.h: vksm_del_im stops after them), under g_tmu
 } vka_img;
 // Texture level lv as a level of im (a sparse or soft texture's image starts at level im->base): 0 when the image does not hold it
 static inline int vka_img_lv(const vka_img *im, uint32_t *lv) { if (!vksoft_lv(im->base, im->levels - im->lvk, lv)) return 0; *lv += im->lvk; return 1; }   // (a level child's: + lvk)
@@ -512,6 +533,7 @@ typedef struct {
     va_st attr[16]; int nattr; vs_st stream[16]; int nstream; NVNbufferRange vbuf[16];
     uint32_t st_vmask[2], st_wmask[2], st_ref[2];
     p_poly_offset po; float vp[16][4]; float dr[2]; int has_vp, depth_clamp; uint8_t vp_sw[16][4];
+    uint8_t vp_origin[16];             // per viewport: the recording device's window origin, 1 + NVNwindowOriginMode (p_viewports.origin), 0 = the device origin now
     float blend_color[4], alpha_ref;
     p_prim_restart restart; int rast_discard, tf_on;
     int inited;

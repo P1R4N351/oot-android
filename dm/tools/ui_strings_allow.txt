@@ -112,6 +112,7 @@ ondevice/java/dev/nxnative/android/PackService.java	stopping: the step was ended
 ondevice/java/dev/nxnative/android/PackService.java	a shader build of a game being played runs in this process: it is asked to stop after the shader in hand, and the job waits for it
 ondevice/java/dev/nxnative/android/PackService.java	the shader build ended: the job goes on
 ondevice/java/dev/nxnative/android/PackService.java	shader_map.tsv without 
+ondevice/java/dev/nxnative/android/PackService.java	 shaders of other versions of the game
 ondevice/java/dev/nxnative/android/PackService.java	 names none of the shaders of its shader_map.tsv
 ondevice/java/dev/nxnative/android/PackService.java	before the pack step
 ondevice/java/dev/nxnative/android/PackService.java	 step's outputs are gone right after it finished (pack folder 

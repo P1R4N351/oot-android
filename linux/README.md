@@ -45,19 +45,25 @@ without shaders draws nothing for the shaders it lacks).
   why Android packs run unchanged.
 - `-Dmain=nx_host_main`: `dm/host/main.c`'s `main` is called by `nxhost_main`; the real `main` is in `main_linux.c`.
 - Left out: `dm/host/android/jni_android.c`, libadrenotools (custom GPU drivers).
-- Changes to shared files, all inside `#ifdef NX_LINUX` (an Android build compiles them out):
-  `dm/gfx/vk_android/vka_dev.c` (instance extensions from the front end; display timing off unless asked, below) and
-  `dm/gfx/vk_android/vka_present.c` (the surface from the front end).
+- Changes to shared files, inside `#ifdef NX_LINUX` (an Android build compiles them out):
+  `dm/gfx/vk_android/vka_dev.c` (instance extensions from the front end; display timing off unless asked, below),
+  `dm/gfx/vk_android/vka_present.c` (the surface from the front end) and `dm/gfx/vk_android/vka.h`
+  (`VKA_SYSTEM_LOADER`, the loader `vka_dev.c` and `vka_readiness.c` open: `libvulkan.so.1`, since a desktop Linux has
+  `libvulkan.so` only with its `-dev` package; [rendering.md](../docs/reference/rendering.md), "The aarch64 Linux host
+  finds no Vulkan loader on a distribution without the Vulkan -dev package").
 
 ## Build
 
     linux/build.sh <base game title ID>        # e.g. 0400C3F00006E000 → linux/build/<id>/nxhost_<id>
 
-Cross build with Docker on an x86_64 or arm64 machine. The image (`linux/Dockerfile`: Ubuntu 24.04, clang, lld, the arm64
-libraries) is built on first use. SDL3: `linux/sysroot/{include/SDL3,lib/libSDL3.so}` when there is one (copied from the
-target system), else SDL3 built from source by `linux/build-sdl3.sh` (git tag `release-3.4.2`). The first build takes
-some minutes. One binary per game: the game profile is compiled in, as on Android. Run time needs glibc ≥ 2.39, libSDL3,
-libxcb, libz, and a Vulkan driver with `VK_EXT_map_memory_placed` (Turnip).
+Cross build with Docker on an x86_64 or arm64 machine. The image (`linux/Dockerfile`: Ubuntu 24.04, clang, lld, the
+arm64 libraries) is built on first use, by `linux/build.sh` or `linux/build-sdl3.sh` (`linux/common.sh`). With rootless
+Docker the container runs as root, which is the caller there: run as the caller's own ID it could not write to the
+repository (`CMake Error: Unable to (re)create the private pkgRedirects directory`). SDL3:
+`linux/sysroot/{include/SDL3,lib/libSDL3.so}` when there is one (copied from the target system), else SDL3 built from
+source by `linux/build-sdl3.sh` (git tag `release-3.4.2`). The first build takes some minutes. One binary per game: the
+game profile is compiled in, as on Android. Run time needs glibc ≥ 2.39, libSDL3, libxcb, libz, and a Vulkan driver with
+`VK_EXT_map_memory_placed` (Turnip).
 
 ## Run
 
@@ -87,11 +93,19 @@ ends with a `[RED]` line naming the display variables), `NX_VK_DISPLAY_TIMING=1`
 (`scripts/pack_android.py`): the code rewrite and the Vulkan shader library. `linux/tools/linux-pack.sh setup` (also run
 by the first pack) puts what it needs in `~/.local/share/banananative/packer` with no root: a Python environment with
 Capstone 5, lz4 and zbic (pip from its bootstrap script where the system Python has no `ensurepip`), the .NET 10 runtime
-(Microsoft's `dotnet-install.sh`) for the translator's portable dlls (`dm/gfx/tools/dmsh_xlate_bin`; the apphost there
+(Microsoft's archive) for the translator's portable dlls (`dm/gfx/tools/dmsh_xlate_bin`; the apphost there
 is the Mac's, so a wrapper beside the dlls, `dmsh_xlate-linux`, is what `XLATE` names), and it needs `spirv-val` on
 PATH (SPIRV-Tools). The pack goes to `<title ID>-work/android-pack` beside the game file, where the launcher's picker
 finds it. Checked on the Odin 2 with Mario Kart World 1.8.0 (`.nup`): the code modules equal the phone's pack byte
 for byte except `sdk`, which carries the two `AddressRegionManager` cuts the 0.3.24 rewriter adds; the pack boots.
+
+What setup downloads is pinned at the top of `linux-pack.sh`: the .NET runtime 10.0.15 (linux-arm64 or linux-x64, glibc
+only: musl stops setup) and, without `ensurepip`, `get-pip.py` and the pip 26.3 wheel it installs with no index, each checked
+against its sha512/sha256 before use; a mismatch stops setup with a `[RED]` line and installs nothing. The Python packages
+(capstone 5.0.9, lz4 4.4.5, zbic 1.0.1.post1) are exact versions, wheels only, not hash-checked. An environment that
+already has a .NET 10 runtime keeps it (it is not checked again). To bump a pin, change the version and its hash: pip's
+from `https://pypi.org/pypi/pip/<version>/json` (and get-pip.py at the same tag of `pypa/get-pip`), .NET's from
+`https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json`.
 
 ## AppImage
 
@@ -159,8 +173,10 @@ screen with the new AppImage. Press **Prepare** again for each game after updati
 
 `linux/appimage/build-appimage.sh [title ID ...]` builds `linux/build/appimage/BananaNative-<version>-aarch64.AppImage`
 on an x86_64 PC: one host per title ID in `usr/bin`, a fallback SDL3 (`build-sdl3.sh`: X11 only, used where the system
-has no `libSDL3.so.0`), and the launcher `AppRun`. It downloads `appimagetool` and the aarch64 runtime from the AppImage
-project's GitHub releases on first use and needs `rsvg-convert`.
+has no `libSDL3.so.0`), and the launcher `AppRun`. It downloads `appimagetool` 1.9.1 and the aarch64 runtime (type2-runtime
+20251108) from the AppImage project's GitHub releases on first use, pinned at the top of the script with the sha256 their
+release pages list (bump: the version and that hash); the cached files are checked on every run and a mismatch stops the
+build. fontTools (for `nintendo_ext.ttf`) is an exact version, a wheel, not hash-checked. It needs `rsvg-convert`.
 
     BananaNative-aarch64.AppImage <pack folder> [game file (.nup)]
     BananaNative-aarch64.AppImage                    (no argument, from a desktop) a game picker

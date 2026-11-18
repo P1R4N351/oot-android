@@ -602,6 +602,9 @@ def finish(key, w, job, c1):
     spv.txq_extra_components(m)   # a size query's component past the image's dimensions (vk_android_spv.py txq_extra_components)
     hmma = stage == 'cs' and spv.hmma_lds(m)   # the HMMA helper's calls lowered at their sites, gathers shared (vk_android_spv.py hmma_lds)
     if not hmma: spv.promote_locals(m)   # simplify GlobalToStorage helpers (binary search, CAS, branchless inPool) and promote single-store locals
+    # the render-scale helpers' calls (the scales are always 1.0) replaced by their input (vk_android_spv.py scale_identity). After promote_locals: before it a helper
+    # returns a load of the Function variable its parameter was stored to, not the parameter, and the pass matched none (Pokopia's af8f64d9f5542ef2: 0 calls replaced, 5,224 after)
+    spv.scale_identity(m)
     if not hmma: spv.loop_pool_search(m)   # the raw helpers' pool table search one loop of one step (vk_android_spv.py loop_pool_search)
     binds = [classify(stage, r, res, m) for r in m.resources()]
     storage_slots(stage, binds, res)

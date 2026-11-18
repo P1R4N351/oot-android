@@ -23,6 +23,8 @@ Experimental. On the tested phone a whole tournament (about 16 minutes) ran at 6
 
 The game has no settings of its own beyond the common ones ([Settings overview](Settings-Overview)). The one choice that matters is the **GPU driver**: pick Turnip ([GPU drivers](GPU-Drivers)).
 
+**Frame rate cap 30** (0.3.44, community change #453 by cr1stian): the game keeps its full speed at 30 fps, through its own draw-every-other-step flag, instead of running at half speed. Checked by its author, not run by us.
+
 ## Known issues
 
 - **Grass and cloud sea:** tessellated grass is not drawn (4 draws skipped at the match intro), so grass courts look flat compared with the console.

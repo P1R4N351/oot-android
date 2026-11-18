@@ -9,6 +9,7 @@
 #include "vka_memu_abi.h"
 #include "vka_pwlist.h"
 #include "vka_psogate.h"
+#include "vka_pwbusy.h"
 #include "vk_prewarm_seed.h"   // the profile's seed list (dm/games/<id>/vk_prewarm.bin; dm/games/game.py seed): dm_vk_prewarm_seed, dm_vk_prewarm_seed_len (0: none)
 #include "../nvn/nvn_mtl.h"
 #include <stdlib.h>
@@ -156,11 +157,11 @@ static int layout_slow(vka_shader *const sh[VKA_NSTAGE], int compute, vka_layout
 static uint64_t g_pc_lib;   // the library this run's cache file is stamped with (0: none known; no stamp written)
 static vka_pck_stamp g_pck;   // the shaders the file was read with that this library has the same, and the stale estimate (the stamp's; written again with this run's)
 static uint64_t pck_hash_of(void *ctx, uint64_t key) { (void)ctx; return vka_shader_content(key); }
-static VkPipelineCache g_pc; static char g_pc_path[1024], g_pw_path[1100]; static uint64_t g_made, g_saved_at, g_save_ns; static double g_create_ms;
+static VkPipelineCache g_pc; static char g_pc_path[1024], g_pw_path[1100], g_pw_shared[1100]; static uint64_t g_made, g_saved_at, g_save_ns; static double g_create_ms;
 static uint64_t g_ngfx, g_ncs, g_nfail, g_ncs_over, g_create_ns, g_frame_made;   // all pipelines made (frame path, background and prewarm); g_frame_made / g_create_ns: on the frame path only
 static uint64_t g_probe_hit, g_probe_miss, g_probe_miss_ns;          // GPL: the cache-only try before a link (VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT)
 static _Atomic uint64_t g_save_ns_total, g_hy_draws, g_pw_wait_ns;
-static void pw_load(void); static void pw_start(void); static int pw_save(void);
+static void pw_load(void); static void pw_start(void); static int pw_save(void); static void unf_load(void);
 static void *saver_main(void *a);
 static pthread_mutex_t g_save_mu = PTHREAD_MUTEX_INITIALIZER;   // one save at a time (the saver thread, a forced save)
 static pthread_mutex_t g_sv_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_sv_cv = PTHREAD_COND_INITIALIZER; static int g_sv_want, g_sv_up;
@@ -176,11 +177,17 @@ static void pc_open_once(void) {
         if (!unlink(old)) VLOG("pipeline cache %s of the generation before " VKA_PCACHE_GEN " (compiled with the game's FPCR) removed", old);
         unlink(olds);
     }
-    // The prewarm list (pw_*): the pipeline keys of earlier runs, whatever the driver (a key names shaders and state, not driver code). DM_VK_PREWARM_FILE overrides
+    // The prewarm list (pw_*): the pipeline keys of earlier runs on this driver, a file per driver as the cache (vka_fpenv.h vka_pwlist_name), so a run on one driver
+    // does not make another's keys ahead and a profile's seed can be made from one driver's runs. DM_VK_PREWARM_FILE overrides; with DM_VK_PCACHE, <that file>.keys
     const char *pf = getenv("DM_VK_PREWARM_FILE");
+    g_pw_shared[0] = 0;
     if (pf && *pf) snprintf(g_pw_path, sizeof g_pw_path, "%s", pf);
     else if (e && *e && strcmp(e, "0")) snprintf(g_pw_path, sizeof g_pw_path, "%s.keys", e);
-    else if ((t && *t) || (home && *home)) snprintf(g_pw_path, sizeof g_pw_path, "%s/vk_pipelines.keys", t && *t ? t : home);
+    else if ((t && *t) || (home && *home)) {
+        const char *dir = t && *t ? t : home;
+        vka_pwlist_name(g_pw_path, sizeof g_pw_path, dir, vka_driver_tag());
+        snprintf(g_pw_shared, sizeof g_pw_shared, "%s/" VKA_PWLIST_SHARED, dir);   // (every driver's list before 2026-11-18: pw_load takes it once)
+    }
     void *data = NULL; size_t n = 0;
     FILE *f = g_pc_path[0] ? fopen(g_pc_path, "rb") : NULL;
     if (f) {
@@ -231,12 +238,25 @@ static void pc_open_once(void) {
     else VLOG("pipeline cache %s: %zu bytes read (its stamp lists %zu shaders, %llu stale)", g_pc_path[0] ? g_pc_path : e && !strcmp(e, "0") ? "(none: DM_VK_PCACHE=0)" : vka_fp_guest() ? "(none: DM_VK_GUEST_FPCR=1)" : "(not kept: no DM_TEMP or HOME)", n,
               g_pck.n, (unsigned long long)g_pck.dead);
     free(data);
+    unf_load();
     pw_load();
     pthread_t th;
     if (!pthread_create(&th, NULL, saver_main, NULL)) { pthread_detach(th); g_sv_up = 1; }
     pw_start();
 }
 static void pc_open(void) { static pthread_once_t once = PTHREAD_ONCE_INIT; pthread_once(&once, pc_open_once); }   // (the prewarm threads it starts call it too: they wait for it)
+// len bytes of data to path through tmp, whole or not at all: 1 when path holds them. The stream is closed exactly once (fclose ends it even when it fails, so a second
+// fclose on the failure path was undefined), and tmp is removed on any failure; the file path held before stays
+static int pc_write_atomic(const char *path, const char *tmp, const void *data, size_t len) {
+    FILE *f = data ? fopen(tmp, "wb") : NULL;
+    if (f) {
+        int ok = fwrite(data, 1, len, f) == len;
+        if (fclose(f)) ok = 0;
+        if (ok && !rename(tmp, path)) return 1;
+    }
+    unlink(tmp);
+    return 0;
+}
 // The cache and the prewarm list to their files. vkGetPipelineCacheData runs without g_mu (the cache is internally synchronized): holding it there kept the replay thread's
 // pipeline lookups waiting for a 17 MB copy once a minute
 static void save_now(void) {
@@ -255,19 +275,17 @@ static void save_now(void) {
         if (gr != VK_SUCCESS) { free(d); d = NULL; n = 0; static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("pipeline cache not saved: vkGetPipelineCacheData %d after 3 tries (pipelines being added meanwhile); the next save tries again", (int)gr); }
         if (d) {
             char tmp[1100]; snprintf(tmp, sizeof tmp, "%s.tmp", g_pc_path);
-            FILE *f = fopen(tmp, "wb");
-            if (f && fwrite(d, 1, n, f) == n && !fclose(f) && !rename(tmp, g_pc_path)) {
+            if (pc_write_atomic(g_pc_path, tmp, d, n)) {
                 g_saved_at = made;
                 // Its stamp after it: the shaders it was read with that this library keeps, and those this run made. Written whole or not at all (a stamp that
                 // cannot be written is removed, and the next run starts empty)
                 char sp[1100], st[1200]; snprintf(sp, sizeof sp, "%s.lib", g_pc_path); snprintf(st, sizeof st, "%s.lib.tmp", g_pc_path);
                 size_t nr = 0, tl = 0; vka_pck_ent *run = g_pc_lib ? vka_shader_made(&nr) : NULL;
                 char *txt = g_pc_lib ? vka_pck_format(g_pc_lib, g_pck.dead, g_pck.ent, g_pck.n, run, nr, &tl) : NULL; free(run);
-                FILE *sf = txt ? fopen(st, "wb") : NULL;
-                if (!(sf && fwrite(txt, 1, tl, sf) == tl && !fclose(sf) && !rename(st, sp))) { if (sf) fclose(sf); unlink(st); unlink(sp); }
+                if (!pc_write_atomic(sp, st, txt, tl)) unlink(sp);
                 free(txt);
             }
-            else { if (f) fclose(f); unlink(tmp); static _Atomic int k; if (atomic_fetch_add(&k, 1) < 2) VRED("pipeline cache not written to %s", g_pc_path); d = NULL; n = 0; }
+            else { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 2) VRED("pipeline cache not written to %s", g_pc_path); free(d); d = NULL; n = 0; }   // (the copy is freed: it was dropped unfreed)
         }
     }
     int keys = pw_save();
@@ -498,6 +516,61 @@ static void heavy_load(void) {
     fclose(f);
     VLOG("long compiles: %d shaders of earlier runs on this driver (%s): prewarm makes them one at a time (DM_VK_PREWARM_HEAVY_MS)", atomic_load(&g_heavy_n), g_heavy_path);
 }
+// Speculative compiles that did not finish (vka_pwbusy.h): while a prewarm key or an optimizer's twin builds, its shader key is in <cache file>.busy; a key still there at
+// the next start was building when the process ended, and joins <cache file>.unfinished, which prewarm and the optimizer leave out on this driver (a workaround for a
+// driver compiler that runs away on one shader: Pokopia's af8f64d9f5542ef2, 60-77 s and the process's memory maps on Qualcomm's). A build of it that finishes on any path
+// takes it off the list (build_end)
+static vkpb_set g_busy, g_unf; static char g_busy_path[1100], g_unf_path[1100]; static pthread_mutex_t g_unf_mu = PTHREAD_MUTEX_INITIALIZER; static _Atomic int g_unf_n;
+static _Atomic uint32_t g_pw_unf;   // prewarm keys left out for it this run
+static void unf_write(const char *path, const vkpb_set *s) {   // caller holds g_unf_mu; a temporary file renamed over it, so a crash mid-write leaves the old one
+    if (!path[0]) return;
+    char b[VKPB_MAX * 17 + 1], tmp[1200]; size_t n = vkpb_format(s, b, sizeof b);
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    FILE *f = fopen(tmp, "w"); if (!f) return;
+    if (fwrite(b, 1, n, f) != n) { fclose(f); unlink(tmp); return; }
+    if (fclose(f) || rename(tmp, path)) unlink(tmp);
+}
+static int unf_read(const char *path, vkpb_set *s) {
+    FILE *f = fopen(path, "r"); if (!f) return 0;
+    char b[VKPB_MAX * 17 + 64]; size_t n = fread(b, 1, sizeof b, f); fclose(f);
+    return vkpb_parse(s, b, n);
+}
+static int unf_has(uint64_t k) { if (!k || !atomic_load(&g_unf_n)) return 0; pthread_mutex_lock(&g_unf_mu); int r = vkpb_has(&g_unf, k); pthread_mutex_unlock(&g_unf_mu); return r; }
+static void unf_load(void) {   // once, at the pipeline cache's opening (pc_open_once), before the prewarm threads start
+    if (!g_pc_path[0]) return;
+    pthread_mutex_lock(&g_unf_mu);
+    snprintf(g_busy_path, sizeof g_busy_path, "%s.busy", g_pc_path); snprintf(g_unf_path, sizeof g_unf_path, "%s.unfinished", g_pc_path);
+    unf_read(g_unf_path, &g_unf);
+    vkpb_set busy; memset(&busy, 0, sizeof busy); unf_read(g_busy_path, &busy);
+    int added = vkpb_carry(&g_unf, &busy);
+    for (int i = 0; i < busy.n; i++)
+        VRED("pipeline compile of shader %016llx was still running when the process ended (an earlier run on this driver): prewarm and the optimizer leave it out from now "
+             "on (%s); a draw that needs it still has it made", (unsigned long long)busy.k[i], g_unf_path);
+    if (added) unf_write(g_unf_path, &g_unf);
+    if (busy.n) unlink(g_busy_path);
+    atomic_store(&g_unf_n, g_unf.n);
+    if (g_unf.n && !added) VLOG("speculative compiles left out: %d shaders whose compile did not finish in an earlier run on this driver (%s)", g_unf.n, g_unf_path);
+    pthread_mutex_unlock(&g_unf_mu);
+}
+static void spec_begin(uint64_t k) {   // a speculative build of shader k starts
+    if (!k || !g_busy_path[0]) return;
+    pthread_mutex_lock(&g_unf_mu); if (vkpb_add(&g_busy, k)) unf_write(g_busy_path, &g_busy); pthread_mutex_unlock(&g_unf_mu);
+}
+static void spec_end(uint64_t k) {
+    if (!k || !g_busy_path[0]) return;
+    pthread_mutex_lock(&g_unf_mu);
+    if (vkpb_del(&g_busy, k)) { if (g_busy.n) unf_write(g_busy_path, &g_busy); else unlink(g_busy_path); }
+    pthread_mutex_unlock(&g_unf_mu);
+}
+static void unf_done(uint64_t k) {   // a build of shader k returned (build_end): off the unfinished list
+    if (!k || !atomic_load(&g_unf_n)) return;
+    pthread_mutex_lock(&g_unf_mu);
+    if (vkpb_del(&g_unf, k)) {
+        atomic_store(&g_unf_n, g_unf.n); unf_write(g_unf_path, &g_unf);
+        VLOG("pipeline compile of shader %016llx finished this time: no longer left out of prewarm (%s)", (unsigned long long)k, g_unf_path);
+    }
+    pthread_mutex_unlock(&g_unf_mu);
+}
 static void build_end(int i) {
     if (i < 0) return;
     uint64_t vs = atomic_load(&g_build[i].vs), fs = atomic_load(&g_build[i].fs), age = now_ns() - atomic_load(&g_build[i].t0);
@@ -505,6 +578,7 @@ static void build_end(int i) {
     atomic_store(&g_build[i].tid, 0);
     int ms = VKA_ENV("DM_VK_PREWARM_HEAVY_MS", 1000);
     uint64_t k = vs ? vs : fs;
+    unf_done(k);
     if (k && ms > 0 && age >= (uint64_t)ms * 1000000ull && !heavy_has(k)) {
         heavy_add(k, 1);
         VLOG("long compile: %s of shader %016llx took %.1f s: remembered (%s), compiles hold for such shaders", what, (unsigned long long)k, age / 1e9, g_heavy_path[0] ? g_heavy_path : "this run only");
@@ -891,11 +965,14 @@ static void *opt_main(void *a) {
         pthread_mutex_unlock(&g_opt_mu);
         const vka_shader *pre = j->sh[7] ? j->sh[7] : j->sh[0];
         uint64_t key = pre ? pre->key : (j->sh[1] ? j->sh[1]->key : 0);
-        int tok = gate_enter(0, gate_heavy(pre, j->sh[1]));   // speculative: its linked pipeline draws meanwhile
-        gate_hold(tok, key);
-        pstate *P = malloc(sizeof *P);
+        int left = unf_has(key);   // its compile did not finish in an earlier run (unf_load): the linked pipeline stays
+        int tok = left ? -1 : gate_enter(0, gate_heavy(pre, j->sh[1]));   // speculative: its linked pipeline draws meanwhile
+        if (!left) gate_hold(tok, key);
+        pstate *P = left ? NULL : malloc(sizeof *P);
+        if (P) spec_begin(key);
         VkPipeline p = P && pstate_fill(P, j->sh, &j->lay, &j->k) ? full_pipeline(P, j->sh, " in the background") : VK_NULL_HANDLE;
-        gate_leave(tok);
+        if (P) spec_end(key);
+        if (!left) gate_leave(tok);
         pthread_mutex_lock(&g_mu);
         if (p) { __atomic_store_n(&j->g->p, p, __ATOMIC_RELEASE); __atomic_store_n(&j->g->linked, 0, __ATOMIC_RELEASE); g_nopt++; }   // a failure keeps the linked pipeline (logged)
         g_opt_waiting--;
@@ -908,7 +985,7 @@ static void opt_queue(gval *g, vka_shader *const sh[VKA_NSTAGE], const vka_layou
     static int ok;
     opt_job *j = malloc(sizeof *j); if (!j) return;
     j->next = NULL; j->g = g; memcpy(j->sh, sh, sizeof j->sh); j->lay = *lay; j->k = *k;
-    if (!ok) { pthread_t th; static _Atomic int tried; if (!atomic_exchange(&tried, 1)) { ok = !pthread_create(&th, NULL, opt_main, NULL); if (ok) pthread_detach(th); else VRED("pipeline optimizer thread not started: linked pipelines stay"); } }
+    if (!ok) { pthread_t th; static _Atomic int tried; if (!atomic_exchange(&tried, 1)) { ok = !vka_compiler_thread(&th, opt_main, NULL); if (ok) pthread_detach(th); else VRED("pipeline optimizer thread not started: linked pipelines stay"); } }
     if (!ok) { free(j); return; }
     pthread_mutex_lock(&g_mu); g_opt_waiting++; pthread_mutex_unlock(&g_mu);
     pthread_mutex_lock(&g_opt_mu); *g_opt_tail = j; g_opt_tail = &j->next; pthread_cond_signal(&g_opt_cv); pthread_mutex_unlock(&g_opt_mu);
@@ -924,7 +1001,7 @@ void vka_gpl_line(char *out, size_t n) {
 }
 
 // ---------- The prewarm list (2026-11-03) ----------
-// The pipeline keys a run made on its frame path, kept beside the pipeline cache (vk_pipelines.keys) and made again by DM_VK_PREWARM background threads (default 2, nice 10)
+// The pipeline keys a run made on its frame path, kept beside the pipeline cache, one list per driver (vk_pipelines-<driver>.keys, vka_fpenv.h vka_pwlist_name) and made again by DM_VK_PREWARM background threads (default 2, nice 10)
 // as soon as the next run makes its first pipeline: by the time the game reaches a scene, the pipelines it needs are in the map, and the frame path neither compiles nor
 // even reads the cache for them. With the driver's pipeline cache warm each costs 1-4 ms on a background core; with it cold (a new driver) each is a compile, still off the
 // frame path. A key names shaders by their library key and the state bytes (vka_gkey), not driver code, so one list serves every driver and survives a shader library
@@ -979,6 +1056,12 @@ static void pw_note(int kind, vka_shader *const sh[5], const void *kb, uint32_t 
     if (pw_set_add(h)) { pw_append(&r, kb); g_pw_dirty = 1; }
     pthread_mutex_unlock(&g_pw_mu);
 }
+// A compute pipeline the frame path made: its record, with the retype masks as key bytes when its images are retyped (vka_pwlist.h VKA_PW_CS_MASKS), so the next run's
+// prewarm makes the module its dispatches use, not the base one they do not
+static void pw_note_cs(vka_shader *cs, uint64_t umask, uint64_t smask) {
+    vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; uint64_t m[2] = {umask, smask};
+    if (umask | smask) pw_note(VKA_PW_CS, s5, m, VKA_PW_CS_MASKS); else pw_note(VKA_PW_CS, s5, "", 0);
+}
 // The records of one list into the run's (caller holds g_pw_mu), those already there skipped: the count taken, *skipped those with impossible values. -1 = not read (*why)
 static int pw_take(const uint8_t *d, size_t len, uint32_t *skipped, const char **why) {
     size_t o; uint32_t want, n = 0, took = 0; int e = vka_pw_header(d, len, &o, &want);
@@ -999,6 +1082,10 @@ static void pw_load(void) {
     if (!g_pw_path[0]) return;
     uint32_t skipped = 0; const char *why = NULL; int own = -1, seed = -1;
     FILE *f = fopen(g_pw_path, "rb");
+    // No list of this driver's yet: the one every driver shared before 2026-11-18 (vka_fpenv.h vka_pwlist_name), once, so an update does not start cold. It may hold
+    // other drivers' keys, which this driver's list (written from it at the next save) keeps; a vertex key of the other vertex input path is not made (pw_main). The
+    // shared file stays for the other drivers
+    if (!f && g_pw_shared[0] && (f = fopen(g_pw_shared, "rb"))) { VLOG("prewarm list %s: none yet; the list every driver shared before, %s, taken as its start", g_pw_path, g_pw_shared); g_pw_dirty = 1; }
     uint8_t *d = NULL; long sz = 0;
     if (f) { fseek(f, 0, SEEK_END); sz = ftell(f); fseek(f, 0, SEEK_SET); d = sz > 0 ? malloc((size_t)sz) : NULL; if (d && fread(d, 1, (size_t)sz, f) != (size_t)sz) { free(d); d = NULL; } fclose(f); }
     pthread_mutex_lock(&g_pw_mu);
@@ -1033,9 +1120,8 @@ static int pw_save(void) {   // the saver thread or a forced save: the list when
     pthread_mutex_unlock(&g_pw_mu);
     pwhdr2 h; memset(&h, 0, sizeof h); memcpy(h.magic, VKA_PW_MAGIC2, 8); h.gkey_size = sizeof(vka_gkey); h.n = n; h.layout = vka_pw_layout(); memcpy(out, &h, sizeof h);
     char tmp[1200]; snprintf(tmp, sizeof tmp, "%s.tmp", g_pw_path);
-    FILE *f = fopen(tmp, "wb");
-    int ok = f && fwrite(out, 1, sizeof h + len, f) == sizeof h + len && !fclose(f) && !rename(tmp, g_pw_path);
-    if (!ok) { if (f) fclose(f); unlink(tmp); static _Atomic int k; if (atomic_fetch_add(&k, 1) < 2) VRED("prewarm list not written to %s", g_pw_path); pthread_mutex_lock(&g_pw_mu); g_pw_dirty = 1; pthread_mutex_unlock(&g_pw_mu); }
+    int ok = pc_write_atomic(g_pw_path, tmp, out, sizeof h + len);
+    if (!ok) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 2) VRED("prewarm list not written to %s", g_pw_path); pthread_mutex_lock(&g_pw_mu); g_pw_dirty = 1; pthread_mutex_unlock(&g_pw_mu); }
     free(out);
     return ok ? (int)n : -1;
 }
@@ -1150,16 +1236,25 @@ static void *pw_main(void *a) {
         int skip = 0;   // an instanced run's pipeline with instancing off: not made, kept in the list
         for (int s = 0; s < 2 && !bad && !skip && r.kind == VKA_PW_GFX; s++) if (r.inst[s] && !(sh[s] = vka_inst_variant(sh[s], sh[s]->e->stage * DMSH_VK_STAGE_BINDINGS + r.inst[s] - 1u))) skip = 1;
         if (skip) continue;
-        int tok = -1;
+        int tok = -1; uint64_t key = 0;
         if (!bad) {   // through the gate after the frame's compiles (gate_enter), then held while another build of this shader runs (gate_hold)
             const vka_shader *pre = r.kind == VKA_PW_CS ? sh[5] : r.kind == VKA_PW_MESH ? sh[7] : sh[0];
-            uint64_t key = pre ? pre->key : 0;
+            key = pre ? pre->key : 0;
+            if (unf_has(key)) {   // its compile did not finish in an earlier run on this driver (unf_load): left out, the record kept
+                if (atomic_fetch_add(&g_pw_unf, 1) < 4) VLOG("prewarm leaves out %s pipeline of shader %016llx: its compile did not finish in an earlier run on this driver",
+                                                              r.kind == VKA_PW_CS ? "a compute" : r.kind == VKA_PW_MESH ? "a mesh" : "a graphics", (unsigned long long)key);
+                continue;
+            }
             tok = gate_enter(0, gate_heavy(pre, r.kind == VKA_PW_CS ? NULL : sh[1]));
             atomic_fetch_add(&g_pw_heavywait_ns, gate_hold(tok, key));
+            spec_begin(key);
         }
         int made = 0;
         if (bad) { atomic_fetch_add(&g_pw_bad, 1); pw_mark_bad(offs[i]); }
-        else if (r.kind == VKA_PW_CS) { cs_obtain(sh[5], &lay, 1, &made, 0, 0, 0); }
+        else if (r.kind == VKA_PW_CS) {   // (with its retype masks: the module its dispatches use)
+            uint64_t m[2] = {0, 0}; if (r.klen == VKA_PW_CS_MASKS) memcpy(m, kb, sizeof m);
+            cs_obtain(sh[5], &lay, 1, &made, m[0], m[1], 0);
+        }
         else {
             vka_gkey k; memset(&k, 0, sizeof k); memcpy(&k, kb, r.klen < sizeof k ? r.klen : sizeof k);
             if (k.vin_static != (uint32_t)!V.vin_dyn) { atomic_fetch_add(&g_pw_bad, 1); }   // a list from a device with the other vertex input (not this one's keys)
@@ -1169,6 +1264,7 @@ static void *pw_main(void *a) {
                 gfx_obtain(&fk, fnv(&fk, len, 1469598103934665603ull), len, sh, &lay, &k, 1, &made);
             }
         }
+        if (!bad) spec_end(key);
         gate_leave(tok);
         if (made) atomic_fetch_add(&g_pw_made, 1); else if (!bad) atomic_fetch_add(&g_pw_had, 1);
         setpriority(PRIO_PROCESS, 0, 10);   // back under the game's threads if a waiting frame path raised it (busy_wait)
@@ -1176,10 +1272,10 @@ static void *pw_main(void *a) {
     free(offs);
     if (atomic_fetch_add(&g_pw_done, 1) + 1 == (uint32_t)g_pw_threads)
         VLOG("prewarm: %u of %u pipeline keys in %.1f s on %d threads: %u made, %u already there, %u dropped (shaders no longer in the library, another device's keys); the frame path waited %.0f ms for them; "
-             "threads waited %.1f s for memory (DM_VK_PREWARM_MEM_MB), %.1f s for a long compile (DM_VK_PREWARM_HEAVY_MS)",
+             "threads waited %.1f s for memory (DM_VK_PREWARM_MEM_MB), %.1f s for a long compile (DM_VK_PREWARM_HEAVY_MS); %u left out (a compile that did not finish before)",
              (unsigned)(atomic_load(&g_pw_made) + atomic_load(&g_pw_had) + atomic_load(&g_pw_bad)), n, (now_ns() - g_pw_t0) / 1e9, g_pw_threads, (unsigned)atomic_load(&g_pw_made),
              (unsigned)atomic_load(&g_pw_had), (unsigned)atomic_load(&g_pw_bad), atomic_load(&g_pw_wait_ns) / 1e6, atomic_load(&g_pw_memwait_ns) / 1e9,
-             atomic_load(&g_pw_heavywait_ns) / 1e9);
+             atomic_load(&g_pw_heavywait_ns) / 1e9, (unsigned)atomic_load(&g_pw_unf));
     return NULL;
 }
 // DM_VK_PREWARM threads (default 4, at most 4; 2 before 2026-11-08). With the pipeline cache warm a key costs a few milliseconds (297 in 0.1 s on 2 threads); with it
@@ -1193,7 +1289,7 @@ static void pw_start(void) {
     if (nt > 4) nt = 4;
     heavy_load();   // the shaders earlier runs found long on this driver (build_end)
     g_pw_t0 = now_ns(); g_pw_threads = 0;
-    for (int i = 0; i < nt; i++) { pthread_t th; if (!pthread_create(&th, NULL, pw_main, NULL)) { pthread_detach(th); g_pw_threads++; } }
+    for (int i = 0; i < nt; i++) { pthread_t th; if (!vka_compiler_thread(&th, pw_main, NULL)) { pthread_detach(th); g_pw_threads++; } }
     VLOG("prewarm: %u pipeline keys of earlier runs made ahead on %d background threads (DM_VK_PREWARM=0 off)", g_pw_load_n, g_pw_threads);
 }
 
@@ -1215,7 +1311,7 @@ static void busy_wait(gval *g) {
 // shaders do. A skipped draw is missing from that frame only, except where the game keeps what it drew (a texture drawn once and reused): that stays wrong until redrawn.
 // Mesh pipelines are still made on the frame path; compute pipelines go through the same queue (DM_VK_CS_ASYNC, cs_obtain). Open: the cause, slow library compiles on
 // Turnip, is not addressed. cs: a compute job (sh[5] its shader, g an entry of g_cs; len, k unused)
-typedef struct as_job { struct as_job *next; gval *g; size_t len; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; uint64_t t0, cost; int cs; } as_job;
+typedef struct as_job { struct as_job *next; gval *g; size_t len; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; uint64_t t0, cost; int cs; uint64_t umask, smask; } as_job;   // umask, smask: a compute job's retyped images (cs_obtain)
 static as_job *g_as_head, **g_as_tail = &g_as_head; static pthread_mutex_t g_as_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_as_cv = PTHREAD_COND_INITIALIZER;
 static _Atomic uint64_t g_as_queued, g_as_made, g_as_skips, g_as_ns, g_as_lat_max_ns; static _Atomic int g_as_depth, g_as_depth_max;
 // The queue's order (vka_psogate.h vkpg_take_oldest): the job of least predicted cost first, the oldest in its turn. DM_VK_PSO_ORDER=0 (restart): arrival order, as
@@ -1256,7 +1352,7 @@ static void *as_main(void *a) {
         int tok = gate_enter(1, gate_heavy(pre, j->cs ? NULL : j->sh[1]));   // the frame's: its draws (dispatches) are skipped until it is made, so it goes before the speculative ones
         gate_hold(tok, key);
         uint64_t t0 = now_ns();
-        if (j->cs) cs_build(j->g, j->sh[5], &j->lay, vka_shader_cs_module(j->sh[5]), 0, 0, 0, 1);
+        if (j->cs) cs_build(j->g, j->sh[5], &j->lay, j->umask | j->smask ? vka_shader_img_module(j->sh[5], j->umask, j->smask) : vka_shader_cs_module(j->sh[5]), j->umask, j->smask, 0, 1);
         else gfx_build(j->g, j->len, j->sh, &j->lay, &j->k, 0, 1, j->t0);
         gate_leave(tok);
         uint64_t t1 = now_ns(), lat = t1 - j->t0, cur = atomic_load(&g_as_lat_max_ns);
@@ -1274,7 +1370,7 @@ static int g_as_n;
 static void as_start(void) {
     int v = VKA_ENV("DM_VK_PSO_ASYNC", 0); v = v < 0 ? 0 : v > 4 ? 4 : v;
     g_as_order = VKA_ENV("DM_VK_PSO_ORDER", 1) != 0; { int f = VKA_ENV("DM_VK_PSO_FAIR_MS", 2000); g_as_fair_ns = f > 0 ? (uint64_t)f * 1000000ull : (uint64_t)INT64_MAX; }   // (0: the oldest never takes a turn)
-    for (int i = 0; i < v; i++) { pthread_t th; if (!pthread_create(&th, NULL, as_main, NULL)) { pthread_detach(th); g_as_n++; } }
+    for (int i = 0; i < v; i++) { pthread_t th; if (!vka_compiler_thread(&th, as_main, NULL)) { pthread_detach(th); g_as_n++; } }
     if (v) VLOG("asynchronous pipelines: %d of %d background threads (DM_VK_PSO_ASYNC): a pipeline the cache lacks is made off the frame path and its draws are skipped until then", g_as_n, v);
 }
 static int as_threads(void) { static pthread_once_t once = PTHREAD_ONCE_INIT; pthread_once(&once, as_start); return g_as_n; }
@@ -1421,13 +1517,15 @@ static kmap g_cs = {.klen = sizeof(ckey)};
 // a pipeline an earlier run made costs no skip. Until 2026-11-15 compute pipelines were always made on the frame path: Ocarina of Time's effect shaders (3,587 compute
 // programs in cs_effect.bin, too many to prewarm them all) took 3.5-4.4 s each on Qualcomm's driver the first time an effect appeared (9e52219432f52a98, the Deku Seed
 // shot: a 3.7 s frame mid-play). A skipped dispatch leaves its outputs as they were: a particle effect is missing or frozen for those frames; work the game keeps (a
-// buffer written once, indirect arguments) stays stale until dispatched again. Pipelines with retyped images (umask / smask) stay on the frame path (the base pipeline in
-// their place would read the integer texels as floats)
+// buffer written once, indirect arguments) stays stale until dispatched again. Pipelines with retyped images (umask / smask, vka_draw.c img_retype) go the same way: their
+// dispatches are skipped until they are made, never run with the base pipeline (which would read the integer texels as floats). Until 2026-11-18 they were made on the
+// frame path, and the base pipeline that prewarm or this queue had made was never dispatched: Pokémon Pokopia's particle and light compute shaders (6bef3d23a8ddeafd,
+// af8f64d9f5542ef2 and others, 1-2.5 s each on Turnip) froze the game for about 5 s twice in its first minutes, every run (their records now carry the masks: pw_note_cs)
 static int cs_async_on(void) { return VKA_ENV("DM_VK_CS_ASYNC", 1) && as_threads() > 0; }
-static void cs_queue(gval *g, vka_shader *cs, const vka_layout *lay) {
+static void cs_queue(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t umask, uint64_t smask) {
     as_job *j = calloc(1, sizeof *j);
-    if (!j) { cs_build(g, cs, lay, vka_shader_cs_module(cs), 0, 0, 0, 0); return; }
-    j->g = g; j->sh[5] = cs; j->lay = *lay; j->t0 = now_ns(); j->cost = as_cost(j->sh); j->cs = 1;
+    if (!j) { cs_build(g, cs, lay, csm, umask, smask, 0, 0); return; }
+    j->g = g; j->sh[5] = cs; j->lay = *lay; j->t0 = now_ns(); j->cost = as_cost(j->sh); j->cs = 1; j->umask = umask; j->smask = smask;
     int d = atomic_fetch_add(&g_as_depth, 1) + 1, m = atomic_load(&g_as_depth_max);
     while (d > m && !atomic_compare_exchange_weak(&g_as_depth_max, &m, d)) {}
     atomic_fetch_add(&g_as_queued, 1);
@@ -1440,7 +1538,7 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, 
     if (!csm) return VK_NULL_HANDLE;   // (a retyped module that cannot be made: the caller takes the base pipeline)
     ckey k; memset(&k, 0, sizeof k); k.cs = cs; k.layout = lay->layout; k.umask = umask; k.smask = smask;
     uint64_t h = fnv(&k, sizeof k, 1469598103934665603ull);
-    int async = frame && !prewarm && !(umask | smask) && cs_async_on();
+    int async = frame && !prewarm && cs_async_on();
     pthread_mutex_lock(&g_mu);
     gval *g = km_get(&g_cs, &k, h);
     if (g) {
@@ -1473,9 +1571,9 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, 
             if (p) { g_ncs++; g_made++; g_frame_made++; g_probe_hit++; g_create_ms += dns / 1e6; g->p = p; g->busy = 0; pthread_cond_broadcast(&g_busy_cv); }
             else { g_probe_miss++; g_probe_miss_ns += dns; }
             pthread_mutex_unlock(&g_mu);
-            if (p) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); return p; }
+            if (p) { pw_note_cs(cs, umask, smask); return p; }
         }
-        cs_queue(g, cs, lay);
+        cs_queue(g, cs, lay, csm, umask, smask);
         atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed); vka_pso_wait = 1;
         return VK_NULL_HANDLE;
     }
@@ -1511,10 +1609,10 @@ static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderMod
     if (r && !over) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("compute pipeline %016llx: %d; its dispatches are skipped", (unsigned long long)cs->key, r); }
     { double ms_ = (now_ns() - t0) / 1e6; static _Atomic int n; if (!r && ms_ > 50 && atomic_fetch_add(&n, 1) < 200) VLOG("compute pipeline %016llx took %.0f ms%s", (unsigned long long)cs->key, ms_, prewarm ? " (prewarm)" : async ? " in the background (asynchronous)" : "");
       // (noted before the save, so the save that follows a long one has its key: until 2026-11-15 the save came first and the key waited for the next one)
-      if (!prewarm && !over && !(umask | smask)) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); }   // (one not made stays out of the prewarm list)
+      if (!prewarm && !over) pw_note_cs(cs, umask, smask);   // (one not made stays out of the prewarm list)
       if (!prewarm && !r && ms_ > 1000) vka_pso_save(2); }
 }
 VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 0); }
 VkPipeline vka_cs_pipeline_frame(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 1); }
-VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask) { int made; return cs_obtain(cs, lay, 0, &made, umask, smask, 0); }
+VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask) { int made; return cs_obtain(cs, lay, 0, &made, umask, smask, 1); }
 #endif

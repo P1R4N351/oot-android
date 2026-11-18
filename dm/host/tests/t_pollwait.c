@@ -13,7 +13,7 @@ static uint64_t test_now_ns(void) { return atomic_load(&poll_clock); }
 static _Thread_local struct timespec wait_start;
 static int test_clock_gettime(clockid_t clock, struct timespec *ts) {
     int r = clock_gettime(clock, ts);
-    if (!r && clock == CLOCK_REALTIME) wait_start = *ts;
+    if (!r && (clock == CLOCK_REALTIME || clock == CLOCK_MONOTONIC)) wait_start = *ts;   // the wait's clock (WAIT_CLOCK: monotonic on Android); its deadline is the last reading before the timed wait
     return r;
 }
 static int signal_wait, waiter_ready;   // signal_wait is set before starting the signaller; waiter_ready is protected by G
@@ -80,6 +80,11 @@ int main(void) {
     me_handle = svc_thread_main_init();
     poll_run(500, 0, 0);
     puts("PASS: 500 ns condition variable waits back off at 2 ms, not before");
+    {   // the state dump's SVC history (svc_thread): the last call is the timed-out WaitProcessWideKeyAtomic with its arguments
+        thr_t *me = pthread_getspecific(g_keythr); unsigned k = (me->nhist - 1) & 7;
+        assert(me->nhist >= 201 && me->hist[k].svc == 0x1C && me->hist[k].res == R_TIMEOUT && me->hist[k].a0 == (uint64_t)&mutex_word && me->hist[k].a1 == (uint64_t)&condition_key && me->hist[k].n == 0);
+        puts("PASS: the SVC history keeps the last wait, its arguments and its result");
+    }
     poll_run(30, 1, 0);
     puts("PASS: 30 ns waits between 1 us sleeps back off at 2 ms, not before");
     uint64_t r[32] = {0}; svc_thread(0x45, r); assert(r[0] == 0); uint32_t ev_w = (uint32_t)r[1], ev_r = (uint32_t)r[2];
@@ -109,5 +114,17 @@ int main(void) {
     poll_step(500, 0, 0); assert(backoffs() == b0 + 1);
     puts("PASS: a lengthened wait returns at the signal and the next poll starts a new run");
     r[0] = ev_w; svc_thread(0x16, r); r[0] = ev_r; svc_thread(0x16, r);
+#ifdef __ANDROID__
+    {   // a thread's wait condition variable keeps its deadline on the monotonic clock (WAIT_CLOCK): one on the wall clock would take this deadline, the
+        // monotonic clock's now + 50 ms, for one long past (the wall clock is decades ahead) and return at once; a clock set back would leave it asleep instead
+        thr_t *me = pthread_getspecific(g_keythr); assert(me);
+        struct timespec dl, a, b; clock_gettime(CLOCK_MONOTONIC, &dl); a = dl; dl.tv_nsec += 50000000; if (dl.tv_nsec >= 1000000000) { dl.tv_sec++; dl.tv_nsec -= 1000000000; }
+        pthread_mutex_lock(&G); int rc; do rc = pthread_cond_timedwait(&me->cv, &G, &dl); while (rc == 0); pthread_mutex_unlock(&G);
+        clock_gettime(CLOCK_MONOTONIC, &b);
+        int64_t waited = (b.tv_sec - a.tv_sec) * 1000000000ll + b.tv_nsec - a.tv_nsec;
+        assert(rc == ETIMEDOUT && waited >= 45000000 && waited < 2000000000);
+        puts("PASS: a thread's wait deadline is on the monotonic clock");
+    }
+#endif
     return 0;
 }

@@ -28,6 +28,35 @@ Shader updates can take a long time on a phone for games with many shaders (for 
 
 A game that asks for a shader your pack lacks gets it built on the phone while you play, with a **Building shaders (N)** label. See [Live shader building](Live-Shader-Building).
 
+## What is new in 0.3.44
+
+[Release notes](https://git.eden-emu.dev/moceure/BananaNative/releases/tag/v0.3.44). A major update: install it over v0.3.43 or update in the app. Games, packs, saves and settings are kept. Your shaders are taken over as they are (the shader update is optional); the app rewrites each game's code once in the background (**Ready · game code update ...** on the card; the game plays meanwhile).
+
+- **Pokopia native 4:3** (v2.0.1): Game settings > Aspect ratio > **4:3 (native)** ([Pokopia](Game-Pokemon-Pokopia)). Tested by its author only.
+- **Donkey Kong Bananza:** the gameplay camera fills screens wider than 16:9 ([Donkey Kong Bananza](Game-Donkey-Kong-Bananza)).
+- **Mario Tennis Fever:** a 30 fps cap keeps full game speed ([Mario Tennis Fever](Game-Mario-Tennis-Fever)). Tested by its author only.
+- **GPU clock floor** through KGSL on Qualcomm phones. Tested by its author only.
+- **Shaders:** shorter compiles for shaders built from now on (mostly Pokopia); compute shaders made in the background; prewarm list per GPU driver; prewarm skips a compile that did not finish before.
+- **Fixes:** host services and NVN fixes, game code rewriter fixes, clearer message for a damaged `.nup` part, Ukrainian wording, Linux builds.
+- **Switch 1 profiles** for several more games (community, not tried by us).
+- Not tried on a phone yet: the latest host-service and rewriter changes and the release APK itself.
+- **Known issues:** Mario Kart World on Turnip can lose the GPU after some minutes; Ocarina of Time on Turnip V39 can turn white, then green, after loading.
+
+## What is new in 0.3.43
+
+[Release notes](https://git.eden-emu.dev/moceure/BananaNative/releases/tag/v0.3.43). A major update: install it over v0.3.42 or update in the app. Games, packs, saves and settings are kept and nothing needs to be Prepared again.
+
+- **Languages:** Korean, Ukrainian, German and Italian join the app's own language list (machine translated; tell us if a line reads wrong).
+- **Screen scaling** (a game on the DLSS stand-in): Bicubic, SGSR 1 (default) or the device's own; see [Settings: Performance](Settings-Performance#upscaler).
+- **Fast FP16** (Turnip drivers only, off by default): faster shader math; see [Settings: Performance](Settings-Performance).
+- **Hide everything (clean picture):** one tap hides the controls and overlays ([The in-game panel](Side-Panel-In-Game)).
+- **Pokopia Screen shape:** the world and the UI are laid out for your screen's shape ([Pokopia](Game-Pokemon-Pokopia)).
+- **RAM saver: Strong** level, and a `[mem] rss:` log line with the app's RAM by category ([Settings: Performance](Settings-Performance)).
+- **Games:** 60 fps caps and locks for several games, a Welcome Tour profile, Castlevania: Belmont's Curse no longer crashes at boot, and Donkey Kong Bananza takes the nearest size when its dynamic resolution lands between two.
+- **Fixes:** Prepare works on exFAT, SD card and USB storage; save Back up, Restore and Import use the user the game starts with; audio keeps playing when another app makes sound, and no longer goes silent after a permanent focus loss on a dual-screen device; Pokopia add-ons (DLC) link when they sit beside the `.nup`; Fire Emblem: Fortune's Weave refuses a wrong RomFS and names the version needed.
+- **Known issue:** Mario Kart World on Turnip can lose the GPU after some minutes ([Mario Kart World](Game-Mario-Kart-World)).
+- Not tried on a phone yet: Screen scaling, Fast FP16, clean picture, Screen shape, the new frame caps, the languages, audio focus, exFAT Prepare and save import.
+
 ## What is new in 0.3.41
 
 - **Fix:** Prepare stopped at "Finding the shaders" with `No module named 'pack_dump'` for games with add-ons (Ocarina of Time, Donkey Kong Bananza, others). Prepare again; nothing else needs doing.

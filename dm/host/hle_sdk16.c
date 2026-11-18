@@ -193,32 +193,87 @@ HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine8LoadFontEPcPKvjj", "shared font BFT
 //   and nro0+0xaef8a8 crashed on a null pointer (nxnative b6dbb851). An engine gets at least FONT_WORK_MIN of host memory then; the game's buffer stays unused, and
 //   GetPointerToWorkBuffer still gives it back, which is what the game frees. Android's stand-in (Roboto) is much smaller; whether it alone fits 50 KB was not checked
 #define FONT_WORK_MIN 0x80000   // what the same game's first engine gets, in which that font loads
-#define FONT_ENGINES 16
-static struct { void *self, *game, *host; } font_work[FONT_ENGINES];
-HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj", "a work buffer the stand-in font fits in; the engine itself stays in the SDK", void, h_font_Initialize, void *self, void *buf, unsigned size) {
-    static void (*init)(void *, void *, unsigned);
-    if (!init && !(init = guest_sym("_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj"))) die("ScalableFontEngine::Initialize not found in the guest");
+// Finalize leaves the SDK's work-pointer accessor intact. Keep the small pointer record after
+// releasing its backing allocation, so a later getter still returns game-owned memory. A new
+// Initialize replaces it (a large-buffer initialization removes it). No SDK object layout is assumed.
+typedef struct font_work { void *self, *game, *host; struct font_work *next; } font_work_t;
+static font_work_t *font_work;
+static font_work_t **font_work_link(void *self) {   // font_mu held; each engine's calls remain caller-serialized
+    font_work_t **link = &font_work;
+    while (*link && (*link)->self != self) link = &(*link)->next;
+    return link;
+}
+static int (*font_initialize)(void *, void *, unsigned);
+static int (*font_finalize)(void *);
+static void *(*font_workbuffer)(void *);
+static pthread_once_t font_initialize_once = PTHREAD_ONCE_INIT;
+static pthread_once_t font_finalize_once = PTHREAD_ONCE_INIT;
+static pthread_once_t font_workbuffer_once = PTHREAD_ONCE_INIT;
+static void font_initialize_init(void) {
+    font_initialize = guest_sym("_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj");
+    if (!font_initialize) die("ScalableFontEngine::Initialize not found in the guest");
+}
+static void font_finalize_init(void) {
+    font_finalize = guest_sym("_ZN2nn6fontll18ScalableFontEngine8FinalizeEv");
+    if (!font_finalize) die("ScalableFontEngine::Finalize not found in the guest");
+}
+static void font_workbuffer_init(void) {
+    font_workbuffer = guest_sym("_ZN2nn6fontll18ScalableFontEngine22GetPointerToWorkBufferEv");
+    if (!font_workbuffer) die("ScalableFontEngine::GetPointerToWorkBuffer not found in the guest");
+}
+HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj", "a work buffer the stand-in font fits in; the engine itself stays in the SDK", int, h_font_Initialize, void *self, void *buf, unsigned size) {
+    pthread_once(&font_initialize_once, font_initialize_init);
+    font_work_t *retired = NULL;
+    pthread_mutex_lock(&font_mu);
+    font_work_t **link = font_work_link(self), *e = *link;
     if (size < FONT_WORK_MIN) {
+        if (!e) {
+            e = malloc(sizeof *e);
+            if (!e) { pthread_mutex_unlock(&font_mu); die("font engine work record"); }
+            *e = (font_work_t){.self = self};
+        }
+        if (!e->host) {
+            e->host = malloc(FONT_WORK_MIN);
+            if (!e->host) {
+                if (!*link) free(e);
+                pthread_mutex_unlock(&font_mu); die("font engine work memory");
+            }
+        }
+        *link = e; e->game = buf;
+        buf = e->host; size = FONT_WORK_MIN;
+    } else if (e) {
+        e->game = buf; retired = e;
+    }
+    pthread_mutex_unlock(&font_mu);
+    // The SDK stores the buffer even on failure; retain it until its successful Finalize or
+    // successful replacement Initialize. A failed replacement may retain old SDK state.
+    int result = font_initialize(self, buf, size);
+    if (retired && !result) {
         pthread_mutex_lock(&font_mu);
-        int i = 0;
-        while (i < FONT_ENGINES && font_work[i].self && font_work[i].self != self) i++;
-        if (i < FONT_ENGINES) {
-            if (!font_work[i].host && !(font_work[i].host = malloc(FONT_WORK_MIN))) die("font engine work memory");
-            font_work[i].self = self; font_work[i].game = buf;
-            buf = font_work[i].host; size = FONT_WORK_MIN;
-        } else LOG("[RED] more than %d font engines with a small work buffer: this one keeps the game's", FONT_ENGINES);
+        *font_work_link(self) = retired->next;
+        pthread_mutex_unlock(&font_mu);
+        free(retired->host); free(retired);
+    }
+    return result;
+}
+HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine8FinalizeEv", "SDK font finalization, then release the enlarged host work memory", int, h_font_Finalize, void *self) {
+    pthread_once(&font_finalize_once, font_finalize_init);
+    int result = font_finalize(self);
+    if (!result) {
+        pthread_mutex_lock(&font_mu);
+        font_work_t *e = *font_work_link(self);
+        if (e) { free(e->host); e->host = NULL; }
         pthread_mutex_unlock(&font_mu);
     }
-    init(self, buf, size);
+    return result;
 }
 HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine22GetPointerToWorkBufferEv", "the game's own buffer, also when the engine runs on host memory", void *, h_font_WorkBuffer, void *self) {
-    static void *(*get)(void *);
-    if (!get && !(get = guest_sym("_ZN2nn6fontll18ScalableFontEngine22GetPointerToWorkBufferEv"))) die("ScalableFontEngine::GetPointerToWorkBuffer not found in the guest");
-    void *game = NULL;
     pthread_mutex_lock(&font_mu);
-    for (int i = 0; i < FONT_ENGINES && font_work[i].self; i++) if (font_work[i].self == self) game = font_work[i].game;
+    font_work_t *e = *font_work_link(self);
+    if (e) { void *game = e->game; pthread_mutex_unlock(&font_mu); return game; }
     pthread_mutex_unlock(&font_mu);
-    return game ? game : get(self);
+    pthread_once(&font_workbuffer_once, font_workbuffer_init);
+    return font_workbuffer(self);
 }
 // The address points straight at the TTF (past the 8-byte header) and the size excludes the header, except for a game on SDK 11 or later whose main imports ScalableFontEngineHelper::Decode
 //   (dm_sdk_major, dm_game_imports; the profile's shared_font overrides). Super Mario 3D World + Bowser's Fury (SDK 10) records shared fonts as type 0 (main+0x975658), calls no Decode and hands the address
@@ -273,12 +328,22 @@ HLE_FORCE("_ZN2nn2pl18GetBuiltInFontDataEPNS0_17BuiltInFontDataNxENS0_17BuiltInF
 HLE_FORCE("_ZN2nn2pl18GetBuiltInFontDataEPNS0_20BuiltInFontDataOunceENS0_20BuiltInFontTypeOunceEb", "one built-in font (Switch 2 type): the stand-in TTFs", unsigned, h_pl_BuiltInOunce, pl_builtin_font_t *out, int type, unsigned b) { (void)b; return pl_builtin_font(out, type); }
 // Several built-in fonts at once (Kirby and the Forgotten Land - Nintendo Switch 2 Edition, SDK 19.3.7: sdk+0x4fc780, from main+0x65b534): types is an array of n type bytes (the game asks for 0-5);
 //   the SDK takes at most 6, asks the pl service for them, fills one entry per font it returns with the same fill as GetBuiltInFontData's (sdk+0x4fc650) and returns whether they are loaded. The game
-//   retries every 100 ms until they are. Unhooked, the SDK connects to pl:u and aborts (result 0xe15, sdk+0x4fd4a4). The fonts come in the order asked
-HLE_FORCE("_ZN2nn2pl21GetBuiltInFontDataSetEPiPNS0_20BuiltInFontDataOunceEPKNS0_20BuiltInFontTypeOunceEiNS_8settings12LanguageCodeEb", "several built-in fonts (Switch 2 types): the stand-in TTFs, in the order asked",
+//   retries every 100 ms until they are. Unhooked, the SDK connects to pl:u and aborts (result 0xe15, sdk+0x4fd4a4). The fonts come in the order asked.
+//   The Switch 1 overload (Splatoon Raiders' sdk+0x59a720) takes at most 7 types and has the service write *count only when the fonts are loaded; the Switch 2 one writes it whatever
+//   the answer. A type with no stand-in font is left out of the count
+static unsigned pl_builtin_font_set(int *count, pl_builtin_font_t *out, const uint8_t *types, int n, int max, int count_if_unloaded) {
+    int k = 0;
+    for (int i = 0; i < n && i < max; i++) k += (int)pl_builtin_font(&out[k], types[i]);
+    if (k > 0 || count_if_unloaded) *count = k;
+    return k > 0;
+}
+HLE_FORCE("_ZN2nn2pl21GetBuiltInFontDataSetEPiPNS0_20BuiltInFontDataOunceEPKNS0_20BuiltInFontTypeOunceEiNS_8settings12LanguageCodeEb", "several built-in fonts (Switch 2 types, at most 6): the stand-in TTFs, in the order asked",
           unsigned, h_pl_BuiltInSetOunce, int *count, pl_builtin_font_t *out, const uint8_t *types, int n, uint64_t lang, unsigned b) {
-    (void)lang; (void)b; int k = 0;
-    for (int i = 0; i < n && i < 6; i++) k += (int)pl_builtin_font(&out[k], types[i]);
-    *count = k; return k > 0;
+    (void)lang; (void)b; return pl_builtin_font_set(count, out, types, n, 6, 1);
+}
+HLE_FORCE("_ZN2nn2pl21GetBuiltInFontDataSetEPiPNS0_17BuiltInFontDataNxEPKNS0_17BuiltInFontTypeNxEiNS_8settings12LanguageCodeEb", "several built-in fonts (Switch 1 types, at most 7): the stand-in TTFs, in the order asked",
+          unsigned, h_pl_BuiltInSetNx, int *count, pl_builtin_font_t *out, const uint8_t *types, int n, uint64_t lang, unsigned b) {
+    (void)lang; (void)b; return pl_builtin_font_set(count, out, types, n, 7, 0);
 }
 // Whether running on a Switch 2 (codename Ounce) (returns bool): what the loaded sdk module was built for (dm_sdk_ounce, its spec string). A Switch 1 program hears no, as before: Mario 1.2.1
 // (program 0, SDK 16) uses it to decide whether to count add-on content (the upgrade pack) and suggest the Switch 2 Edition; a Switch 2 program (the Edition's program 1, SDK 21) hears yes (PR #1639 upstream)
@@ -312,17 +377,20 @@ HLE_FORCE("_ZN2nn3nfc12IsNfcEnabledEv", "NFC switched on or off (returns bool): 
 // The host has no NFC reader: it reports one NFC device on the currently connected controller (same as hle_hid.c) whose detection never finds a tag -- the same as real hardware with no amiibo at hand:
 // the game's "touch an amiibo" screen appears as usual and cancelling leaves it. Operations that need a tag (mount, application area read / write, amiibo settings applets) all return "tag not found".
 // The game attaches no activate / deactivate events; it polls GetDeviceState to see whether a tag is there.
+// GetState is the library's own state, as on Horizon: 0 until Initialize, 1 until Finalize. Breath of the Wild (main+0x128ec7c) and Tears of the Kingdom (main+0xca5200) call Initialize and attach their
+// availability change event only when GetState is not 1; answering 1 before Initialize skipped the attach, and TotK's poll of that event (main+0x1fb991c) aborted in TryWaitSystemEvent (#613).
 #define NFP_RES_TAG_NOT_FOUND (115u | 97u << 9)   // module 115 (nfp), description 97
 enum { NFP_STATE_INIT = 0, NFP_STATE_SEARCH = 1 };   // 0 initialized, 1 searching for a tag (2 = tag found, never on the host)
 typedef struct { uint32_t id; uint8_t reserved[4]; } NfpDeviceHandle;
 #define NFP_DEVICE_ID 0x4e465030u   // 'NFP0'
 static _Atomic int g_nfp_state;
+static _Atomic int g_nfp_lib;   // the library state GetState answers: 0 uninitialized, 1 initialized
 uint32_t hle_hid_connected_npad(void);
 static Result nfp_no_tag(const char *what) {
     static _Atomic int logged; if (!atomic_exchange(&logged, 1)) LOG("nfp: %s and other operations that need an amiibo tag → no tag found (the host has no NFC)", what);
     return NFP_RES_TAG_NOT_FOUND;
 }
-HLE_FORCE("_ZN2nn3nfp10InitializeEv", "amiibo library init; the host has one NFC device that never finds a tag", void, h_nfp_Init, void) { LOG("nfp::Initialize: the host has one NFC device and finds no amiibo tag"); }
+HLE_FORCE("_ZN2nn3nfp10InitializeEv", "amiibo library init; the host has one NFC device that never finds a tag", void, h_nfp_Init, void) { atomic_store(&g_nfp_lib, 1); LOG("nfp::Initialize: the host has one NFC device and finds no amiibo tag"); }
 HLE_FORCE("_ZN2nn3nfp29AttachAvailabilityChangeEventEPNS_2os15SystemEventTypeE", "NFC availability change event; bound to a kernel event, never signalled", void, h_nfp_AttachAvail, void *ev) { hle_bind_system_event(ev, 0); }
 HLE_FORCE("_ZN2nn3nfp11ListDevicesEPNS0_12DeviceHandleEPii", "NFC device list: one device", Result, h_nfp_List, NfpDeviceHandle *out, int *n, int max) {
     *n = 0; if (max >= 1) { memset(&out[0], 0, sizeof out[0]); out[0].id = NFP_DEVICE_ID; *n = 1; }
@@ -343,8 +411,8 @@ HLE_FORCE("_ZN2nn3nfp5MountERKNS0_12DeviceHandleENS0_9ModelTypeE", "mount tag (t
 HLE_FORCE("_ZN2nn3nfp7UnmountERKNS0_12DeviceHandleE", "unmount tag: no tag", Result, h_nfp_Unmount, const NfpDeviceHandle *h) { (void)h; return nfp_no_tag("Unmount"); }
 HLE_FORCE("_ZN2nn3nfp13GetCommonInfoEPNS0_10CommonInfoERKNS0_12DeviceHandleE", "common info: no tag", Result, h_nfp_CommonInfo, void *out, const NfpDeviceHandle *h) { (void)out; (void)h; return nfp_no_tag("GetCommonInfo"); }
 HLE_FORCE("_ZN2nn3nfp15GetRegisterInfoEPNS0_12RegisterInfoERKNS0_12DeviceHandleE", "register info: no tag", Result, h_nfp_RegInfo, void *out, const NfpDeviceHandle *h) { (void)out; (void)h; return nfp_no_tag("GetRegisterInfo"); }
-HLE_FORCE("_ZN2nn3nfp8GetStateEv", "amiibo library state: initialized (1)", int, h_nfp_LibState, void) { return 1; }
-HLE_FORCE("_ZN2nn3nfp8FinalizeEv", "amiibo library finalize; the host has no session", void, h_nfp_Fini, void) {}
+HLE_FORCE("_ZN2nn3nfp8GetStateEv", "amiibo library state: uninitialized (0) / initialized (1)", int, h_nfp_LibState, void) { return atomic_load(&g_nfp_lib); }
+HLE_FORCE("_ZN2nn3nfp8FinalizeEv", "amiibo library finalize; the host has no session", void, h_nfp_Fini, void) { atomic_store(&g_nfp_lib, 0); }
 HLE_FORCE("_ZN2nn3nfp5FlushERKNS0_12DeviceHandleE", "flush tag: no tag", Result, h_nfp_Flush, const NfpDeviceHandle *h) { (void)h; return nfp_no_tag("Flush"); }
 HLE_FORCE("_ZN2nn3nfp19OpenApplicationAreaERKNS0_12DeviceHandleEj", "open application area: no tag", Result, h_nfp_OpenArea, const NfpDeviceHandle *h, uint32_t id) { (void)h; (void)id; return nfp_no_tag("OpenApplicationArea"); }
 HLE_FORCE("_ZN2nn3nfp18GetApplicationAreaEPvPmRKNS0_12DeviceHandleEm", "read application area: no tag", Result, h_nfp_GetArea, void *buf, uint64_t *n, const NfpDeviceHandle *h, uint64_t sz) { (void)buf; (void)h; (void)sz; if (n) *n = 0; return nfp_no_tag("GetApplicationArea"); }

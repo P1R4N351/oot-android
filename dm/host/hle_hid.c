@@ -337,8 +337,10 @@ static int style_ev_slot(uint32_t id) { return id < DM_PLAYERS ? (int)id : id ==
 static void style_changed(uint32_t id) { int k = style_ev_slot(id); void *ev = k >= 0 ? atomic_load(&g_style_ev[k]) : NULL; if (ev) hle_signal_bound_system_event(ev); }
 // The operation mode changed while the game runs (hle_oe.c oe_state_set: the in-game panel's Console mode): player 1 is on the Handheld npad in handheld mode and on
 // No1 docked (connected_id), so the styles of No1 and Handheld change (players 2 to 8 keep their npads); a game that waits for the style event (Link's Awakening) would
-// otherwise keep reading the npad that went away
-void dm_hid_opmode_changed(void) { style_changed(NPAD_NO1); style_changed(NPAD_HANDHELD); }
+// otherwise keep reading the npad that went away. When it changed is kept for the controller applet a game opens because of it (ctrl_support)
+static _Atomic uint64_t g_mode_change_ns; static _Atomic int g_mode_changed;
+#define MODE_APPLET_NS 5000000000ull
+void dm_hid_opmode_changed(void) { atomic_store(&g_mode_change_ns, now_ns()); atomic_store(&g_mode_changed, 1); style_changed(NPAD_NO1); style_changed(NPAD_HANDHELD); }
 // The controllers appear (styles_set above): the style events bound before fire, as on a connect. why: what lifted it, for the log (red: a game that never set them)
 static void styles_now(int red, const char *why) {
     if (styles_set() || atomic_exchange(&g_styles_set, 1) == 1) return;   // once, whichever thread comes first
@@ -616,6 +618,28 @@ HLE_FORCE("_ZN2nn3hid20StopLrAssignmentModeEv", "L/R assignment mode (Joy-Con pa
 __attribute__((weak)) int front_controller_support(const void *arg, int *count) { (void)arg; (void)count; return -2; }
 static Result ctrl_support(int32_t *info, const int8_t *arg) {
     ctrl_arg a; ctrl_arg_parse(&a, (const uint8_t *)arg);
+    // The applet a game opens right after the operation mode changed: the mode moves player 1's controller between No1 and Handheld, the game sees its controller go
+    // and asks for controllers again (Link's Awakening, a second after each change in the in-game panel: the join screen came up every time, "1 to 1 players, 1 already
+    // joined"). Nothing changed about who plays, so the first applet within 5 s of the change is answered with the players as they are when they are enough; too few,
+    // and the join screen opens as ever (docs/reference/services.md, The join screen opened with nothing to choose)
+    if (atomic_exchange(&g_mode_changed, 0) && now_ns() - atomic_load(&g_mode_change_ns) < MODE_APPLET_NS) {
+        usable_changed();
+        int have = 0, lim = a.single ? 1 : a.max; for (int p = 0; p < DM_PLAYERS; p++) have += reported(p);
+        if (have >= a.min && have >= 1) {
+            if (lim > 0 && have > lim) have = lim;
+            LOG("hid controller applet: %d to %d players wanted right after an operation mode change: answered with the %d connected, no join screen", a.min, lim, have);
+            if (info) { info[0] = have; info[1] = (int32_t)connected_id(); }
+            return RES_OK;
+        }
+    }
+    // One player wanted and one controller there (player 1's, or the on-screen controls; no other device holds a player): the join screen has nothing to choose, so the
+    // game is answered at once. A second connected controller, or a game asking for more players, opens it
+    { int lim = a.single ? 1 : a.max;
+      if (arg && lim == 1 && a.min <= 1 && !(atomic_load(&g_players) & ~1u)) {
+          LOG("hid controller applet: one player wanted and one controller connected: answered with player 1, no join screen");
+          if (info) { info[0] = 1; info[1] = (int32_t)connected_id(); }
+          return RES_OK;
+      } }
     int joined = 0, r = front_controller_support(&a, &joined);
     if (r != -2) {
         LOG("hid controller applet: %d to %d players wanted%s%s: %s, %d player%s", a.min, a.single ? 1 : a.max, a.single ? ", single mode" : "", a.take_over ? "" : ", no take over",
@@ -650,10 +674,12 @@ static int shaking(uint64_t t) { return t >= atomic_load(&g_shake_t0) && t < ato
 // Live motion (dm_motion_set: a controller's gyro and accelerometer, front_mac.m / DmGamepad.m through motion_apple.h; dm_motion_set_switch: the iPhone's own, already in the
 // Switch frame, DmGamepad.m): while a player's samples keep arriving (within
 // MOTION_STALE_NS on the host clock) their six-axis sensor reports them (motion_fusion.h) instead of lying flat; a shake (DM_BTN_SHAKE) still adds its side-to-side acceleration.
-// Every history entry is the newest sample, numbered by time. DM_MOTION=0 ignores live motion; DM_MOTION_AXES / DM_MOTION_ACC_SIGN map Apple's axes (motion_fusion.h);
+// Each history entry is the sample of its time (motion_live_hist). DM_MOTION=0 ignores live motion; DM_MOTION_AXES / DM_MOTION_ACC_SIGN map Apple's axes (motion_fusion.h);
 // DM_MOTION_GAIN sets the tilt correction (default 0.5); DM_MOTION_SENS scales the phone's rotation rates (a controller's are real turns) and DM_MOTION_DEADZONE (degrees / s) zeroes the small ones (motion_shape); DM_MOTION_LOG=1 logs player 1's mapped sample once a second, for checking the axes
 enum { MOTION_STALE_NS = 300000000 };
-typedef struct { pthread_mutex_t mu; motion_state st; uint64_t last_ns, received_ns, logged; } live_motion;
+// hist: the last MOTION_HIST samples with their times (hist_n of them, the newest at hist_w - 1), for the history a game reads (motion_live_hist, six_states)
+enum { MOTION_HIST = 64 };
+typedef struct { pthread_mutex_t mu; motion_state st; uint64_t last_ns, received_ns, logged; struct { motion_state st; uint64_t t; } hist[MOTION_HIST]; uint32_t hist_w, hist_n; } live_motion;
 static live_motion g_motion[DM_PLAYERS] = {[0 ... DM_PLAYERS - 1] = {.mu = PTHREAD_MUTEX_INITIALIZER}};
 static live_motion g_hid_motion[DM_PLAYERS] = {[0 ... DM_PLAYERS - 1] = {.mu = PTHREAD_MUTEX_INITIALIZER}};
 static live_motion g_phone_motion = {.mu = PTHREAD_MUTEX_INITIALIZER};
@@ -678,7 +704,7 @@ static void motion_set(int p, const float acc[3], const float rot[3], int source
     uint64_t now = now_ns(), t = sample_ns ? sample_ns : now;
     if (!t || t > now || now - t > MOTION_STALE_NS) return;
     pthread_mutex_lock(&m->mu);
-    if (!m->last_ns || now - m->received_ns > MOTION_STALE_NS) { motion_reset(&m->st); m->last_ns = 0; }
+    if (!m->last_ns || now - m->received_ns > MOTION_STALE_NS) { motion_reset(&m->st); m->last_ns = 0; m->hist_n = 0; }   // (the history starts again too)
     if (m->last_ns && t <= m->last_ns) { pthread_mutex_unlock(&m->mu); return; }
     float dt = m->last_ns && t > m->last_ns ? (float)((double)(t - m->last_ns) / 1e9) : 0;
     float rs[3] = {rot[0], rot[1], rot[2]};
@@ -690,11 +716,13 @@ static void motion_set(int p, const float acc[3], const float rot[3], int source
             source == 1 ? "phone" : source == 2 ? "controller HID" : "controller", m->st.acc[0], m->st.acc[1], m->st.acc[2], m->st.gyro[0], m->st.gyro[1], m->st.gyro[2]);
     }
     m->last_ns = t; m->received_ns = now;
+    m->hist[m->hist_w % MOTION_HIST].st = m->st; m->hist[m->hist_w % MOTION_HIST].t = t; m->hist_w++; if (m->hist_n < MOTION_HIST) m->hist_n++;   // the history (motion_live_hist)
     pthread_mutex_unlock(&m->mu);
 }
 void dm_motion_sens(float f) { pthread_once(&g_motion_once, motion_env); if (f > 0) atomic_store(&g_motion_sens, f); }   // live, from the in-game panel (after the env's value)
 void dm_motion_set(int p, const float acc[3], const float rot[3]) { motion_set(p, acc, rot, 0, 0); }
 void dm_motion_set_switch(int p, const float acc[3], const float rot[3]) { motion_set(p, acc, rot, 1, 0); }
+void dm_motion_set_switch_at(int p, const float acc[3], const float rot[3], uint64_t t) { motion_set(p, acc, rot, 1, t); }
 void dm_motion_set_hid(int p, const float acc[3], const float rot[3], uint64_t t) { if (t) motion_set(p, acc, rot, 2, t); }
 void dm_motion_clear(int p) {
     if (p < 0 || p >= DM_PLAYERS) return;
@@ -725,6 +753,38 @@ static int motion_live(int p, motion_state *out) {
     }
     if (newest) return 1;
     return !p && g_phone_mode < 0 && motion_copy(&g_phone_motion, out);
+}
+// The history of a player's live motion, as a console's six-axis history holds it: out[i] is the sample that was current i * SIX_PERIOD_NS ago (out[0] the newest; times
+// before the oldest kept sample give that one). Every entry used to be the newest sample, so a game that reads the states since its last frame (GetSixAxisSensorStates
+// once a frame: at 30 fps and a 109 Hz phone gyroscope) got one of the three or four samples of the frame and the turn of the others never reached it. Returns how many
+// were filled: 0 when the source is not fresh. The source is chosen as motion_live chooses it
+static int motion_hist(live_motion *m, motion_state *out, int n) {
+    pthread_mutex_lock(&m->mu);
+    uint64_t now = now_ns();
+    int ok = m->last_ns && now - m->received_ns <= MOTION_STALE_NS && m->hist_n;
+    if (ok) {
+        uint32_t k = 0;   // how many samples back from the newest
+        for (int i = 0; i < n; i++) {
+            uint64_t ti = now > (uint64_t)i * SIX_PERIOD_NS ? now - (uint64_t)i * SIX_PERIOD_NS : 0;
+            while (k + 1 < m->hist_n && m->hist[(m->hist_w - 1 - k) % MOTION_HIST].t > ti) k++;
+            out[i] = m->hist[(m->hist_w - 1 - k) % MOTION_HIST].st;
+        }
+    }
+    pthread_mutex_unlock(&m->mu);
+    return ok ? n : 0;
+}
+static int motion_live_hist(int p, motion_state *out, int n) {
+    if (p < 0 || p >= DM_PLAYERS || n <= 0) return 0;
+    pthread_once(&g_motion_once, motion_env);
+    if (!p && g_phone_mode > 0) return motion_hist(&g_phone_motion, out, n);
+    uint32_t src = p ? 1u << p : 1u | merged_players(); uint64_t newest = 0; live_motion *best = NULL;
+    for (int i = 0; i < DM_PLAYERS; i++) if (src >> i & 1) {
+        motion_state st; live_motion *m = &g_motion[i]; uint64_t t = motion_copy(m, &st);
+        if (!t) { m = &g_hid_motion[i]; t = motion_copy(m, &st); }
+        if (t > newest) { newest = t; best = m; }
+    }
+    if (best) return motion_hist(best, out, n);
+    return !p && g_phone_mode < 0 ? motion_hist(&g_phone_motion, out, n) : 0;
 }
 static void six_sample_live(SixAxisState *s, int64_t samp, const motion_state *ms, int shakes) {
     memset(s, 0, sizeof *s);
@@ -758,7 +818,11 @@ static int six_states(SixAxisState *out, int n, uint32_t h) {
     int64_t samp = (int64_t)(guest_ns() / SIX_PERIOD_NS);
     int pl = player_of(h >> 8 & 0xff), shakes = pl == 0;
     motion_state ms;
-    if (motion_live(pl, &ms)) { for (int i = 0; i < n; i++) six_sample_live(&out[i], samp - i, &ms, shakes); return n; }
+    if (motion_live(pl, &ms)) {
+        enum { HN = 40 }; motion_state hs[HN]; int hn = n > 1 ? motion_live_hist(pl, hs, n < HN ? n : HN) : 0;   // each entry the sample of its time (motion_live_hist), not the newest
+        for (int i = 0; i < n; i++) six_sample_live(&out[i], samp - i, i < hn ? &hs[i] : hn ? &hs[hn - 1] : &ms, shakes);
+        return n;
+    }
     for (int i = 0; i < n; i++) six_sample(&out[i], samp - i, shakes);
     return n;
 }
@@ -1005,7 +1069,9 @@ HLE_FORCE("_ZN2nn3hid13GetNpadIdTypeEPjNS0_12NmouseHandleE", "mouse's controller
 // Switch 2 Welcome Tour aborted on it (Result 0xe15, sdk+0x65cfdc in v262144) right after its graphics came up
 HLE_FORCE("_ZN2nn3hid25GetMousePointerSpeedScaleEv", "mouse pointer speed setting: the default, 1.0", float, h_hid_MouseSpeed, void) { return 1.0f; }
 HLE_FORCE("_ZN2nn3hid22GetSixAxisSensorStatesEPNS0_18SixAxisSensorStateEiRKNS0_19SixAxisSensorHandleE", "six-axis sensor states: every requested entry, newest first",
-          int, h_hid_SixStates, SixAxisState *out, int n, const uint32_t *h) { return six_states(out, n, *h); }
+          int, h_hid_SixStates, SixAxisState *out, int n, const uint32_t *h) {
+    { static _Atomic int said; if (n > 0 && !atomic_exchange(&said, 1)) LOG("hid: the game reads %d six-axis state%s at a time%s", n, n == 1 ? "" : "s", n == 1 ? "" : " (each the sample of its time)"); }   // once, for a motion report
+    return six_states(out, n, *h); }
 // Vibration handles: byte 0 = SDK style index (FullKey 3, Handheld 4), byte 1 = npad id, byte 2 = motor.
 // See libnx hid.c _hidGetVibrationDeviceHandles. Only the styles this host connects are exposed.
 // The players a vibration handle names, before its haptics output is asked about: the handle bytes are checked and the npad's style decides the rest. A game asks whether
