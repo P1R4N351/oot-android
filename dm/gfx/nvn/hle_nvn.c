@@ -3132,6 +3132,11 @@ NVN_NOPROTO(nvnDlssParametersSetJitterOffset, void, dlss_params_t *p, float x, f
 NVN_NOPROTO(nvnDlssParametersSetPreExposure, void, dlss_params_t *p, float e) { p->pre_exposure = e; }
 NVN_NOPROTO(nvnDlssParametersSetHistoryReset, void, dlss_params_t *p, uint32_t on) { p->reset = on & 0xff; }   // an NVNboolean: only its low 8 bits are the guest's
 NVN_NOPROTO(nvnDlssParametersSetEvaluationIndex, void, dlss_params_t *p, int i) { (void)p; (void)i; }   // which of the network's frames in flight: the replay runs them in order
+// Debug overlay setters: the host's DLSS stand-in (MetalFX on Apple, GSR2 / FSR1 on Android) has no debug overlay
+NVN_NOPROTO(nvnDlssParametersSetOverlayDebugLayer, void, dlss_params_t *p, int layer, uint32_t on) { (void)p; (void)layer; (void)on; }
+NVN_NOPROTO(nvnDlssParametersSetOverlayFullScreen, void, dlss_params_t *p, uint32_t on) { (void)p; (void)on; }
+NVN_NOPROTO(nvnDlssParametersSetOverlayJitterDebug, void, dlss_params_t *p, uint32_t on) { (void)p; (void)on; }
+NVN_NOPROTO(nvnDlssParametersSetOverlayShowNans, void, dlss_params_t *p, uint32_t on) { (void)p; (void)on; }
 NVN_NOPROTO(nvnCommandBufferEvaluateDlss, void, NVNcommandBuffer *c, const dlss_net_t *n, const dlss_params_t *p) {
     p_dlss *o = REC_SNAP(c, OP_DLSS, p_dlss, DLSS_TEXTURES);
     for (int k = 0; k < DLSS_TEXTURES; k++) {
