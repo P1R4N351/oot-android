@@ -492,6 +492,37 @@ int main(void) {
         t_guest_sym = NULL;
     }
 
+    printf("⑩ repeated save commit failures are deduplicated per path with a count\n");
+    {   char neu[1100], neuc[1200], out[1100];
+        snprintf(neu, sizeof neu, "%s.new", save);
+        snprintf(neuc, sizeof neuc, "%s/stuck", neu);
+        snprintf(out, sizeof out, "%s/commit_dedup.txt", root);
+        mkdir(neu, 0755); put(neuc, "x"); chmod(neu, 0555);
+        fflush(NULL); pid_t pid = fork();
+        if (!pid) {
+            freopen(out, "w", stderr);
+            for (int k = 0; k < 25; k++) {
+                if (h_fs_Commit("save") != RES_FAIL) _exit(2);
+            }
+            chmod(neu, 0755);
+            if (h_fs_Commit("save") != RES_OK) _exit(3);
+            if (h_fs_Commit("save") != RES_OK) _exit(4);
+            fflush(stderr);
+            _exit(0);
+        }
+        int st = 0; waitpid(pid, &st, 0);
+        chmod(neu, 0755); rm_tree(neu);
+        char buf[8192] = {0}; FILE *f = fopen(out, "r");
+        if (f) { fread(buf, 1, sizeof buf - 1, f); fclose(f); }
+        int n_cannot = 0, n_still = 0, n_cleared = 0;
+        for (const char *q = buf; (q = strstr(q, "cannot clear the")); q++) n_cannot++;
+        for (const char *q = buf; (q = strstr(q, "still failing")); q++) n_still++;
+        for (const char *q = buf; (q = strstr(q, "cleared after 25 failed attempts")); q++) n_cleared++;
+        CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "25 failed commits then recovery after chmod");
+        CHECK(n_cannot == 1 && n_still == 1 && n_cleared == 1,
+              "deduped log: cannot_clear=%d still_failing=%d cleared=%d (expected 1, 1, 1)", n_cannot, n_still, n_cleared);
+    }
+
     char cmd[1200]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", root); system(cmd);
     printf("== %d checks, %d failed ==\n", checks, fails);
     return fails != 0;
