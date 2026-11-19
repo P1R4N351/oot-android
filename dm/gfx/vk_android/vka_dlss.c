@@ -8,7 +8,9 @@
 //       from more history (steadier) to less ghosting; DM_VK_GSR2_TUNE (0..7) forces a row; DM_VK_GSR2_VREJ / _VLO / _VK / _SFCAP / _MVNEAR / _BOXMOTW / _BSMOV override fields.
 // The colour is read through the input texture's own view format (sfmt; vka_exec.c dlss_eval takes it from the texture, as an image may be shared by a texture and
 // its sRGB twin), so an sRGB input arrives linear; RCAS sRGB-encodes for an sRGB output (enc), which the replay stores as its UNORM twin.
-// Both end in a 1:1 blit of an RGBA16F work image into the output texture. DM_VK_DLSS_SHARP (0..100, default 15) is RCAS's strength; DM_VK_DLSS_JX / _JY and
+// Both end in a 1:1 blit of an RGBA16F work image into the output texture, whose alpha RCAS takes from the input colour (bilinear, where the output pixel lies in the
+// input rectangle): NVN2's DLSS keeps the colour's alpha and games composite by it; the upscalers themselves keep colour only.
+// DM_VK_DLSS_SHARP (0..100, default 15) is RCAS's strength; DM_VK_DLSS_JX / _JY and
 // DM_VK_GSR2_MV are the jitter's and the motion vectors' signs. Every switch is read at every evaluation; DM_VK_GPUPROF lists the passes.
 // 0 = not done (no push descriptors, a pipeline or work image failed, no depth or motion for GSR2, the output format cannot be blitted): the caller's bilinear blit
 #if defined(__ANDROID__)
@@ -227,9 +229,14 @@ int vka_dlss_run(VkCommandBuffer cb, const p_dlss *o, int mode, vka_img *s, uint
         { VkImageView in[4] = {D.t.view}; VkSampler sm[4] = {D.ls}; dpass(cb, P_EASU, in, sm, D.e.view, VK_NULL_HANDLE, pe, ow, oh); }
         how = "FSR 1 EASU + RCAS";
     }
-    {   // RCAS on the scene colour (tonemapped), the tonemap undone, sRGB-encoded for an sRGB output
-        struct { uint32_t con0[4]; int32_t size[2], itm, enc; int32_t pad[24]; } pr = {{fbits(sharp), 0, 0, 0}, {ow, oh}, 1, enc, {0}};
-        VkImageView in[4] = {D.e.view}; VkSampler sm[4] = {D.ns}; dpass(cb, P_RCAS, in, sm, D.r.view, VK_NULL_HANDLE, &pr, ow, oh);
+    {   // RCAS on the scene colour (tonemapped), the tonemap undone, sRGB-encoded for an sRGB output; the alpha is the input colour's, read bilinearly where the output pixel
+        // lies in the input rectangle (plus the jitter, as EASU and GSR2 read the colour): NVN2's DLSS keeps the colour's alpha, and a game may composite its output by it
+        // (Fast Fusion's main menu: the 3D layer drawn over the menu with SRC_ALPHA blending); the upscalers above keep colour only
+        uint32_t tw = s->w >> sl ? s->w >> sl : 1, th = s->h >> sl ? s->h >> sl : 1;
+        struct { uint32_t con0[4]; int32_t size[2], itm, enc; float abase[2], ascale[2], arcp[2]; int32_t pad[18]; } pr = {{fbits(sharp), 0, 0, 0}, {ow, oh}, 1, enc,
+            {sx + jx, sy + jy}, {(float)iw / ow, (float)ih / oh}, {1.0f / tw, 1.0f / th}, {0}};
+        _Static_assert(sizeof pr == 128, "push constants");
+        VkImageView in[4] = {D.e.view, cv}; VkSampler sm[4] = {D.ns, D.ls}; dpass(cb, P_RCAS, in, sm, D.r.view, VK_NULL_HANDLE, &pr, ow, oh);
     }
     VkImageBlit bl = {{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{0, 0, 0}, {ow, oh, 1}}, {VK_IMAGE_ASPECT_COLOR_BIT, dl, 0, 1}, {{dx, dy, 0}, {dx + ow, dy + oh, 1}}};
     vk.vkCmdBlitImage(cb, D.r.img, VK_IMAGE_LAYOUT_GENERAL, d->img, VK_IMAGE_LAYOUT_GENERAL, 1, &bl, VK_FILTER_NEAREST);

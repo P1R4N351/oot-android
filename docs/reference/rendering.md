@@ -1768,6 +1768,13 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Check:** pending the phone check: the new log line must name an sRGB colour (or output) for Star Fox; then FSR 3.1 and Bilinear match GSR 2's brightness. If it names neither as sRGB, the brightness has another cause (open).
 - **Found on:** [Star Fox](../../dm/games/0400E88025B1A000/README.md#found-on-this-game) (players' report: too bright on FSR). [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md#dlss-on-a-stand-in), for which the modes were made, was right in every mode, so neither of its textures is sRGB (inferred; the log line will show it).
 
+### The DLSS stand-in wrote alpha 1 over the colour's alpha (Android)
+
+- **Symptom:** (Android, NVN2's DLSS on the GSR 2 or FSR 1 stand-in) a screen that draws its 3D layer over a 2D one shows only the 3D layer on black: Fast Fusion's main menu showed a lit ship and no menu, which still worked blind; the Bilinear upscaler showed it. No `[RED]` line.
+- **Cause:** the game composites the DLSS output over its menu with SRC_ALPHA / ONE_MINUS_SRC_ALPHA blending (`/shaders/fullscreen.shdr`, `b24925420d945897`), so it needs the colour's alpha in the output (0 around the ship, 1 on it), as NVN2's DLSS keeps it. The stand-in's last pass, RCAS (`fsr/dlss_rcas.comp`), stored alpha 1 everywhere (EASU and GSR 2 keep colour only), and the blit carried it into the output. `DM_VK_TEX_STATS=b24925420d945897` with `DM_VK_TEX_STATS_DRAWS=12` showed the output (texture ID 505) with alpha above 1/1024 on 100 % of its texels on GSR 2 and on 14 % (the ship) with the bilinear blit.
+- **Fix:** general: RCAS takes the alpha from the input colour, read bilinearly where the output pixel lies in the input rectangle, jitter included as for the colour (`vka_dlss.c` `vka_dlss_run`, the colour view on binding 1). FSR 3.1 (`DM_VK_DLSS=4`, `vka_fsr3.c`) still writes its own alpha: open.
+- **Found on:** [Fast Fusion](../../dm/games/040041E0212AE000/README.md#found-on-this-game) (main menu, 2026-11-19, Odin 3 on the system driver and Turnip v32).
+
 ### Dense vegetation in the Kokiri Forest
 
 - **Symptom:** rendering the full vegetation in the forest takes several milliseconds of GPU time on the Odin 3.

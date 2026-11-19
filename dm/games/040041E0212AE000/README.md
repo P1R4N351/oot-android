@@ -49,6 +49,7 @@ Regression level: moderate, because shared shader extraction and translation cha
 - SHN resources and embedded shader objects.
 - Subword task and mesh payload accesses.
 - Indexed texture handles in NVN2 compute c0.
+- [The DLSS stand-in wrote alpha 1 over the colour's alpha](../../../docs/reference/rendering.md#the-dlss-stand-in-wrote-alpha-1-over-the-colours-alpha-android) (Android): the main menu showed only the ship; resolved on GSR 2 and FSR 1, open on FSR 3.1.
 - DLSS scalers released under their encoders: already fixed before this bring-up; the earlier report reached its eighth network after about nine minutes.
 
 ## Open
