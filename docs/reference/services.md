@@ -515,14 +515,6 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Fix:** `hle_hid.c` answers it. On Horizon a device is mounted when the npad's connected controller has the handle's style and an actuator on that side; the host reports it mounted when the handle names a channel of the npad's controller (`vib_valid`), whether or not a haptics output is routed yet ([A vibration device before its controller connects](#a-vibration-device-before-its-controller-connects)).
 - **Found on:** [Super Mario Odyssey](../../dm/games/0100000000010000/README.md) 1.4.1, entering a Sand Kingdom pipe (`main+0x5d3150` asks for each handle of a controller whether any is mounted; GitHub issue #715). No other local game imports it.
 
-### A vibration device before its controller connects
-
-- **Symptom:** with rumble on, a game asks for vibration handles at boot, then sends one idle value and none for the rest of the session; nothing vibrates although a controller connects a few seconds later. `DM_RUMBLE_LOG=1` shows `GetVibrationDeviceInfo` answering mounted 0 before the pad connects.
-- **Cause:** `IsVibrationDeviceMounted`, `IsOunceVibrationDeviceMounted` and `GetVibrationDeviceInfo` answered from `vib_targets`, which keeps only the players with a routed haptics output. A game that asks once at boot, before a Bluetooth pad has connected, keeps "not mounted" for the session and never sends rumble. On Horizon the answer describes the npad's controller, not whether its motor is being driven yet.
-- **Fix:** `hle_hid.c`'s `vib_valid` is the handle and npad-style check behind `vib_targets` without the routed-output mask; the three calls answer from it. Sends keep `vib_targets` (a valid channel with a routed output), so values sent before routing are still dropped. From upstream nxnative e3230cc1 (PR #2859), the capability part only: upstream also lets the handles and `IsVibrationPermitted` follow the rumble setting, which rests on its earlier handle rework.
-- **Found on:** [The Legend of Zelda: Echoes of Wisdom](../../dm/games/01008CF01BAAC000/README.md) 1.1.0, upstream (a Bluetooth pad on a Mac: one idle value before, about 400 values a second after).
-- **Check:** `t_hid` (both mounted forms and the left and right actuator answers before a route).
-
 ### Whether an Ounce vibration device is mounted
 
 - **Symptom:** with rumble on, `[RED] sf: the game connects to service hid itself, which the host does not serve`, then an abort with Result 0xe15 at `sdk+0x6c8e54` under `nn::hid::detail::IsOunceVibrationDeviceMounted` / `nn::hid::IsOunceVibrationDeviceMounted`. In Ocarina of Time, the game aborts as soon as a button is pressed to play the ocarina (e.g. learning Zelda's Lullaby). With rumble off the game never asks.
