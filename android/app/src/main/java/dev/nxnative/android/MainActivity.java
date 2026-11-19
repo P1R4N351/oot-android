@@ -776,6 +776,9 @@ public final class MainActivity extends Activity {
                 .setSingleChoiceItems(Overlay.labelChoices(), Prefs.layerLabel(this), (d, w) -> { Prefs.layerLabel(this, w); labelRow.value(Overlay.labelChoices()[w]); d.dismiss(); })
                 .setNegativeButton(Tx.s(R.string.common_cancel), null).show());
         play.addView(labelRow.view);
+        play.addView(new Ui.Setting(this, "📜", Tx.s(R.string.settings_startup_log), null)
+                .toggle(this, Prefs.startupLog(this), (b, on) -> Prefs.startupLog(this, on))
+                .value(Tx.s(R.string.settings_startup_log_note)).view);
         Ui.Setting touch = new Ui.Setting(this, "🎮", Tx.s(R.string.common_on_screen_controls), null).chevron(this);
         touch.view.setOnClickListener(v -> new PadFocus.Builder(this).setTitle(Tx.s(R.string.common_on_screen_controls))
                 .setSingleChoiceItems(Tx.arr(R.array.arr_touch_mode), TouchControls.mode(this), (d, w) -> { TouchControls.mode(this, w); touch.value(touchLabel(w)); d.dismiss(); })

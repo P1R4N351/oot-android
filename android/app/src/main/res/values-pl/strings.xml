@@ -282,6 +282,8 @@
     <string name="game_building_shaders_label">Etykieta „Budowanie shaderów”</string>
     <string name="settings_building_shaders_label">Etykieta „Budowanie shaderów”</string>
     <string name="settings_building_shaders_label_note">Gra, która w trakcie grania buduje brakujące shadery, pokazuje u góry ekranu mały, półprzezroczysty licznik. Budowanie czekające na chłodniejszy telefon lub więcej baterii jest zawsze zgłaszane. Ukrycie etykiety nie zatrzymuje budowania.</string>
+    <string name="settings_startup_log">Pokaż log uruchamiania</string>
+    <string name="settings_startup_log_note">Pokazuje log uruchamiania na czarnym ekranie, dopóki gra nie narysuje pierwszej klatki. Awarie nadal są wyświetlane, a log jest zawsze zapisywany na dysku.</string>
     <string-array name="arr_layer_label">
         <item>Wyłączona</item>
         <item>Tylko liczba</item>
@@ -499,6 +501,7 @@
     <string name="home_copied_into_the_app">Skopiowano do aplikacji: %1$s</string>
     <string name="home_game_now_uses">%1$s teraz używa: %2$s.</string>
     <string name="home_lossless_dll_not_installed">Lossless.dll nie zainstalowany: %1$s</string>
+    <string name="home_tile_details">Szczegóły ›</string>
     <string name="home_checking_name">Sprawdzanie: %1$s…</string>
     <plurals name="home_checking_games">
         <item quantity="one">Sprawdzanie %1$d gry…</item>
@@ -1314,7 +1317,6 @@
     <string name="settings_player_id">ID gracza</string>
     <string name="settings_player_id_hint">Nazwy to tylko etykiety: zapisy podążają za ID, więc zmiana nazwy nigdy ich nie przenosi ani nie miesza.</string>
     <string name="settings_that_picture_could_not_be_read">Nie można odczytać tego obrazu</string>
-    <string name="home_tile_details">Szczegóły ›</string>
     <string name="home_move_left">Przesuń w lewo</string>
     <string name="home_move_right">Przesuń w prawo</string>
     <string name="home_delete_game_menu">Usuń grę…</string>

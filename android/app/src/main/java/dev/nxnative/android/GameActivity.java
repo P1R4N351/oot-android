@@ -254,6 +254,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     private boolean overlayOn() { return !clean && (overlayEnv != null ? overlayEnv : Prefs.overlay(this)); }
 
+    private boolean logOverlayVisible() {
+        return !clean && ((!drawing && Prefs.startupLog(this)) || failed || TouchControls.showLog(this));
+    }
+
     /** The panel's one-tap clean picture: stats, tag, log, touch controls and the panel arrow, saved as one flag. The overlay and log settings are left
      *  alone (the host's present stops drawing because overlayOn() is false); Back / Home still opens the panel, where the same button restores them. */
     void clean(boolean hidden) {
@@ -261,7 +265,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         Prefs.clean(this, hidden);
         if (fps != null) fps.setVisibility(hidden || !overlayOn() ? View.GONE : View.VISIBLE);
         if (tag != null) tag.setVisibility(hidden || !overlayOn() || !Prefs.overlayItem(this, "tag") ? View.GONE : View.VISIBLE);
-        if (overlay != null) overlay.setVisibility(!hidden && TouchControls.showLog(this) ? View.VISIBLE : View.GONE);
+        if (overlay != null) overlay.setVisibility(logOverlayVisible() ? View.VISIBLE : View.GONE);
         if (controls != null) controls.setClean(hidden);
         updateHandle(controls == null || controls.normalVisible());
     }
@@ -1180,7 +1184,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             String text = new String(b, StandardCharsets.UTF_8);
             if (text.contains("[nvn] frame ") || text.contains("[longframe]") || text.contains("window frame rate")) drawing = true;   // the host logs these once frames are presented
             if (text.contains("CRASH sig=") || text.contains("FATAL")) failed = true;
-            overlay.setVisibility(!clean && (!drawing || failed || TouchControls.showLog(this)) ? View.VISIBLE : View.GONE);
+            overlay.setVisibility(logOverlayVisible() ? View.VISIBLE : View.GONE);
             String[] lines = text.split("\n");
             StringBuilder s = new StringBuilder();
             for (int i = Math.max(from > 0 ? 1 : 0, lines.length - 8); i < lines.length; i++) s.append(lines[i]).append('\n');

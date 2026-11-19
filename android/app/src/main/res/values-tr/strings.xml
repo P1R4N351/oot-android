@@ -282,6 +282,8 @@
     <string name="game_building_shaders_label">“Gölgelendiriciler oluşturuluyor” etiketi</string>
     <string name="settings_building_shaders_label">“Gölgelendiriciler oluşturuluyor” etiketi</string>
     <string name="settings_building_shaders_label_note">Oynarken eksik gölgelendiricileri oluşturan bir oyun, ekranın üstünde küçük, yarı saydam bir sayı gösterir. Telefonun soğumasını ya da daha fazla pili bekleyen bir oluşturma her zaman bildirilir. Etiketi gizlemek oluşturmayı durdurmaz.</string>
+    <string name="settings_startup_log">Başlangıç günlüğünü göster</string>
+    <string name="settings_startup_log_note">Oyun ilk karesini çizene kadar siyah ekran üzerinde önyükleme günlüğünü gösterir. Çökmeler yine gösterilir ve günlük her zaman diske kaydedilir.</string>
     <string-array name="arr_layer_label">
         <item>Kapalı</item>
         <item>Yalnızca sayı</item>
@@ -499,6 +501,7 @@
     <string name="home_copied_into_the_app">Uygulamaya kopyalandı: %1$s</string>
     <string name="home_game_now_uses">%1$s artık şunu kullanıyor: %2$s.</string>
     <string name="home_lossless_dll_not_installed">Lossless.dll kurulmadı: %1$s</string>
+    <string name="home_tile_details">Ayrıntılar ›</string>
     <string name="home_checking_name">Denetleniyor: %1$s…</string>
     <plurals name="home_checking_games">
         <item quantity="one">%1$d oyun denetleniyor…</item>
@@ -1300,7 +1303,6 @@
     <string name="settings_player_id">Oyuncu kimliği</string>
     <string name="settings_player_id_hint">İsimler yalnızca etikettir: kayıtlar kimliği izler, bu yüzden ad değiştirmek kayıtları taşımaz veya karıştırmaz.</string>
     <string name="settings_that_picture_could_not_be_read">Bu resim okunamadı</string>
-    <string name="home_tile_details">Ayrıntılar ›</string>
     <string name="home_move_left">Sola taşı</string>
     <string name="home_move_right">Sağa taşı</string>
     <string name="home_delete_game_menu">Oyunu kaldır…</string>

@@ -282,6 +282,8 @@
     <string name="game_building_shaders_label">Etichetta «creazione shader»</string>
     <string name="settings_building_shaders_label">Etichetta «creazione shader»</string>
     <string name="settings_building_shaders_label_note">Un gioco che crea gli shader mancanti mentre giochi mostra in alto sullo schermo un piccolo conteggio semitrasparente. Una build che attende un telefono fresco o più batteria viene sempre segnalata. Nascondere l\'etichetta non ferma la build.</string>
+    <string name="settings_startup_log">Mostra log di avvio</string>
+    <string name="settings_startup_log_note">Mostra il log di avvio sullo schermo nero finché il gioco non disegna il primo fotogramma. I crash vengono comunque mostrati e il log viene sempre salvato su disco.</string>
     <string-array name="arr_layer_label">
         <item>No</item>
         <item>Solo numero</item>

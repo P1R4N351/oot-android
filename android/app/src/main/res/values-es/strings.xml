@@ -282,6 +282,8 @@
     <string name="game_building_shaders_label">Etiqueta «Compilando shaders»</string>
     <string name="settings_building_shaders_label">Etiqueta «Compilando shaders»</string>
     <string name="settings_building_shaders_label_note">Un juego que compila los shaders que le faltan mientras juegas muestra un pequeño contador translúcido en la parte superior de la pantalla. Una compilación que espera a que el teléfono se enfríe o tenga más batería siempre se indica. Ocultar la etiqueta no detiene la compilación.</string>
+    <string name="settings_startup_log">Mostrar registro de inicio</string>
+    <string name="settings_startup_log_note">Muestra el registro de arranque sobre la pantalla negra hasta que el juego dibuje su primer fotograma. Los fallos se siguen mostrando y el registro siempre se guarda en disco.</string>
     <string-array name="arr_layer_label">
         <item>Desactivada</item>
         <item>Solo el número</item>
@@ -499,6 +501,7 @@
     <string name="home_copied_into_the_app">Copiado en la app: %1$s</string>
     <string name="home_game_now_uses">%1$s ahora usa %2$s.</string>
     <string name="home_lossless_dll_not_installed">Lossless.dll no instalado: %1$s</string>
+    <string name="home_tile_details">Detalles ›</string>
     <string name="home_checking_name">Comprobando %1$s…</string>
     <plurals name="home_checking_games">
         <item quantity="one">Comprobando %1$d juego…</item>
@@ -1307,7 +1310,6 @@
     <string name="settings_player_id">ID de jugador</string>
     <string name="settings_player_id_hint">Los nombres son solo etiquetas: los datos guardados siguen al ID, así que cambiar el nombre nunca mueve ni mezcla partidas.</string>
     <string name="settings_that_picture_could_not_be_read">No se pudo leer esa imagen</string>
-    <string name="home_tile_details">Detalles ›</string>
     <string name="home_move_left">Mover a la izquierda</string>
     <string name="home_move_right">Mover a la derecha</string>
     <string name="home_delete_game_menu">Quitar juego…</string>
