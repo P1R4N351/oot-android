@@ -269,7 +269,9 @@
     <string name="game_link_play">Link Play</string>
     <string name="game_looking_at_the_app_s">앱 저장 공간 확인 중…</string>
     <string name="game_made_when_first_drawn_may">처음 그릴 때 생성: 끊김이 있을 수 있음</string>
-    <string name="game_mode_performance_the_only_shader">모드: 성능(Eden의 LSFG가 사용하는 유일한 셰이더 세트)</string>
+    <string name="game_lsfg_quality">품질</string>
+    <string name="game_lsfg_shaders">셰이더(품질: 생성된 프레임의 디테일 향상, GPU 시간 약 4배)</string>
+    <string name="game_lsfg_screen_limit">화면이 최대 %1$d Hz로 동작합니다(Android 디스플레이 설정): 더 빠른 목표와 게임 프레임당 더 많은 프레임은 제외됩니다</string>
     <string name="game_motion_clarity">모션 선명도</string>
     <string name="game_motion_estimation_resolution_lower_i">모션 추정 해상도(낮을수록 빠름)</string>
     <string name="game_motion_sensitivity">모션 감도</string>

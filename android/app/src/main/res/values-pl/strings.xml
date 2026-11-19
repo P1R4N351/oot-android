@@ -271,7 +271,9 @@
     <string name="game_link_play">Link Play</string>
     <string name="game_looking_at_the_app_s">Sprawdzanie pamięci aplikacji…</string>
     <string name="game_made_when_first_drawn_may">Tworzone przy pierwszym rysowaniu: możliwe zacięcia</string>
-    <string name="game_mode_performance_the_only_shader">Tryb: wydajność (jedyny zestaw shaderów używany przez LSFG z Eden)</string>
+    <string name="game_lsfg_quality">Jakość</string>
+    <string name="game_lsfg_shaders">Shadery (Jakość: więcej szczegółów w generowanych klatkach, ok. cztery razy więcej czasu GPU)</string>
+    <string name="game_lsfg_screen_limit">Ekran działa z częstotliwością do %1$d Hz (ustawienia wyświetlacza Androida): szybsze cele i więcej klatek na klatkę gry są pominięte</string>
     <string name="game_motion_clarity">Wyrazistość ruchu</string>
     <string name="game_motion_estimation_resolution_lower_i">Rozdzielczość estymacji ruchu (niższa jest szybsza)</string>
     <string name="game_motion_sensitivity">Czułość ruchu</string>

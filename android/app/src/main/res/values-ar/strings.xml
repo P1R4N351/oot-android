@@ -271,7 +271,9 @@
     <string name="game_link_play">Link Play</string>
     <string name="game_looking_at_the_app_s">جارٍ فحص تخزين التطبيق…</string>
     <string name="game_made_when_first_drawn_may">يُنشأ عند أول رسم: قد يسبب تقطّعًا</string>
-    <string name="game_mode_performance_the_only_shader">الوضع: الأداء (مجموعة المُظلِّلات الوحيدة التي يستخدمها LSFG في Eden)</string>
+    <string name="game_lsfg_quality">الجودة</string>
+    <string name="game_lsfg_shaders">المُظلِّلات (الجودة: تفاصيل أكثر في الإطارات المولَّدة، نحو أربعة أضعاف وقت وحدة المعالجة الرسومية)</string>
+    <string name="game_lsfg_screen_limit">تعمل الشاشة بما يصل إلى %1$d هرتز (إعدادات العرض في Android): لا تُعرض الأهداف الأسرع ولا مزيد من الإطارات لكل إطار لعبة</string>
     <string name="game_motion_clarity">وضوح الحركة</string>
     <string name="game_motion_estimation_resolution_lower_i">دقة تقدير الحركة (الأقل أسرع)</string>
     <string name="game_motion_sensitivity">حساسية الحركة</string>

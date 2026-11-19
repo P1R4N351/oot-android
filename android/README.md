@@ -250,7 +250,7 @@ The launcher's JNI shim (`android/app/src/main/cpp/nxlaunch.c`) includes the hos
 | `nxhost_lifecycle(0 … 3)`, `nxhost_motion_start` / `_stop` / `_rotation` | `onPause` 0 (and motion stops), `onStop` 1, `onStart` 2, `onResume` 3 (and motion starts); the rotation at start and on every configuration change |
 | `nxhost_audio_interrupt`, `nxhost_audio_route_changed` | from the audio focus listener (`USAGE_GAME`) and an `AudioDeviceCallback` |
 | `nxhost_fps(out, n)` | twice a second by `GameActivity` for the overlay: game fps, presented fps, frame time, frame generation state, images per game frame, GPU ms a frame |
-| `nxhost_framegen_set(on, multiplier, target, flow)`, `nxhost_framegen_status(buf, n)` | from the in-game panel; the status and its reason, shown in it |
+| `nxhost_framegen_set(on, multiplier, target, flow)`, `nxhost_framegen_quality(quality)`, `nxhost_framegen_status(buf, n)` | from the in-game panel (the shader set: performance or quality); the status and its reason, shown in it |
 | `nxhost_fps_cap_set(fps)`, `nxhost_fps_cap_status(buf, n)` | from the in-game panel: the frame rate cap, and "`<cap> <rates> <game fps>`" twice a second while the panel is open (which caps this game can hold, what it runs at) |
 | `nxhost_skip_status(buf, n)` | the game screen every 5 s: "`<percent> <causes>`" once the replay skipped a large share of the game's draws for causes of the GPU driver or for shaders missing from the pack (`vka_exec.c`, `DM_VK_SKIP_WARN`), else empty; `SkipNotice` shows the notice |
 | `nxhost_ndsr_status()` | from the in-game panel when it opens: 1 once the game has dispatched a neural upscaler network that the Upscaler can replace (`vka_draw.c`), else 0; the panel shows its Upscaler rows only then |

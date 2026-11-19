@@ -288,7 +288,9 @@
     <string name="game_link_play">Link Play</string>
     <string name="game_looking_at_the_app_s">Looking at the app\'s storage…</string>
     <string name="game_made_when_first_drawn_may">Made when first drawn: may stutter</string>
-    <string name="game_mode_performance_the_only_shader">Mode: performance (the only shader set Eden\'s LSFG uses)</string>
+    <string name="game_lsfg_quality">Quality</string>
+    <string name="game_lsfg_shaders">Shaders (Quality: more detail in the generated frames, about four times the GPU time)</string>
+    <string name="game_lsfg_screen_limit">The screen runs at up to %1$d Hz (Android\'s display settings): faster targets and more frames per game frame are left out</string>
     <string name="game_motion_clarity">Motion clarity</string>
     <string name="game_motion_estimation_resolution_lower_i">Motion estimation resolution (lower is faster)</string>
     <string name="game_motion_sensitivity">Motion sensitivity</string>

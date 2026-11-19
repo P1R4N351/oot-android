@@ -284,7 +284,9 @@
     <string name="game_link_play">Link Play</string>
     <string name="game_looking_at_the_app_s">Перевірка сховища додатка…</string>
     <string name="game_made_when_first_drawn_may">Створюються при першому відмальовуванні: можливі мікрофризи</string>
-    <string name="game_mode_performance_the_only_shader">Режим: продуктивність (єдиний набір шейдерів, який використовує LSFG в Eden)</string>
+    <string name="game_lsfg_quality">Якість</string>
+    <string name="game_lsfg_shaders">Шейдери (Якість: більше деталей у згенерованих кадрах, приблизно вчетверо більше часу GPU)</string>
+    <string name="game_lsfg_screen_limit">Екран працює з частотою до %1$d Гц (налаштування дисплея Android): швидші цілі та більше кадрів на кадр гри не пропонуються</string>
     <string name="game_motion_clarity">Чіткість у русі</string>
     <string name="game_motion_estimation_resolution_lower_i">Роздільна здатність оцінки руху (менше — швидше)</string>
     <string name="game_motion_sensitivity">Чутливість гіроскопа</string>
