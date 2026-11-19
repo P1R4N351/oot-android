@@ -341,6 +341,8 @@ int main(void) {
       CHECK(vktl_limit(&w, &st, 0) == 4 * GIB, "strong: a working set over the sixth is still the ceiling (%llu MiB)", (unsigned long long)(vktl_limit(&w, &st, 0) >> 20));
       CHECK(vktl_limit(&sm, &st, 0) >= VKTL_FLOOR && vktl_saver_cap(&st, 2 * GIB, 0) == 512 * MIB, "strong: never under the floor");
       CHECK(vktl_reserve(11 * GIB, &st, 0) == vktl_reserve(11 * GIB, &fix, 0), "strong leaves the reserve as it is too");
+      vktl_cfg neg = sv; neg.saver = -1;
+      CHECK(vktl_saver_cap(&neg, 11 * GIB, 0) == 0, "negative saver value disables the cap");
       // The case that failed on the phone: 15 GiB, 2 GiB available, 966 MiB of images: the limit must not fall to images + 196 MiB (the old permanent eighth)
       vktl_in lowavail = {.mem_total = 15 * GIB, .mem_avail = 2 * GIB, .img_bytes = 966 * MIB, .ws_bytes = 900 * MIB};
       CHECK(vktl_limit(&lowavail, &sv, 0) == 966 * MIB + 2 * GIB - 512 * MIB, "low MemAvailable: the saver's limit grows as without it (%llu MiB)", (unsigned long long)(vktl_limit(&lowavail, &sv, 0) >> 20)); }
