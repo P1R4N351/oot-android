@@ -189,4 +189,33 @@ final class Lsfg {
     }
 
     static void push(Context c) { Native.frameGenQuality(quality(c)); Native.frameGenSet(on(c), multiplier(c), target(c), flow(c)); }
+
+    /**
+     * While the game runs (GameActivity.hostSetup to onDestroy): the multiplier and target in use follow the screen. A saved 4x held to 2x on a screen at 60 Hz stayed 2x
+     * after the screen was set to 120 Hz with the game running (the AYN Thor's own setting), until the next start, as nothing gave the host the new value. Android's peak
+     * refresh setting and the main display are watched, and the host gets the settings again when what they allow changes. Returns what stops the watching
+     */
+    static Runnable follow(Context c, android.os.Handler h) {
+        final int[] last = {multiplier(c), target(c)};
+        Runnable check = () -> {
+            int m = multiplier(c), t = target(c);
+            if (m == last[0] && t == last[1]) return;
+            last[0] = m; last[1] = t;
+            Native.note("frame generation: the screen now runs at up to " + maxHz(c) + " Hz: " + m + "x, target " + (t == 0 ? "fixed" : t + " fps"));
+            push(c);
+        };
+        android.database.ContentObserver obs = new android.database.ContentObserver(h) { @Override public void onChange(boolean self) { check.run(); } };
+        try { c.getContentResolver().registerContentObserver(android.provider.Settings.System.getUriFor("peak_refresh_rate"), false, obs); } catch (RuntimeException e) { /* not watched: the display listener still is */ }
+        android.hardware.display.DisplayManager dm = c.getSystemService(android.hardware.display.DisplayManager.class);
+        android.hardware.display.DisplayManager.DisplayListener dl = new android.hardware.display.DisplayManager.DisplayListener() {
+            @Override public void onDisplayAdded(int id) {}
+            @Override public void onDisplayRemoved(int id) {}
+            @Override public void onDisplayChanged(int id) { if (id == android.view.Display.DEFAULT_DISPLAY) check.run(); }
+        };
+        if (dm != null) dm.registerDisplayListener(dl, h);
+        return () -> {
+            try { c.getContentResolver().unregisterContentObserver(obs); } catch (RuntimeException e) { /* never registered */ }
+            if (dm != null) dm.unregisterDisplayListener(dl);
+        };
+    }
 }

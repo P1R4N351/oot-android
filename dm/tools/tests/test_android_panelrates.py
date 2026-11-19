@@ -24,6 +24,15 @@ class Wiring(unittest.TestCase):
         self.assertIn('"peak_refresh_rate"', t)
         self.assertNotIn('TARGETS = {0, 60, 90, 120}', t)
 
+    def test_follows_the_screen_while_the_game_runs(self):
+        t = LSFG.read_text(encoding='utf-8')
+        self.assertIn('Settings.System.getUriFor("peak_refresh_rate")', t)   # Android's refresh setting changed with the game running (the AYN Thor's 60 -> 120 Hz)
+        self.assertIn('registerDisplayListener', t)
+        self.assertIn('if (m == last[0] && t == last[1]) return;', t)   # the host gets the settings again only when what is in use changes
+        g = (J / 'main/java/dev/nxnative/android/GameActivity.java').read_text(encoding='utf-8')
+        self.assertIn('lsfgFollow = Lsfg.follow(this, ui)', g)
+        self.assertIn('lsfgFollow.run(); lsfgFollow = null;', g)
+
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')
 class Rates(unittest.TestCase):
