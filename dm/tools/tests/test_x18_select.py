@@ -18,7 +18,7 @@ nodes: list[ast.stmt] = [
     or isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in constants for t in n.targets)
 ]
 # The emitter's existing helpers use their module globals, including the test patch buffer.
-helpers = {'here', 'emit', 'emit_key_addr', 'emit_slot_addr'}
+helpers = {'here', 'emit', 'emit_tp', 'emit_key_addr', 'emit_slot_addr'}
 nodes.extend(n for n in slots.tree.body if isinstance(n, ast.FunctionDef) and n.name in helpers)
 exec(compile(ast.Module(body=nodes, type_ignores=[]), str(slots.TOOLS / 'patch_nso.py'), 'exec'), scope)
 
@@ -51,11 +51,17 @@ class ScratchProof(unittest.TestCase):
 @unittest.skipIf(slots.uc is None, 'optional ARM64 execution dependency: unicorn')
 class Run(unittest.TestCase):
     def test_select_with_unmapped_stack(self):
+        for target in ('apple', 'android'):
+            scope['TARGET'] = target
+            try: self.run_target(target)
+            finally: scope['TARGET'] = 'apple'
+
+    def run_target(self, target):
         uc, arm = slots.uc, slots.arm
         for wide in (False, True):
             for rn, rm in ((11, 18), (18, 12), (18, 31)):
                 for gt, nzcv in ((True, 0), (False, 1 << 30)):
-                    with self.subTest(wide=wide, rn=rn, rm=rm, gt=gt):
+                    with self.subTest(target=target, wide=wide, rn=rn, rm=rm, gt=gt):
                         word = select(11, rn, rm, wide)
                         ins = scope['dis'](word, SITE)
                         scope['patch'].clear()
@@ -67,7 +73,11 @@ class Run(unittest.TestCase):
                         mu.mem_write(KEY, struct.pack('<Q', K18))
                         value18 = 0xF00D00005678ABCD
                         mu.mem_write(TSD + K18, struct.pack('<Q', value18))
-                        mu.reg_write(arm.UC_ARM64_REG_TPIDRRO_EL0, TSD)
+                        if target == 'android':  # tpidr_el0 points at a block whose +0x10 word is the slot base; tpidrro_el0 stays 0
+                            mu.mem_write(TSD + 0x8000 + 0x10, struct.pack('<Q', TSD))
+                            mu.reg_write(arm.UC_ARM64_REG_TPIDR_EL0, TSD + 0x8000)
+                        else:
+                            mu.reg_write(arm.UC_ARM64_REG_TPIDRRO_EL0, TSD)
                         mu.reg_write(arm.UC_ARM64_REG_SP, 0x10000000)
                         mu.reg_write(arm.UC_ARM64_REG_NZCV, nzcv)
                         values = {9: 9, 11: 0xBAAC000012345678, 12: 0xCDEF0000CAFE0123, 18: 0xDEAD}
