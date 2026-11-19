@@ -475,8 +475,9 @@ def check_versions_aarch64(dirs, logs, g, name):   # every extracted version of 
 
 def survey_nros(folder):
     """{name: path} of the NRO files the survey's manifest pass copied into folder. Files only: The Binding of Isaac: Afterbirth+ keeps its two NROs in a RomFS folder
-    that is itself named `.nro`, which rglob('*.nro') matches too, and the survey then read a folder as a module (IsADirectoryError)"""
-    return {p.name: p for p in sorted(Path(folder).rglob('*.nro')) if p.is_file()}
+    that is itself named `.nro`, which rglob('*.nro') matches too, and the survey then read a folder as a module (IsADirectoryError). AppleDouble `._<name>.nro` sidecars,
+    which macOS writes on an exFAT or FAT drive, are no modules either"""
+    return {p.name: p for p in sorted(Path(folder).rglob('*.nro')) if not p.name.startswith('._') and p.is_file()}
 
 
 def survey(dump, app, fam, repo, py, env):
