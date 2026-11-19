@@ -567,12 +567,6 @@
     <string name="game_menu_hint">Menü: Geri\'ye basın\nAyarlar: sağ kenardan içeri kaydırın</string>
     <string name="game_menu_gpu_driver">GPU sürücüsü: %1$s</string>
     <string name="game_menu_system_driver">Sistem</string>
-    <string name="game_menu_says_pause">Bir dokunuşa kadar, veya A / Start</string>
-    <string name="game_menu_says_performance">Kare hızı sınırı, ölçekleyici, kare üretimi</string>
-    <string name="game_menu_says_display">Çözünürlük, görüntü, katman</string>
-    <string name="game_menu_says_controls">Kontrolcüler, ekran kontrolleri, titreşim, tuş eşleme</string>
-    <string name="game_menu_says_general">Panel boyutu ve metni, dönüşte duraklat</string>
-    <string name="game_menu_says_stop">Kaydedilmemiş ilerleme kaybolur</string>
     <string name="game_tab_n_of_m">%1$s sekmesi, %2$d / %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">Boyut %1$d %%</string>

@@ -569,12 +569,6 @@
     <string name="game_menu_hint">Menú: pulsa Atrás\nAjustes: desliza desde el borde derecho</string>
     <string name="game_menu_gpu_driver">Controlador de GPU: %1$s</string>
     <string name="game_menu_system_driver">Sistema</string>
-    <string name="game_menu_says_pause">Hasta un toque, o A / Start</string>
-    <string name="game_menu_says_performance">Límite de FPS, escalador, generación de fotogramas</string>
-    <string name="game_menu_says_display">Resolución, imagen, superposición</string>
-    <string name="game_menu_says_controls">Mandos, controles en pantalla, vibración, asignación de botones</string>
-    <string name="game_menu_says_general">Tamaño y texto del panel, pausa al volver</string>
-    <string name="game_menu_says_stop">Se pierde el progreso no guardado</string>
     <string name="game_tab_n_of_m">Pestaña %1$s, %2$d de %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">Tamaño %1$d %%</string>

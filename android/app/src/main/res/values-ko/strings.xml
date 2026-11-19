@@ -564,12 +564,6 @@
     <string name="game_menu_hint">메뉴: 뒤로 버튼을 누르세요\n설정: 오른쪽 가장자리에서 안쪽으로 스와이프</string>
     <string name="game_menu_gpu_driver">GPU 드라이버: %1$s</string>
     <string name="game_menu_system_driver">시스템</string>
-    <string name="game_menu_says_pause">탭하거나 A / Start를 누를 때까지</string>
-    <string name="game_menu_says_performance">프레임 속도 제한, 업스케일러, 프레임 생성</string>
-    <string name="game_menu_says_display">해상도, 화면, 오버레이</string>
-    <string name="game_menu_says_controls">컨트롤러, 화면 컨트롤, 진동, 버튼 매핑</string>
-    <string name="game_menu_says_general">패널 크기와 글자, 복귀 시 일시정지</string>
-    <string name="game_menu_says_stop">저장하지 않은 진행 상황은 사라집니다</string>
     <string name="game_tab_n_of_m">%1$s 탭, %3$d개 중 %2$d번째</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">크기 %1$d %%</string>

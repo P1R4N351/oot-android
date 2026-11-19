@@ -575,12 +575,6 @@
     <string name="game_menu_hint">القائمة: اضغط رجوع\nالإعدادات: اسحب من الحافة اليمنى</string>
     <string name="game_menu_gpu_driver">برنامج تشغيل GPU: %1$s</string>
     <string name="game_menu_system_driver">النظام</string>
-    <string name="game_menu_says_pause">حتى لمسة، أو A / Start</string>
-    <string name="game_menu_says_performance">حد معدل الإطارات، المكبّر، توليد الإطارات</string>
-    <string name="game_menu_says_display">الدقة، الصورة، الطبقة العلوية</string>
-    <string name="game_menu_says_controls">وحدات التحكم، أزرار الشاشة، الاهتزاز، تعيين الأزرار</string>
-    <string name="game_menu_says_general">حجم اللوحة ونصها، الإيقاف المؤقت عند العودة</string>
-    <string name="game_menu_says_stop">يضيع التقدم غير المحفوظ</string>
     <string name="game_tab_n_of_m">علامة التبويب %1$s، %2$d من %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">الحجم %1$d %%</string>

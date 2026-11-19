@@ -568,12 +568,6 @@
     <string name="game_menu_hint">Menü: Zurück drücken\nEinstellungen: vom rechten Rand hereinwischen</string>
     <string name="game_menu_gpu_driver">GPU-Treiber: %1$s</string>
     <string name="game_menu_system_driver">System</string>
-    <string name="game_menu_says_pause">Bis zum Tippen, oder A / Start</string>
-    <string name="game_menu_says_performance">Bildratenbegrenzung, Upscaler, Bildgenerierung</string>
-    <string name="game_menu_says_display">Auflösung, Bild, Overlay</string>
-    <string name="game_menu_says_controls">Controller, Bildschirmsteuerung, Vibration, Tastenbelegung</string>
-    <string name="game_menu_says_general">Panelgröße und Text, Pause bei Rückkehr</string>
-    <string name="game_menu_says_stop">Nicht gespeicherter Fortschritt geht verloren</string>
     <string name="game_tab_n_of_m">Tab %1$s, %2$d von %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">Größe %1$d %%</string>

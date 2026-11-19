@@ -565,12 +565,6 @@
     <string name="game_menu_hint">菜单：按返回键\n设置：从右边缘向内滑动</string>
     <string name="game_menu_gpu_driver">GPU 驱动：%1$s</string>
     <string name="game_menu_system_driver">系统</string>
-    <string name="game_menu_says_pause">直到轻触，或按 A / Start</string>
-    <string name="game_menu_says_performance">帧率上限、超分、补帧</string>
-    <string name="game_menu_says_display">分辨率、画面、叠加层</string>
-    <string name="game_menu_says_controls">控制器、屏幕按键、振动、按键映射</string>
-    <string name="game_menu_says_general">面板大小和文字、返回时暂停</string>
-    <string name="game_menu_says_stop">未保存的进度将丢失</string>
     <string name="game_tab_n_of_m">%1$s 标签页，第 %2$d 个，共 %3$d 个</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">大小 %1$d %%</string>
