@@ -566,7 +566,15 @@
     <string name="err_cannot_start_name">Impossible de lancer %1$s</string>
     <string name="err_name_is_running">%1$s est en cours d\'exécution</string>
     <string name="err_stop_it_first_then_start">Arrêtez-le d\'abord (le panneau du jeu › Arrêter le jeu), puis lancez %1$s. Un seul jeu tourne à la fois.</string>
-    <string name="game_menu_hint">Menu : balayez depuis le bord droit, ou appuyez sur Retour</string>
+    <string name="game_menu_hint">Menu : appuyez sur Retour\nRéglages : balayez depuis le bord droit</string>
+    <string name="game_menu_gpu_driver">Pilote GPU : %1$s</string>
+    <string name="game_menu_system_driver">Système</string>
+    <string name="game_menu_says_pause">Jusqu’à un appui, ou A / Start</string>
+    <string name="game_menu_says_performance">Limite d’images, upscaler, génération d’images</string>
+    <string name="game_menu_says_display">Résolution, image, overlay</string>
+    <string name="game_menu_says_controls">Manettes, commandes tactiles, vibration, assignation des boutons</string>
+    <string name="game_menu_says_general">Taille et texte du panneau, pause au retour</string>
+    <string name="game_menu_says_stop">La progression non sauvegardée est perdue</string>
     <string name="game_tab_n_of_m">Onglet %1$s, %2$d sur %3$d</string>
     <string name="game_n_fps">%1$d ips</string>
     <string name="game_size_percent">Taille %1$d %%</string>

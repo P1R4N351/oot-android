@@ -604,7 +604,15 @@
     <string name="err_cannot_start_name">Cannot start %1$s</string>
     <string name="err_name_is_running">%1$s is running</string>
     <string name="err_stop_it_first_then_start">Stop it first (the in-game panel › Stop the game), then start %1$s. One game runs at a time.</string>
-    <string name="game_menu_hint">Menu: swipe in from the right edge, or press Back</string>
+    <string name="game_menu_hint">Menu: press Back\nSettings: swipe in from the right edge</string>
+    <string name="game_menu_gpu_driver">GPU driver: %1$s</string>
+    <string name="game_menu_system_driver">System</string>
+    <string name="game_menu_says_pause">Until a tap, or A / Start</string>
+    <string name="game_menu_says_performance">Frame rate cap, upscaler, frame generation</string>
+    <string name="game_menu_says_display">Resolution, picture, overlay</string>
+    <string name="game_menu_says_controls">Controllers, on-screen controls, rumble, button mapping</string>
+    <string name="game_menu_says_general">Panel size and text, pause on return</string>
+    <string name="game_menu_says_stop">Unsaved progress is lost</string>
     <string name="game_tab_n_of_m">%1$s tab, %2$d of %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">Size %1$d %%</string>

@@ -567,7 +567,15 @@
     <string name="err_cannot_start_name">Impossibile avviare %1$s</string>
     <string name="err_name_is_running">%1$s è in esecuzione</string>
     <string name="err_stop_it_first_then_start">Fermalo prima (pannello di gioco › Ferma il gioco), poi avvia %1$s. Si esegue un solo gioco alla volta.</string>
-    <string name="game_menu_hint">Menu: scorri dal bordo destro, oppure premi Indietro</string>
+    <string name="game_menu_hint">Menu: premi Indietro\nImpostazioni: scorri dal bordo destro</string>
+    <string name="game_menu_gpu_driver">Driver GPU: %1$s</string>
+    <string name="game_menu_system_driver">Sistema</string>
+    <string name="game_menu_says_pause">Fino a un tocco, o A / Start</string>
+    <string name="game_menu_says_performance">Limite FPS, upscaler, generazione di fotogrammi</string>
+    <string name="game_menu_says_display">Risoluzione, immagine, overlay</string>
+    <string name="game_menu_says_controls">Controller, comandi a schermo, vibrazione, mappatura dei tasti</string>
+    <string name="game_menu_says_general">Dimensione e testo del pannello, pausa al ritorno</string>
+    <string name="game_menu_says_stop">I progressi non salvati vanno persi</string>
     <string name="game_tab_n_of_m">Scheda %1$s, %2$d di %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">Dimensione %1$d %%</string>

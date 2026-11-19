@@ -65,7 +65,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static Boolean overlayEnv;   // DM_OVERLAY in env.txt: overrides the setting for this run (static: a screen created again keeps it)
     private TouchControls controls;
     private SidePanel panel;
-    private View handle;   // the panel's strip along the right edge (clean mode hides it too; Back still opens the panel)
+    private View handle;   // the panel's strip along the right edge (clean mode hides it too; Back still opens the menu, and the panel from it)
     private final HashSet<Integer> pads = new HashSet<>();   // the gamepads with a player: the on-screen controls hide while there is one
     private PadOrder order;   // which gamepad gets a player, and which is player 1 (hostSetup)
     // The in-game panel with a controller (PadPanel): the open / close combination; the pad keys the host holds down (released when the panel opens: releaseGameInput),
@@ -157,7 +157,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         controls.onEditEnd = () -> { if (paused) pausedView.setVisibility(View.VISIBLE); };
         // The panel's handle: an invisible strip along the right edge, from a sixth to a half of the way down (over the HUD rather than the controls), that opens the panel
         // on a swipe in from the edge (a tap goes nowhere: a stray touch near the edge does not open it). Under gesture navigation the system's own Back swipe from that
-        // edge opens it too (onBackPressed). The one-time hint (panelHint) says so; TalkBack reads it as a button
+        // edge wins and opens the in-game menu instead (onBackPressed, SidePanel.openMenu), as Back does. The one-time hint (panelHint) says so; TalkBack reads it as a button
         float dp = getResources().getDisplayMetrics().density;
         handle = new View(this);
         float[] downX = {-1};
@@ -171,7 +171,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         handle.setContentDescription(Tx.s(R.string.game_open_the_in_game_panel));
         handle.setOnClickListener(v -> panel.open());   // TalkBack's double tap
         root.addView(handle, root.indexOfChild(panel), new FrameLayout.LayoutParams(Math.round(20 * dp), Math.round(140 * dp), Gravity.END | Gravity.TOP));
-        // Auto with a gamepad connected, or Off: the handle goes with the controls (Back or a gamepad's Home button opens the panel)
+        // Auto with a gamepad connected, or Off: the handle goes with the controls (Back or a gamepad's Home button opens the menu, and the panel from it)
         controls.onSwitch = v -> updateHandle(v);
         controls.setMode(TouchControls.mode(this, id));
         root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> handle.setTranslationY((b - t) * 0.3f - 70 * dp));
@@ -255,7 +255,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private boolean overlayOn() { return !clean && (overlayEnv != null ? overlayEnv : Prefs.overlay(this)); }
 
     /** The panel's one-tap clean picture: stats, tag, log, touch controls and the panel arrow, saved as one flag. The overlay and log settings are left
-     *  alone (the host's present stops drawing because overlayOn() is false); Back / Home still opens the panel, where the same button restores them. */
+     *  alone (the host's present stops drawing because overlayOn() is false); Back / Home still opens the menu and the panel from it, where the same button restores them. */
     void clean(boolean hidden) {
         clean = hidden;
         Prefs.clean(this, hidden);
@@ -1444,7 +1444,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
         if (panel == null) return super.dispatchKeyEvent(e);   // no host for this game (onCreate): only the message is shown
-        // A controller opens and closes the in-game panel (PadPanel.Combo: Home, or − and + held; Settings › Controller: in-game panel); while it is open the pad moves
+        // A controller opens the in-game menu and closes it or the panel (PadPanel.Combo: Home, or − and + held; Settings › Controller: in-game panel); while it is open the pad moves
         // through it and the game gets no pad keys. A key the panel took a press of stays the panel's until it comes up
         int k = e.getKeyCode();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN, up = e.getAction() == KeyEvent.ACTION_UP;
@@ -1511,9 +1511,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
 
-    /** Back (the phone's button or its edge swipe) opens and closes the in-game panel, which has Stop; while the controller applet's join screen shows, it cancels that */
+    /**
+     * Back (the phone's button or its edge swipe) opens the in-game menu (SidePanel.openMenu: Pause, the panel's tabs, Stop) and closes the menu or the panel;
+     * while the controller applet's join screen shows, it cancels that
+     */
     @SuppressWarnings("deprecation")
-    @Override public void onBackPressed() { if (panel != null && !panel.isOpen() && CtrlScreen.back()) return; if (panel != null) panel.toggle(); else end(); }
+    @Override public void onBackPressed() { if (panel != null && !panel.isOpen() && CtrlScreen.back()) return; if (panel != null) panel.back(); else end(); }
 
     // For CtrlScreen: the view tree it goes into (under the in-game panel), and whether a gamepad is connected (then the on-screen controls are hidden and cannot join)
     FrameLayout rootView() { return rootView; }
