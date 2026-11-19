@@ -298,6 +298,87 @@ static void fb_tick(int target, const char *src) {
     }
 }
 
+// Shin'en's frame skip, found by name (no fixed addresses). The engine steps its game once a loop with a fixed 1/60 s (GfxDeltaTime = slow motion / the display's frame rate, a 60.0
+// that only the display's constructor writes), and its scripts count ticks, so a frame limit alone runs it slow: at 30 fps, half speed. Its own way to draw less often is the
+// timer's frame-skip type, which the scripts set through CGameEngine::SetFrameSkip(shn::eFrameskipType): each loop the timer sets bit 1 of its flags ("draw this frame"), and
+// the main loop skips the scene's render and the display's present and next acquire on a loop without it, while the game still steps. Type none draws every loop; odd every
+// second one (its 30 fps form); gpu, cpuGpu and cpuGpuDelta keep a debt in frames (the loop's measured time over the frame period, less one a loop, clamped to 0..4) and skip
+// while it is above one, so the game steps 60 times a second at any frame rate down to 15. Fast Fusion v262144: timer update main+0xfaad0 (the decision at +0xfabdc), main loop
+// main+0xf0600 (bit 1 at +0xf0740 / +0xf07e4), the timer at [main+0x718308] (set by its constructor, main+0xfa8fc), the type at +0x64 (SetFrameSkip's native main+0xeff68).
+// The finder reads the scripts' native binding table: name, wrapper pairs in main's data, the wrapper ending in a branch to the native. SetFrameSkip's native is
+// mov / movk w8 (the timer's offset in the engine), ldr x8, [x0, x8], str w1, [x8, #type], ret; isFrameSkipped's is adrp / add / ldr of the timer's global, then ldrb of its flags.
+// The type's values come from the enum's name table (name, value pairs). The host writes, every present, odd at a cap of 30 (60 steps, 30 frames drawn) and cpuGpu below it,
+// and presentation follows the cap (dm_fps_lock_engine): the drawn frames wait their 2 or 3 vsyncs, the skipped ones do not present at all, so 60 steps a second. The frame
+// limit (DM_FPS_LIMIT) counts too, the lower of the two: it paces the presents itself (fps_limit_wait), and a limit that is not 30 takes the debt form. The game's own type
+// comes back at 60 and with no cap; one the game sets meanwhile is the one given back. 15 is not offered: at four vsyncs a frame the debt reaches the clamp of 4
+static struct { int n, nlog; uint8_t *base; uint64_t global; uint32_t field; int32_t odd, debt, game, mine; uint8_t ours; } sk;
+static uint64_t sk_entry(uint8_t *base, uint64_t lo, uint64_t hi, const char *name) {   // the word after the data word that points to name (a native's wrapper, an enum's value), or 0
+    size_t n = strlen(name); uint64_t b = (uint64_t)(uintptr_t)base;
+    for (const uint8_t *s = base + lo; (s = memmem(s, (size_t)(base + hi - s), name, n + 1)) != NULL; s++) {
+        if (s[-1]) continue;   // the whole name, not the end of a longer one
+        uint64_t want = (uint64_t)(uintptr_t)s;
+        for (uint64_t o = (lo + 7) & ~7ull; o + 16 <= hi; o += 8) if (*(uint64_t *)(base + o) == want) return *(uint64_t *)(base + o + 8);
+    }
+    (void)b; return 0;
+}
+static uint64_t sk_native(uint8_t *base, uint64_t text_end, uint64_t wrapper) {   // the module offset of the native a wrapper branches to, or 0
+    uint64_t w = wrapper - (uint64_t)(uintptr_t)base;
+    if (wrapper < (uint64_t)(uintptr_t)base || w >= text_end || (w & 3)) return 0;
+    for (int k = 0; k < 16 && w + 4 * (uint64_t)k + 4 <= text_end; k++) {
+        uint32_t x = *(uint32_t *)(base + w + 4 * (uint64_t)k);
+        if ((x & 0x7C000000u) != 0x14000000u) continue;   // b / bl
+        int64_t imm = x & 0x3FFFFFF; if (imm & (1 << 25)) imm -= 1 << 26;
+        int64_t t = (int64_t)(w + 4 * (uint64_t)k) + imm * 4;
+        return t > 0 && (uint64_t)t + 20 <= text_end ? (uint64_t)t : 0;
+    }
+    return 0;
+}
+static void sk_find(void) {
+    module_t *m = NULL; for (int i = 0; i < g_nmod; i++) if (!strcmp(g_mod[i].name, "main")) m = &g_mod[i];
+    if (!m || !m->text_end || !m->ro_off || m->ro_off >= m->size) return;
+    uint8_t *base = m->base; uint64_t hi = m->back_off ? m->back_off : m->size, lo = m->ro_off;
+    if (!memmem(base + lo, (size_t)(hi - lo), "shn::eFrameskipType::odd", 25)) return;   // not Shin'en's engine
+    uint64_t set = sk_native(base, m->text_end, sk_entry(base, lo, hi, "CGameEngine::SetFrameSkip(shn::eFrameskipType)"));
+    uint64_t get = sk_native(base, m->text_end, sk_entry(base, lo, hi, "CGameEngine::isFrameSkipped()"));
+    int64_t odd = (int64_t)sk_entry(base, lo, hi, "shn::eFrameskipType::odd"), debt = (int64_t)sk_entry(base, lo, hi, "shn::eFrameskipType::cpuGpu");
+    const uint32_t *s = set ? (const uint32_t *)(base + set) : NULL, *g = get ? (const uint32_t *)(base + get) : NULL;
+    // SetFrameSkip: mov wE, #lo; movk wE, #hi, lsl #16; ldr xT, [x0, xE]; str w1, [xT, #type]; ret
+    int set_ok = s && (s[0] & 0xFFE00000u) == 0x52800000u && (s[1] & 0xFFE00000u) == 0x72A00000u && (s[0] & 31) == (s[1] & 31)
+                 && (s[2] & 0xFFE0FC00u) == 0xF8606800u && ((s[2] >> 16) & 31) == (s[0] & 31) && ((s[2] >> 5) & 31) == 0
+                 && (s[3] & 0xFFC0001Fu) == 0xB9000001u && ((s[3] >> 5) & 31) == (s[2] & 31) && s[4] == 0xD65F03C0u;
+    // isFrameSkipped: adrp xG; add xG, xG, #lo; ldr xG, [xG, #o]; ldrb wF, [xG, #flags]
+    int get_ok = g && (g[0] & 0x9F000000u) == 0x90000000u && (g[1] & 0xFFC00000u) == 0x91000000u && (g[2] & 0xFFC00000u) == 0xF9400000u && (g[3] & 0xFFC00000u) == 0x39400000u
+                 && ((g[1] >> 5) & 31) == (g[0] & 31) && ((g[2] >> 5) & 31) == (g[1] & 31) && ((g[3] >> 5) & 31) == (g[2] & 31);
+    if (!set_ok || !get_ok || odd < 1 || odd > 16 || debt < 1 || debt > 16 || odd == debt) {
+        LOG("[RED] main: Shin'en's frame skip names found, but not its setter, the timer or the type values (setter %s, timer %s, odd %lld, cpuGpu %lld); a frame rate cap is not held",
+            set_ok ? "ok" : "?", get_ok ? "ok" : "?", (long long)odd, (long long)debt);
+        return;
+    }
+    int64_t imm = (int64_t)(((g[0] >> 29) & 3) | (((g[0] >> 5) & 0x7FFFF) << 2)); if (imm & (1 << 20)) imm -= 1 << 21;
+    uint64_t glob = (uint64_t)((int64_t)(get & ~0xfffull) + imm * 4096) + ((g[1] >> 10) & 0xfff) + ((g[2] >> 10) & 0xfff) * 8;
+    if (glob + 8 > hi) return;
+    sk.base = base; sk.global = glob; sk.field = ((s[3] >> 10) & 0xfff) * 4; sk.odd = (int32_t)odd; sk.debt = (int32_t)debt; sk.n = 1;
+    LOG("main: Shin'en frame skip: the timer at [main+%#llx], its type at +%#x (SetFrameSkip main+%#llx; odd %d, cpuGpu %d)", (unsigned long long)glob, sk.field, (unsigned long long)set, sk.odd, sk.debt);
+}
+static int limit_raw(void);
+static void sk_tick(int target, const char *src) {
+    uint64_t t = 0; int32_t cur;
+    if (!rd((uint64_t)(uintptr_t)(sk.base + sk.global), &t, sizeof t) || !t || !rd(t + sk.field, &cur, sizeof cur) || cur < 0 || cur > 16) return;   // not made yet
+    int l = limit_raw(), c = target > 0 && target < 60 ? target : 0;
+    if (l > 0 && l < 60 && (!c || l < c)) c = l;
+    int32_t *p = (int32_t *)(uintptr_t)(t + sk.field), want = !c ? -1 : c == 30 ? sk.odd : sk.debt;
+    if (sk.ours && cur != sk.mine) sk.ours = 0;   // the game set its own since: that is the one to give back
+    if (!sk.ours) sk.game = cur;
+    if (want >= 0 && cur != want) {
+        dm_guest_write_prepare(p, sizeof *p); __atomic_store_n(p, want, __ATOMIC_RELAXED); sk.ours = 1; sk.mine = want;
+        if (sk.nlog < 16) { sk.nlog++; LOG("main: Shin'en frame skip type %d → %d at %d fps (%s: 60 steps a second, %s; %s)", cur, want, c, want == sk.odd ? "odd" : "cpuGpu",
+                                           want == sk.odd ? "every second frame drawn" : "frames drawn as time allows", c != target ? "the frame limit" : src); }
+    } else if (want < 0 && sk.ours) {
+        dm_guest_write_prepare(p, sizeof *p); __atomic_store_n(p, sk.game, __ATOMIC_RELAXED); sk.ours = 0;
+        if (sk.nlog < 16) { sk.nlog++; LOG("main: Shin'en frame skip back to the game's own type %d (%s)", sk.game, src); }
+    }
+}
+
 // The row of a target frame rate the game steps by, at the place the rewriter found (dm/tools/fps_target.py; main's fixups FPS_TARGET_PTR, FPS_TARGET_FIELD): an int32 frame rate in the
 // object a global points to, which the game's readers divide 60.0 by to step it, and which the game sets to 30 or 60 itself. Fire Emblem Fortune's Weave's gxc graphics object holds it
 // (+0x1dc; its present asks for interval 60 / target), so at 60 the game asks for interval 1 and steps by 1.0 a frame. 0 rows: not found in this main
@@ -382,14 +463,15 @@ static void lock_find(void) {
         }
     }
     fb_find();
+    sk_find();
 }
 // Whether the host writes fps_target into an engine limiter of this main (a row for its build, NieR's frame interval, a target frame rate found by its readers, Unreal's variables or
 // fixed frame rate, Unity's frame rate, Monolith's interval, or Frostbite's simulation rate, found by name).
 // Without one, and without a frame step state page, nothing makes the game follow the cap, so the graphics layer keeps the game's own present interval (hle_nvn.c fps_present_cap):
 // presenting at a cap the game does not step by runs a fixed-step game fast or slow (Tears of the Kingdom 1.4.2 at 2x with DM_FPS_TARGET=60)
 // A floor or a step count does not fix the rate on its own terms: the game still sets its present interval (at or above the floor; the step count, which at a cap below 60 is the cap's)
-static int floor_only(void) { for (int r = 0; r < nrow; r++) if (!follows_game(rows[r]->kind)) return 0; return (nrow > 0 || half_find()) && !nier && !fb.n && !uq.base; }
-int dm_fps_lock_engine(void) { pthread_once(&g_found, lock_find); return (nrow || nier || fb.n || uq.base || half_find()) && !floor_only(); }
+static int floor_only(void) { for (int r = 0; r < nrow; r++) if (!follows_game(rows[r]->kind)) return 0; return (nrow > 0 || half_find()) && !nier && !fb.n && !uq.base && !sk.n; }
+int dm_fps_lock_engine(void) { pthread_once(&g_found, lock_find); return (nrow || nier || fb.n || uq.base || sk.n || half_find()) && !floor_only(); }
 int dm_fps_lock_floor(void) { pthread_once(&g_found, lock_find); for (int r = 0; r < nrow; r++) if (follows_game(rows[r]->kind)) return 1; return half_find() != NULL; }   // the game picks its interval at or above a floor the host writes, or by the step count it writes
 static int steps_row(void) { pthread_once(&g_found, lock_find); for (int r = 0; r < nrow; r++) if (rows[r]->kind == STEPS_I32) return 1; return 0; }
 // The cap: DM_FPS_TARGET or the profile's fps_target at start, then whatever the front end sets while the game runs (dm_fps_target_set: the Android launcher's in-game panel,
@@ -440,7 +522,7 @@ static int row_holds(const lock_t *L, int t) {
     return !mx || 60 / t <= mx;
 }
 static int holds(int t) {
-    int ok = ((nier || uq.base) && 60 % t == 0 && 60 / t <= 4) || fb.n || half_holds(t);
+    int ok = ((nier || uq.base) && 60 % t == 0 && 60 / t <= 4) || fb.n || half_holds(t) || (sk.n && (t == 20 || t == 30 || t == 60));   // Shin'en's frame skip: whole vsyncs the debt holds
     for (int r = 0; r < nrow && !ok; r++) ok = row_holds(rows[r], t);
     return ok;
 }
@@ -759,10 +841,10 @@ void dm_fps_lock_tick(void) {
     if (state == -1) return;
     if (state == -2) {
         pthread_once(&g_found, lock_find);
-        if (!nrow && !nier && !fb.n && !uq.base && !ue_missing) { state = -1; return; }
+        if (!nrow && !nier && !fb.n && !uq.base && !sk.n && !ue_missing) { state = -1; return; }
         int t = dm_fps_target();
         if (t && ue_missing) LOG("[RED] main: Unreal %s not found by the rewriter (ue_cvar.py NAMES; game profile ue_fps_cvar): the game's own frame limit stays", DM_GAME_UE_FPS_CVAR);
-        if (!nrow && !nier && !fb.n && !uq.base) { state = -1; return; }
+        if (!nrow && !nier && !fb.n && !uq.base && !sk.n) { state = -1; return; }
         state = 0;
     }
     int g = dm_fps_target_gen();
@@ -792,6 +874,7 @@ void dm_fps_lock_tick(void) {
         if (!first) for (int r = 0; r < NROWS; r++) nlog[r] = over[r] = 0;
     }
     for (int r = 0; r < nrow; r++) if (rows[r]->kind == STEPS_I32) steps_tick(rows[r], r, target, src);   // every frame: the frame limit counts too, without a cap
+    if (sk.n) sk_tick(target, src);   // every frame: the frame limit counts too, and with no cap it gives the game its own type back
     if (!target) {   // no cap: the decoupling and the pin run in sead_rate, the controller's own gate
         // Without that gate in the pack (a pack the rewriter made before the profile opted in, or by a build that did not find the site) nothing else holds the pin, and the
         // controller flipped 1 <-> 2 under the host's tick: the 2x speed phases of #207 again. The floor row names the same controller, so the pin is held from here
