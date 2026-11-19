@@ -11,6 +11,7 @@
 // Party's sdk+0x22ff10). Found on Just Dance 2022 (SDK 11.4.0, PR #2746) and Rayman Legends (SDK 1.3.1, PR #1540). The option argument of the hardware constructor has no software
 // counterpart and is left in w1; C2 and D2 bind to C1 and D1 (no virtual bases: the same code), so a stripped software C2 or D2 does not matter
 #include "hle.h"
+#include "plat/plat.h"
 #include <stdatomic.h>
 
 #define OPUS_WHY "hwopus service; the SDK software OpusDecoder's member of the same signature"
@@ -84,7 +85,35 @@ static void opus_event(const char *what, const char *iface, int live_delta) {   
     if (c < 32) LOG("[codec] Opus decoder %s at %.1f s (%s interface, %d decoders alive)%s", what, dm_rel_s(), iface, live, c == 31 ? "; not logged from here on" : "");
 }
 static void *opus_fn(const char *name) { void *f = guest_sym(name); if (!f) die("sdk lacks %s", name); return f; }
-static void *opus_soft(const void *hw) { void *s = objmap_get(hw); if (!s) die("Opus decoder %p was not initialized by the host", hw); return s; }
+#define OPUS_VTBL "_ZTVN2nn5codec11OpusDecoderE"
+#define OPUS_MS_VTBL "_ZTVN2nn5codec22OpusMultiStreamDecoderE"
+// A game that initializes a HardwareOpusDecoder via the C++ class (aliased to OpusDecoder, whose embedded OpusDecoderType sits at +0x08 behind the vtable pointer) and then calls
+// the C functions with GetBase() (Just Dance 2022: HardwareOpusDecoder::Initialize at main+0x843498, then DecodeOpusInterleavedWithHardware(this + 0x08) at main+0x843738) has an
+// initialized software OpusDecoderType in guest memory already, with nothing in objmap. Recognize it by the OpusDecoder / OpusMultiStreamDecoder vtable pointer at hw - 8, read
+// through the kernel (plat_mem_read), so an object at the start of a mapping does not fault. A manager's decoders (SDK 21's form, below) are in a list of their own, not objmap
+static int opus_class_member(const void *hw, const char *vtbl_sym) {
+    if (!hw || (uintptr_t)hw < 0x1000) return 0;
+    void *vtbl = guest_sym(vtbl_sym);
+    if (!vtbl) return 0;
+    uint64_t got = 0;
+    if (plat_mem_read((uint64_t)(uintptr_t)hw - 8, &got, sizeof got)) return 0;
+    return (const void *)(uintptr_t)got == (const char *)vtbl + 0x10;
+}
+static void *opus_soft_for(const void *hw, const char *vtbl_sym) {
+    void *s = objmap_get(hw);
+    if (!s && opus_class_member(hw, vtbl_sym)) s = (void *)hw;
+    if (!s) die("Opus decoder %p was not initialized by the host", hw);
+    return s;
+}
+static void *opus_soft(const void *hw) { return opus_soft_for(hw, OPUS_VTBL); }
+// 1: the C interface's own state was finalized and freed; 2: a class-built decoder was finalized in place (the game's object); 0: neither
+static int opus_fini_for(void *hw, const char *fini_sym, const char *vtbl_sym) {
+    void (*f)(void *) = opus_fn(fini_sym);
+    void *s = objmap_del(hw);
+    if (s) { f(s); free(s); return 1; }
+    if (opus_class_member(hw, vtbl_sym)) { f(hw); return 2; }
+    return 0;
+}
 HLE_FORCE("_ZN2nn5codec36GetHardwareOpusDecoderWorkBufferSizeEiii", "hwopus service; work buffer computed for the software decoder", size_t, h_codec_HwOpusWorkSize, int rate, int ch, int option) {
     (void)option; size_t (*f)(int, int) = opus_fn("_ZN2nn5codec28GetOpusDecoderWorkBufferSizeEii"); return f(rate, ch);
 }
@@ -103,8 +132,7 @@ HLE_FORCE("_ZN2nn5codec29InitializeHardwareOpusDecoderEPNS0_23HardwareOpusDecode
 static int opus_mgr_dec_fini(void *gd); static int opus_mgr_dec_reset(void *gd);   // a decoder of a manager (below)
 HLE_FORCE("_ZN2nn5codec27FinalizeHardwareOpusDecoderEPNS0_23HardwareOpusDecoderTypeE", "hwopus service; software OpusDecoder", void, h_codec_HwOpusFini, void *hw) {
     if (opus_mgr_dec_fini(hw)) return;
-    void (*f)(void *) = opus_fn("_ZN2nn5codec19FinalizeOpusDecoderEPNS0_15OpusDecoderTypeE");
-    void *s = objmap_del(hw); if (s) { f(s); free(s); opus_event("finalized", "older", -1); }
+    if (opus_fini_for(hw, "_ZN2nn5codec19FinalizeOpusDecoderEPNS0_15OpusDecoderTypeE", OPUS_VTBL) == 1) opus_event("finalized", "older", -1);
 }
 HLE_FORCE("_ZN2nn5codec32GetHardwareOpusDecoderSampleRateEPKNS0_23HardwareOpusDecoderTypeE", "hwopus service; software OpusDecoder", int, h_codec_HwOpusRate, const void *hw) {
     int (*f)(const void *) = opus_fn("_ZN2nn5codec24GetOpusDecoderSampleRateEPKNS0_15OpusDecoderTypeE"); return f(opus_soft(hw));
@@ -152,28 +180,27 @@ HLE_FORCE("_ZN2nn5codec40InitializeHardwareOpusMultiStreamDecoderEPNS0_34Hardwar
     return f(s, rate, ch, streams, stereo, mapping, buf, size);
 }
 HLE_FORCE("_ZN2nn5codec38FinalizeHardwareOpusMultiStreamDecoderEPNS0_34HardwareOpusMultiStreamDecoderTypeE", "hwopus service; software OpusMultiStreamDecoder", void, h_codec_HwOpusMsFini, void *hw) {
-    void (*f)(void *) = opus_fn("_ZN2nn5codec30FinalizeOpusMultiStreamDecoderEPNS0_26OpusMultiStreamDecoderTypeE");
-    void *s = objmap_del(hw); if (s) { f(s); free(s); }
+    opus_fini_for(hw, "_ZN2nn5codec30FinalizeOpusMultiStreamDecoderEPNS0_26OpusMultiStreamDecoderTypeE", OPUS_MS_VTBL);
 }
 HLE_FORCE("_ZN2nn5codec43GetHardwareOpusMultiStreamDecoderSampleRateEPKNS0_34HardwareOpusMultiStreamDecoderTypeE", "hwopus service; software OpusMultiStreamDecoder", int, h_codec_HwOpusMsRate, const void *hw) {
-    int (*f)(const void *) = opus_fn("_ZN2nn5codec35GetOpusMultiStreamDecoderSampleRateEPKNS0_26OpusMultiStreamDecoderTypeE"); return f(opus_soft(hw));
+    int (*f)(const void *) = opus_fn("_ZN2nn5codec35GetOpusMultiStreamDecoderSampleRateEPKNS0_26OpusMultiStreamDecoderTypeE"); return f(opus_soft_for(hw, OPUS_MS_VTBL));
 }
 HLE_FORCE("_ZN2nn5codec45GetHardwareOpusMultiStreamDecoderChannelCountEPKNS0_34HardwareOpusMultiStreamDecoderTypeE", "hwopus service; software OpusMultiStreamDecoder", int, h_codec_HwOpusMsCh, const void *hw) {
-    int (*f)(const void *) = opus_fn("_ZN2nn5codec37GetOpusMultiStreamDecoderChannelCountEPKNS0_26OpusMultiStreamDecoderTypeE"); return f(opus_soft(hw));
+    int (*f)(const void *) = opus_fn("_ZN2nn5codec37GetOpusMultiStreamDecoderChannelCountEPKNS0_26OpusMultiStreamDecoderTypeE"); return f(opus_soft_for(hw, OPUS_MS_VTBL));
 }
 HLE_FORCE("_ZN2nn5codec49GetHardwareOpusMultiStreamDecoderTotalStreamCountEPKNS0_34HardwareOpusMultiStreamDecoderTypeE", "hwopus service; software OpusMultiStreamDecoder", int, h_codec_HwOpusMsTotal, const void *hw) {
-    int (*f)(const void *) = opus_fn("_ZN2nn5codec41GetOpusMultiStreamDecoderTotalStreamCountEPKNS0_26OpusMultiStreamDecoderTypeE"); return f(opus_soft(hw));
+    int (*f)(const void *) = opus_fn("_ZN2nn5codec41GetOpusMultiStreamDecoderTotalStreamCountEPKNS0_26OpusMultiStreamDecoderTypeE"); return f(opus_soft_for(hw, OPUS_MS_VTBL));
 }
 HLE_FORCE("_ZN2nn5codec50GetHardwareOpusMultiStreamDecoderStereoStreamCountEPKNS0_34HardwareOpusMultiStreamDecoderTypeE", "hwopus service; software OpusMultiStreamDecoder", int, h_codec_HwOpusMsStereo, const void *hw) {
-    int (*f)(const void *) = opus_fn("_ZN2nn5codec42GetOpusMultiStreamDecoderStereoStreamCountEPKNS0_26OpusMultiStreamDecoderTypeE"); return f(opus_soft(hw));
+    int (*f)(const void *) = opus_fn("_ZN2nn5codec42GetOpusMultiStreamDecoderStereoStreamCountEPKNS0_26OpusMultiStreamDecoderTypeE"); return f(opus_soft_for(hw, OPUS_MS_VTBL));
 }
 HLE_FORCE("_ZN2nn5codec35ResetHardwareOpusMultiStreamDecoderEPNS0_34HardwareOpusMultiStreamDecoderTypeE", "hwopus service; software OpusMultiStreamDecoder", void, h_codec_HwOpusMsReset, void *hw) {
-    void (*f)(void *) = opus_fn("_ZN2nn5codec27ResetOpusMultiStreamDecoderEPNS0_26OpusMultiStreamDecoderTypeE"); f(opus_soft(hw));
+    void (*f)(void *) = opus_fn("_ZN2nn5codec27ResetOpusMultiStreamDecoderEPNS0_26OpusMultiStreamDecoderTypeE"); f(opus_soft_for(hw, OPUS_MS_VTBL));
 }
 HLE_FORCE("_ZN2nn5codec44DecodeOpusMultiStreamInterleavedWithHardwareEPNS0_34HardwareOpusMultiStreamDecoderTypeEPmPiPsmPKvm", "hwopus service; software OpusMultiStreamDecoder", int, h_codec_HwOpusMsDecode,
           void *hw, size_t *consumed, int *samples, int16_t *out, size_t out_size, const void *in, size_t in_size) {
     int (*f)(void *, size_t *, int *, int16_t *, size_t, const void *, size_t) = opus_fn("_ZN2nn5codec32DecodeOpusMultiStreamInterleavedEPNS0_26OpusMultiStreamDecoderTypeEPmPiPsmPKvm");
-    return f(opus_soft(hw), consumed, samples, out, out_size, in, in_size);
+    return f(opus_soft_for(hw, OPUS_MS_VTBL), consumed, samples, out, out_size, in, in_size);
 }
 // The hardware's decode time of the last frame (nn::TimeSpan); the software decoder runs inline on the caller's thread, so none is reported
 HLE_FORCE("_ZN2nn5codec47GetHardwareOpusMultiStreamDecoderProcessingTimeEPKNS0_34HardwareOpusMultiStreamDecoderTypeE", "hwopus service; no hardware decode time", int64_t, h_codec_HwOpusMsTime, const void *hw) {
