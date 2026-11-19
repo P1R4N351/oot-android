@@ -3111,6 +3111,23 @@ int vka_tex_id_target(int id) {
     pthread_mutex_unlock(&g_tmu);
     return t;
 }
+// 1 when texture ID id's image (or registration) can form a Vulkan cube / cube-array view (square, 6+ layers a multiple of 6, 1 sample, view layers >= 6); 0 otherwise
+int vka_tex_id_can_cube(int id) {
+    pthread_mutex_lock(&g_tmu);
+    int ok = 1;
+    if (id > 0 && id < g_ntreg && g_treg[id].t.serial) {
+        const treg_ent *e = &g_treg[id]; smap_ent *m = map_get(e->t.serial); const vka_img *im = m ? m->im : NULL;
+        uint32_t w = im ? im->w : e->t.d.width, h = im ? im->h : e->t.d.height;
+        uint32_t layers = im ? im->layers : (e->t.d.target == NVN_TEXTURE_TARGET_CUBEMAP ? 6 : e->t.d.target == NVN_TEXTURE_TARGET_CUBEMAP_ARRAY || e->t.d.target == NVN_TEXTURE_TARGET_2D_ARRAY ? e->t.d.depth : 1);
+        uint32_t samples = im ? im->samples : e->t.d.samples;
+        uint32_t a0 = e->has_v && e->v.set_layers ? e->v.min_layer : 0;
+        uint32_t na = e->has_v && e->v.set_layers && e->v.nlayers ? e->v.nlayers : (layers > a0 ? layers - a0 : 0);
+        if (im && im->d.target == NVN_TEXTURE_TARGET_3D) na = 1;
+        ok = w == h && layers >= 6 && !(layers % 6) && samples <= 1 && na >= 6;
+    }
+    pthread_mutex_unlock(&g_tmu);
+    return ok;
+}
 // A buffer texture (NVN_TEXTURE_TARGET_BUFFER, as the texture or its view names it) of texture ID id: its storage's guest address, its element count and its NVN format (the
 // view's when it sets one). 0 = not a live buffer texture (vka_tbuf.c, which binds them: images are not made of them, img_create_)
 int vka_tex_id_buffer(int id, uint64_t *addr, uint32_t *elems, int *format) {

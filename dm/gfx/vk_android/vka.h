@@ -420,6 +420,7 @@ void vka_tex_feedback(vka_img *const *ims, const uint32_t *levels, int n);   // 
 int vka_tex_id_in_pass(int id);   // texture ID id's image is an attachment of the open pass (1 = colour, 2 = depth / stencil, 0 = neither)
 int vka_tex_id_in_pass_rec(int id, uint8_t dim);
 int vka_tex_id_target(int id);                      // the NVN target texture ID id stands for (its view's), -1 = not registered
+int vka_tex_id_can_cube(int id);                    // 1 when texture ID id's image (or registration) can form a Vulkan cube / cube-array view
 int vka_tex_id_buffer(int id, uint64_t *addr, uint32_t *elems, int *format);   // a buffer texture: its storage's guest address, elements and NVN format; 0 = not one
 int vka_tex_id_is_buffer(int id);                   // texture ID id was registered as a buffer texture (no lock)
 // ---------- Buffer textures (vka_tbuf.c) ----------
