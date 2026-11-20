@@ -35,7 +35,7 @@ The game's own **Options**, **GRAPHICS** (PURE, PERFORMANCE, BALANCED, QUALITY, 
 
 ## Known issues
 
-- The game's own GRAPHICS modes have no effect and do not stay set (see above). The cause is being looked into.
+- The game's own GRAPHICS modes have no effect right now and do not stay set (see above). More testing is required.
 - Tested on one phone only. Phones with less memory and other GPUs are not tried.
 - Online play is not tested.
 - If something goes wrong, please open an issue with the log ([Troubleshooting](Troubleshooting)).
