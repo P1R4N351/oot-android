@@ -56,13 +56,13 @@ The game's own Options, GRAPHICS (TV mode), docked, as its menu describes them a
 
 | Mode | The game's description | On the phone |
 |---|---|---|
-| PURE | 60 fps, 1440p dynamic resolution, dynamic cubemap reflections, no anti-aliasing, no AO | 1920x1080 at 1:1 (DLSS call at the same size: the stand-in anti-aliases, no upscale); about 14.6 ms, 60 fps |
-| PERFORMANCE (default) | 60 fps, 1080p, realtime reflections, dynamic shadows, AA, AO | 960x540 to 1920x1080; about 14.5 ms, 60 fps |
-| BALANCED | as PERFORMANCE, 1440p | the same as PERFORMANCE |
-| QUALITY | 60 fps, 4K, realtime reflections, static and screen-space shadows, AA, AO | the same as PERFORMANCE |
-| ULTRA QUALITY | 30 fps in races, 4K, realtime reflections, dynamic shadows, AA, AO | the same as PERFORMANCE; the game kept 60 fps |
+| PURE | 60 fps, 1440p dynamic resolution, dynamic cubemap reflections, no anti-aliasing, no AO | no change seen |
+| PERFORMANCE (default) | 60 fps, 1080p, realtime reflections, dynamic shadows, AA, AO | 960x540 to 1920x1080 in races; about 14.5 ms, 60 fps |
+| BALANCED | as PERFORMANCE, 1440p | no change seen |
+| QUALITY | 60 fps, 4K, realtime reflections, static and screen-space shadows, AA, AO | no change seen |
+| ULTRA QUALITY | 30 fps in races, 4K, realtime reflections, dynamic shadows, AA, AO | no change seen; races stay at 60 fps |
 
-The output sizes of BALANCED, QUALITY and ULTRA QUALITY (1440p, 4K) cannot show: the game draws at most the size `oe::GetDefaultDisplayResolution` reports, and the host reports a 1080p TV when docked. Whether their effects (shadows, AO) differ on the phone is not measured: the runs' screenshots are from different places on the track, and the GPU time is the same. ULTRA QUALITY's 30 fps cap did not reach the present interval (open).
+On the phone none of the five modes was seen to change anything: at the same moment of the race start every mode's picture is within the noise of PERFORMANCE run twice, the GPU time and the DLSS sizes are the same (960x540 to 1080p in races), and ULTRA QUALITY's races stay at 60 fps. The setting does not hold: Options shows PERFORMANCE again when it is opened again or after a restart. Open: whether the game's save of the setting is lost on the host, or the modes need a TV or dock condition the host does not report. Their larger output sizes (1440p, 4K) could not show in any case: the game draws at most the size `oe::GetDefaultDisplayResolution` reports, and the host reports a 1080p TV when docked.
 
 ## Rendering and memory
 
@@ -88,6 +88,6 @@ Regression level: moderate, because shared shader extraction and translation cha
 
 - Later courses, a complete race, multiplayer, online modes and frame generation have not been tested.
 - The log still reports an unbound vertex uniform slot in the startup effect (`eb5ec3e356bf7ad1`, slot 1), two unimplemented DLSS overlay setters called with zero, and a cube view of a one-face texture. Their effects outside the tested route are not established; none was hidden with a profile switch or stub.
-- Android, GRAPHICS modes: whether BALANCED, QUALITY and ULTRA QUALITY change shadows, AO or reflections on the phone is not established (same render size and GPU time as PERFORMANCE; a same-moment comparison is in progress), and ULTRA QUALITY's 30 fps race cap did not take effect ([Graphics on Android](#graphics-on-android)).
+- Android, GRAPHICS modes: none was seen to change anything on the phone, and the setting shows PERFORMANCE again after re-entering Options or a restart; whether the setting is lost on the host or needs a TV or dock condition is not established ([Graphics on Android](#graphics-on-android)).
 - Android: `nvnCommandBufferSetProvokingVertexMode` is not implemented (logged once); shader `cded8d0899ba4a6d` reads unbound textures at binding 8 at race load; on Turnip one pipeline was still made on the frame path after prewarm (6.9 ms).
 - No on-device iOS validation. The app's icon is absent because the supplied NUP carries none.
