@@ -14,6 +14,10 @@ It is **not a CPU emulator**: the game's AArch64 modules (`main`, `subsdk0`, `sd
 - **M1 (Rewriter, NVN 2 & Adreno 740 Gap Audit) — Complete:** Verified `patch_nso.py` (`DM_HOST_TP=tpidr_el0`) across `subsdk0`, `sdk`, and `main` (`51,654` slot sites, `0` gates), catalogued all `259` NVN 2 entry points beyond Switch 1 NVN 1, and verified live Adreno 740 Vulkan extensions (`VK_EXT_shader_atomic_float` present; `VK_EXT_map_memory_placed` via bundled Mesa Turnip `27.0-devel`; `VK_EXT_mesh_shader` absent, requiring Vulkan compute-mesh lowering).
 - **M2a / M2b (Host, Pack & Shader Library) — Complete:** Integrated BananaNative (`af1ed596`, `v0.3.43`), built `v131072` `android-pack` (`main`/`sdk`/`subsdk0`), and compiled `42,843` SPIR-V shaders (`52,858` modules, `695.6 MB` `dmsh_vk.lib`).
 - **M2c (16 GB AYN Thor Boot & Live Gameplay Verification) — Complete:** Verified `22.4 min` cold-to-3D run (`26,109` frames, `0` crashes, `170 MiB` cached Turnip pipelines, `267,000` `audren` frames with `0` underruns, `25,246 / 65,530` VMAs = `38.5%`), fixed Android 13 `vkMapMemory2` + `nn::codec` AV1 `60 fps` lock + `driver.id=18` Turnip defaults (`a5fc6b359894`), and verified `206 ms` warm pipeline load, `60.0–60.2 fps` title, and stable `15 fps` Kokiri Forest playback with synchronized audio.
+- **M2d (Adreno 740 / Turnip Vulkan Replay & Low-RAM Hardening) — Complete:**
+  - `DM_VK_MESH_EMU_COND=1` (`vka_memu_cond.h`, `040f68e` / upstream branch `pr/mesh-emu-render-cond`): Evaluates `RenderControl` conditions across mesh compute look-ahead and steps past redundant `SetRenderTargets` matching the active pass when `DM_VK_PASS_KEEP` is enabled, cutting Kokiri Forest look-ahead stops from `21.0/frame` (`n=43`) to `0.9/frame` and lifting mesh compute batching from `2.24` to `5.63–6.85` draws/batch (`4.22` -> `13.81–56.20` draws/split pass).
+  - `DM_VK_RAM_SAVER=2` `vktl_saver_cap` fix + OoT low-RAM caps (`6359a2f` / upstream branch `pr/oot-low-ram-caps`, `low_ram_place_part_mb=64`, `low_ram_img_cache_max_mb=1280`): Cuts peak Vulkan allocations in Kokiri Forest from `4,775 MiB` (`placed 1,636 MiB`, `images 3,012 MiB`, `n=256`) to `1,987–2,606 MiB` while keeping the required `9,216 MiB` (`0x240000000`) guest `app_pool` (`7,424 MiB` fails `main` `SetHeapSize`).
+  - `DM_VK_GMEM_REPLAY=1` (`vka_spv_gmem_replay.{h,c}`, `97187ff` / upstream branch `pr/vk-spv-gmem-replay` / standalone MIT [`P1R4N351/spv-gmem-replay`](https://github.com/P1R4N351/spv-gmem-replay)): Pure C11 `VkShaderModule`-time straight-line vertex `GMEM_MAP` replay pass (`4` pool slots + `2` gaps in `Private`, `281/282` OoT `v131072` vertex shader interpreter parity, `0` NDK r28 `spirv-val --target-env vulkan1.3` errors, `70–71` call sites rewritten across `7` live Kokiri Forest shaders, `324/324` device-local pipeline keys prewarmed on `1` thread in `3.2 s`, zero `DMSH_VK_CHAIN` bump).
 - **M3 (Production Identity, Companion Waist, Bifrost & `v0.2.0-beta.1`) — Complete:** Added `companion_state.h` + `oot_companion.h/.c` waist (`20 Hz` reader, `3`-frame pause hold from `0x4BE4FB0`, Ocarina `page 4`), `BifrostBridge` stick-LED controller + localized `GameSettings` toggle, procedural emerald/brass vector icons & banner (`scripts/make_oot_launcher_art.py`, zero Nintendo art), `PadFocus.hasGamepad()` initial focus, and published the first release-signed (`-PnxLive=true`, `NX_PACK_ENGINE=fake`) pre-release **[`v0.2.0-beta.1`](https://github.com/P1R4N351/oot-android/releases/tag/v0.2.0-beta.1)** (`bba4b0a7207436af864d4c0bdf4bcb27816f3e3a`, `OoT-Native-0.2.0-beta.1.apk`, `io.github.p1r4n351.oot`, `9,000,088` B, SHA-256 `9758a38bbf9e41cea4af6e35e3db1749f7be40c27f0de21168d5d6dee7564dd8`) with per-app updater, signer stamp, and wiki URL overrides.
 - **Second-Screen Tie-In Ledger — Active:** `30+` `gmd::GameDataMgr` hashes, live `Player` XYZ + camera pointers, transition/dim guards, `OOT-29` pause-canvas detection, and save structures documented in [games/oot/SECOND_SCREEN_NOTES.md](games/oot/SECOND_SCREEN_NOTES.md).
 
@@ -26,6 +30,34 @@ It is **not a CPU emulator**: the game's AArch64 modules (`main`, `subsdk0`, `sd
 
 Full technical inventory, reference audit, and gap analysis: **[games/oot/README.md](games/oot/README.md)**.
 Roadmap, completed milestones, and upcoming technical hurdles (`H1`–`H5`): **[MILESTONES.md](MILESTONES.md)**.
+
+---
+
+## Upstream Contributions & Cherry-Pick Branches
+
+Three single-concern branches rebased directly onto `moceure/BananaNative:android` (`9c98a63b1e176564ee6c7de6b5d9ef0b8da5d9b0`) are published here for upstream submission and downstream forks:
+
+| Branch | Commit SHA | Change |
+| :--- | :--- | :--- |
+| `pr/mesh-emu-render-cond` | `46da96ea` | `vka_memu_cond.h` (`DM_VK_MESH_EMU_COND=1`): look ahead across `RenderControl` conditions in mesh compute emulation |
+| `pr/oot-low-ram-caps` | `770fc6f5` | `0400486024DEC000`: `low_ram_place_part_mb 64` + `low_ram_img_cache_max_mb 1280` (scoped free of `vktl_saver_cap` / PR #504 overlap) |
+| `pr/vk-spv-gmem-replay` | `efe1a297` | `vka_spv_gmem_replay.{h,c}` (`DM_VK_GMEM_REPLAY=1`): runtime MIT C11 vertex `GMEM_MAP` replay pass ([standalone repo](https://github.com/P1R4N351/spv-gmem-replay)) |
+
+Downstream BananaNative forks can pull any branch cleanly:
+
+```sh
+git fetch https://github.com/P1R4N351/oot-android.git pr/mesh-emu-render-cond
+git cherry-pick FETCH_HEAD
+```
+
+Verified Adreno 740 / Turnip low-RAM runtime overrides (`env-0400486024DEC000.txt`):
+
+```ini
+DM_VK_LOW_RAM=1
+DM_VK_RAM_SAVER=2
+DM_VK_MESH_EMU_COND=1
+DM_VK_GMEM_REPLAY=1
+```
 
 ---
 
