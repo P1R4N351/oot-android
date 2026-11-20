@@ -14,6 +14,7 @@
 // DM_VK_GSR2_MV are the jitter's and the motion vectors' signs. Every switch is read at every evaluation; DM_VK_GPUPROF lists the passes.
 // 0 = not done (no push descriptors, a pipeline or work image failed, no depth or motion for GSR2, the output format cannot be blitted): the caller's bilinear blit
 #if defined(__ANDROID__)
+#include <stddef.h>
 #include "vka.h"
 #include "vka_dlss_fsr.h"
 #include "gsr2/vka_gsr2_spv.h"
@@ -137,16 +138,25 @@ static int blit_dst_ok(vka_img *d) {
 // The scaling copy (fsr/dlss_copy.comp): the rectangle sx, sy, iw x ih of the colour view in (an image of tw x th) scaled bilinearly to ow x oh, sRGB-encoded when enc,
 // through the RGBA16F work image r into d's rectangle dx, dy (level dl). For an input and an output texture that differ in sRGB, where a blit would move the encoded
 // values as they are (vka_exec.c dlss_eval), and for FSR 3.1's linear result into an sRGB output (vka_fsr3.c). 0 = not done
-int vka_dlss_scale(VkCommandBuffer cb, VkImageView in, int sx, int sy, int iw, int ih, uint32_t tw, uint32_t th, vka_img *d, uint32_t dl, int dx, int dy, int ow, int oh, int enc) {
+int vka_dlss_scale_alpha(VkCommandBuffer cb, VkImageView in, int sx, int sy, int iw, int ih, uint32_t tw, uint32_t th,
+                         VkImageView alpha_in, float jx, float jy, int aw, int ah, uint32_t atw, uint32_t ath,
+                         vka_img *d, uint32_t dl, int dx, int dy, int ow, int oh, int enc) {
     if (!in || !dl_ready() || d->f.kind || !blit_dst_ok(d) || !wimg_get(cb, &D.r, ow, oh)) return 0;
     vka_barrier(cb);
-    struct { float base[2], scale[2], rcp[2]; int32_t size[2], enc; int32_t pad[23]; } pc = {{(float)sx, (float)sy}, {(float)iw / ow, (float)ih / oh}, {1.0f / tw, 1.0f / th}, {ow, oh}, enc, {0}};
+    // enc_pad: the shader's vec2 abase starts on an 8-byte boundary (offset 40), not right after enc (36); without it every alpha constant read one float late
+    struct { float base[2], scale[2], rcp[2]; int32_t size[2], enc, enc_pad; float abase[2], ascale[2], arcp[2]; int32_t pad[16]; } pc = {
+        {(float)sx, (float)sy}, {(float)iw / ow, (float)ih / oh}, {1.0f / tw, 1.0f / th}, {ow, oh}, enc, 0,
+        {jx, jy}, {(float)aw / ow, (float)ah / oh}, {1.0f / atw, 1.0f / ath}, {0}};
     _Static_assert(sizeof pc == 128, "push constants");
-    { VkImageView v[4] = {in}; VkSampler sm[4] = {D.ls}; dpass(cb, P_COPY, v, sm, D.r.view, VK_NULL_HANDLE, &pc, ow, oh); }
+    _Static_assert(offsetof(__typeof__(pc), abase) == 40, "dlss_copy.comp's push constant block (vec2 abase at offset 40)");
+    { VkImageView v[4] = {in, alpha_in}; VkSampler sm[4] = {D.ls, D.ls}; dpass(cb, P_COPY, v, sm, D.r.view, VK_NULL_HANDLE, &pc, ow, oh); }
     VkImageBlit bl = {{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{0, 0, 0}, {ow, oh, 1}}, {VK_IMAGE_ASPECT_COLOR_BIT, dl, 0, 1}, {{dx, dy, 0}, {dx + ow, dy + oh, 1}}};
     vk.vkCmdBlitImage(cb, D.r.img, VK_IMAGE_LAYOUT_GENERAL, d->img, VK_IMAGE_LAYOUT_GENERAL, 1, &bl, VK_FILTER_NEAREST);
     vka_barrier(cb);
     return 1;
+}
+int vka_dlss_scale(VkCommandBuffer cb, VkImageView in, int sx, int sy, int iw, int ih, uint32_t tw, uint32_t th, vka_img *d, uint32_t dl, int dx, int dy, int ow, int oh, int enc) {
+    return vka_dlss_scale_alpha(cb, in, sx, sy, iw, ih, tw, th, in, (float)sx, (float)sy, iw, ih, tw, th, d, dl, dx, dy, ow, oh, enc);
 }
 int vka_dlss_ready(void) { return dl_ready(); }
 
