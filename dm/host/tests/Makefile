@@ -130,6 +130,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_tlsig
 	$(B)/t_android_gbar
 	$(B)/t_android_memu
+	$(B)/t_android_gmem_replay
 	TMPDIR="$(abspath $(B))" $(B)/t_android_layerreq
 	$(B)/t_server_environment
 run: $(B)/t_nro
@@ -621,6 +622,9 @@ $(B)/t_android_memu: t_android_memu.c $(VKA)/vka_memu_spv.c $(VKA)/vka_memu_spv.
 # The replay's SPIR-V rewrite of integer-fed vertex inputs (vka_spvpatch.c): the selftest's vertex shader, validated by spirv-val when it is on the PATH; DM_VK_SPV_DIR=<.spv folder> adds those modules
 $(B)/t_android_spvpatch: t_android_spvpatch.c $(VKA)/vka_spvpatch.c $(VKA)/vka_spvpatch.h $(VKA)/vka_selftest_spv.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_spvpatch.c $(VKA)/vka_spvpatch.c
+# Standalone runtime SPIR-V GMEM replay pass (vka_spv_gmem_replay.c)
+$(B)/t_android_gmem_replay: t_android_gmem_replay.c $(VKA)/vka_spv_gmem_replay.c $(VKA)/vka_spv_gmem_replay.h | $(B)
+	$(CLANG) -std=c11 -O1 -g -Wall -Wextra -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_gmem_replay.c $(VKA)/vka_spv_gmem_replay.c
 
 # Optional local-wireless host checks. COOP_DIR is the separately pinned module;
 # the default test run does not require it or open any network connection.
