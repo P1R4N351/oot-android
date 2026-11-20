@@ -50,6 +50,7 @@ Regression level: moderate, because shared shader extraction and translation cha
 - Subword task and mesh payload accesses.
 - Indexed texture handles in NVN2 compute c0.
 - DLSS scalers released under their encoders: already fixed before this bring-up; the earlier report reached its eighth network after about nine minutes.
+- [NVN2 draws with 32 vertex attributes](../../../docs/reference/rendering.md#nvn2-draws-with-32-vertex-attributes-android) (Android): `BindVertexAttribState` with `n=32` recorded and replayed on Android Vulkan (Android app on the Odin 3, system driver and Turnip v32).
 
 ## Open
 
