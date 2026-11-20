@@ -1805,3 +1805,11 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Fix:** on Linux the replay does not use display timing unless `NX_VK_DISPLAY_TIMING=1` (`vka_dev.c`, inside `#ifdef NX_LINUX`). Android is unchanged.
 - **Open:** the cause, in Turnip or in the layer. Not tried on other Adreno GPUs or other Mesa versions.
 - **Found on:** [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) 1.8.0, aarch64 Linux build of the host on an AYN Odin 2 Pro (12 GB RAM, 2026-11-15).
+
+### Render conditions stop mesh compute look-ahead on the Vulkan replay (Android)
+
+- **Symptom:** on devices without native `VK_EXT_mesh_shader` (Turnip on Adreno 740, or Qualcomm proprietary drivers using compute emulation), mesh compute look-ahead stops at `RenderControl` commands inside an active pass (`21.0` stops/frame in Kokiri Forest), splitting mesh compute batches into `2.24` draws/batch (`4.22` draws/split pass).
+- **Cause:** `vka_exec.c`'s mesh compute look-ahead stopped unconditionally on `CMD_RENDER_CTRL`, and redundant `CMD_SET_RT` commands matching the active pass broke look-ahead even under `DM_VK_PASS_KEEP`.
+- **Fix:** general, in `dm/gfx/vk_android/vka_memu_cond.h` (`vka_memu_cond_ok`) and `vka_ctl.c` / `vka_exec.c` / `vka_draw.c` (`DM_VK_MESH_EMU_COND=1` default, live; `0` restores the previous stop). Evaluates `RenderControl` conditions across the look-ahead span and steps past redundant `SetRenderTargets` of the active pass when `DM_VK_PASS_KEEP` is on.
+- **Check:** `t_android_memu` (ASan+UBSan), `test_vka_memu.py`, and phone runs on an AYN Thor (`Adreno 740`, Turnip `27.0.0-devel`, Kokiri Forest): look-ahead `RenderControl` stops fell from `21.0/frame` (`n=43`) to `0.9/frame` while mesh compute batching rose from `2.24` (`4.22` draws/split pass, `n=48`) to `5.63-6.85` draws/batch (`13.81-56.20` draws/split pass); live gameplay on Qualcomm's driver is pending.
+- **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#found-on-this-game).
