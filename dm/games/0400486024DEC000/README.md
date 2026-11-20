@@ -209,6 +209,8 @@ For a run past the opening, copy the committed save folder to the new run's `DM_
 
 ## Found on this game
 
+- [Render conditions stop mesh compute look-ahead on the Vulkan replay (Android)](../../../docs/reference/rendering.md#render-conditions-stop-mesh-compute-look-ahead-on-the-vulkan-replay-android): on AYN Thor (Adreno 740, Turnip 27.0.0-devel) in Kokiri Forest, evaluating `RenderControl` across look-ahead (`DM_VK_MESH_EMU_COND=1`) reduced look-ahead stops from 21.0/frame (`n=43`) to 0.9/frame and raised mesh batching from 2.24 draws/batch (4.22 draws/split pass, `n=48`) to 5.63-6.85 draws/batch (13.81-56.20 draws/split pass); live gameplay on Qualcomm's driver is pending.
+
 - [Advertised placed maps reject guest-buffer remaps (Android)](../../../docs/reference/memory.md#advertised-placed-maps-reject-guest-buffer-remaps-android): PanVK on a Mali-G615 (issue #437) passed the readiness check and drew nothing; the check now tries the remap itself. Not run on a Mali device here.
 - [Integer unbound-image placeholders using normalized views (Android)](../../../docs/reference/rendering.md#integer-unbound-image-placeholders-using-normalized-views-android): the 1x1 `VkFormat 37` placeholder asked for views as 41 / 42 on the system driver (issue #424); fixed by typed placeholders, not checked on a phone here.
 - [The GPU stays at a low clock after a menu: the system's cap, moved by the ADPF reports](../../../docs/reference/frame-rate.md#the-gpu-stays-at-a-low-clock-after-a-menu-the-systems-cap-moved-by-the-adpf-reports-android): 20 fps for good in 1 of 6 runs on the Odin 3, System Driver v800.72 (2026-11-18), outside Kokiri Forest.
