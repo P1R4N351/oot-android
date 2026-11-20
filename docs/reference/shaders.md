@@ -1837,6 +1837,28 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Fix:** `vk_android_build.py` checks every record it is about to build against its key (`shader_split.py` `skey`, taken from that file's source) and, when the record at the map's place is another shader, takes the key's record from any package file of its stage (`locate`); a key the package does not hold stops the build before any translation. `pack_android.py` splits into a missing `--shader-pkg` folder too, and stops when the dump's split lacks any of the profile's shaders (another version, or incomplete); a split with more shaders than the profile's map builds the same library. The phone's Prepare still requires the split's map to equal the profile's byte for byte (`PackService`), and builds with the same `vk_android_build.py`. `dmsh_build.py` (the Apple chain) reads records by the map's number the same way: open (a `DMSH_CHAIN` change).
 - **Found on:** [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md#found-on-this-game): the 0.1.0 release pack's library was built from a base + update + DLC split with the profile's map.
 
+### Shaders in a loose file that only an archive's reader was reached for
+
+- **Symptom:** shaders a RomFS file holds are in no table and the split prints nothing about the file: the game asks for them at run time (`[RED] shader ... is not in the shader map`). The same bytes inside a SARC, a zip or a PKZ are read.
+- **Cause:** `shader_split.py` hands a loose file to `scan_blob` only when a test in front of it passes, and that test was a list of some readers' magics. `scan_blob` grew readers the list did not: sead's NVN2 primitive drawer (four offsets, no magic), PlatinumGames' shader objects and `DAT` archives, a `.tfxo file` and Star Fox's `VIPR` containers were read as an archive's members and left out as files of their own.
+- **Fix:** general (`may_hold_shaders`). Every shader has a control section, so a file is searched when it holds the control magic, or is a container whose members are packed (a SARC with Yaz0 members, NARC, PACX4, MuxFDMR); the readers' magics still pass, so a reader reports a file of its kind that holds no shader. A file found this way adds rows to its game's tables: a profile whose dump has one is split again.
+- **Open:** not run on a dump. No profile's `shader_map.tsv` has a row from sead's primitive drawer (`#SEADPRIM@`), whose reader names a loose path of Donkey Kong Bananza's RomFS; whether that file's two shaders are missing there is not checked.
+- **Found on:** reading the code; synthetic files (`dm/tools/tests/test_split_loose_readers.py`). No game's missing shader is attributed to it.
+
+### A pak file's label with backslashes on Windows
+
+- **Symptom:** on Windows, the split of a game whose Unreal paks keep their shaders inline makes a `shader_map.tsv` that differs from the profile's: its sources read `#..\..\..\Game\Content\…` and its rows are numbered otherwise, so `targeted split: not taken, the targeted scan made a shader_map.tsv that differs from the profile's` and `pack_android.py`'s `[RED] the dump's shader_map.tsv differs from the profile's`.
+- **Cause:** `ue_legacy_shaders` made a file's label with `os.path.normpath`, which gives `\` on Windows; the strip of the mount point's `../` then matched nothing. The label is the map's source column and part of the order that numbers a package's records.
+- **Fix:** general (`pak_path`): `posixpath.normpath`, the same string on every system, as `posix_rel` does for RomFS paths. The tables made on a Mac or the phone do not change.
+- **Found on:** reading the code, on a Windows PC; no dump of such a game was split there ([OCTOPATH TRAVELER II](../../dm/games/0100A3501946E000/README.md) is one whose pak needs no host).
+
+### Split readers that did not end, or stopped short
+
+- **Symptom:** the split stands still on one file with a worker at full load (no `progress:` line moves, no `[RED]` line), which no time limit ends; or a shader in `main` or an agl `.sharcb` is missing with no line about it.
+- **Cause:** found by reading `shader_split.py`. `idrk_entries` stepped by an entry's length without looking at it, and `snvn_records` by a control section's own length (+0x20): a 0 there was read again without end, past `scan_file`'s net, which catches errors only. `adrp_targets` sign-extended the `adrp` immediate by shifting, which does nothing to a Python integer, so `raw_shaders` never found a code area on a page before the instruction. `bahs_shaders` tried entries up to 20 bytes before the code region, one slot short of the last.
+- **Fix:** general. An IDRK entry shorter than its 0x30-byte header or than its stored data, and an SNVN control section shorter than 0x708 bytes, are red lines naming the place (the file is then reported unreadable). The `adrp` immediate is taken as 21 signed bits (as `uepak.code_keys` does); `bahs_shaders` tries the last slot.
+- **Found on:** reading the code; synthetic bytes (`dm/tools/tests/test_split_loose_readers.py`). No game's hang or missing shader is attributed to them: an NSO's data lies after its code, so its `adrp`s point forward.
+
 ### Subgroup lanes read as 0 in mesh shaders with a specialization constant on Qualcomm's driver
 
 - **Symptom:** (Android, Qualcomm's system driver on the Adreno 840) mesh-shaded models put their vertices and primitives in the wrong slots: geometry shoots out in spikes, and a depth prepass drawn by mesh shaders goes wrong, so the opaque pass's `EQUAL` depth test fails and a huge overexposed sky dome shows through. Turnip is not affected (it has no mesh shaders), and with `DM_VK_MESH=0` the dome and spikes go away with the mesh draws. No `[RED]` line.

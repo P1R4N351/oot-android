@@ -70,7 +70,7 @@
 # Memory: the shaders are deduplicated by key as they are found (Shaders), and a large compressed container is inflated into a temporary file rather than memory (idrk_shaders); a file of
 #   RomFS over LARGE bytes prints 'progress: <done>/<total> <n>%' as it is read, when the scan runs in this process (J=1)
 # Pair table: (vertex key, pixel key) of every BNSH variation (every Unity program); dmsh_build uses it to give vertex shaders the outputs their pixel shaders read but they do not write (see dmsh_build.py vs_pad)
-import base64, collections, concurrent.futures as cf, functools, glob, hashlib, json, os, pickle, re, struct, subprocess, sys, time, zlib
+import base64, collections, concurrent.futures as cf, functools, glob, hashlib, json, os, pickle, posixpath, re, struct, subprocess, sys, time, zlib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../tools'))
 from typing import NoReturn
 from romfs import os, open, is_image
@@ -314,7 +314,7 @@ def bahs_shaders(d, label):
     rsz, region = field(d, '<II', 0x18, f'{label} BAHS header')
     if region + rsz > len(d): red(f'{label} BAHS code region out of bounds')
     found = []
-    for a in range(0, region - 16, 4):
+    for a in range(0, region - 15, 4):   # up to the last 16 bytes before the code region (region - 16 stopped one entry short of it)
         off, z, csz, rel = struct.unpack_from('<IIIi', d, a)
         nvn2 = 0x48 <= csz < 0x10000 and 0 <= a + rel and a + rel + csz <= region and nvn2_ctl(d[a + rel:a + rel + csz])
         # control length: Mario 0x880 / 0x88c, 3D World's BAHS version 9 0x848; NVN2 (Donkey Kong Bananza's agl resources) 0xd8
@@ -720,6 +720,8 @@ def idrk_entries(d):
             o = d.find(IDRK, o)
             if o < 0: return
         esz, csz = struct.unpack_from('<QQ', d, o + 8)
+        # the entry holds its 0x30-byte header and its stored data: a shorter length is a damaged file, and one of 0 would be read again without end
+        if esz < 0x30 or csz > esz - 0x30: red(f'IDRK entry at {o:#x}: an entry of {esz:#x} bytes with {csz:#x} stored')
         yield o + esz - csz, o + esz, struct.unpack_from('<I', d, o + 0x2c)[0], struct.unpack_from('<Q', d, o + 0x18)[0]
         o += esz
 
@@ -1419,6 +1421,7 @@ def snvn_records(d, a, b, label, e='>'):
         while c < len(y):
             if y[c:c + 4] != CTL_MAGIC: red(f'{label} SNVN record @{i:#x}: no control section at {c:#x}')
             n, nk = struct.unpack_from('<I', y, c + 0x20)[0], struct.unpack_from('<I', y, c + 0x704)[0]
+            if n < 0x708: red(f'{label} SNVN record @{i:#x}: the control section at {c:#x} says it is {n:#x} bytes')   # shorter than its own +0x704; 0 would never reach the next one
             x, xn = struct.unpack_from('<II', y, c + 0x7e8)   # data GLSLC put after the section, not in its own length: 4 vertex stages of Metroid Prime Remastered's
             if xn and x >= n: n = x + xn                       # MaterialArchive.arc have 16 12-byte entries at +0x880 (+0x7e8 0x880, +0x7ec 0xc0, +0x7f0 16)
             stages.append((y[c:c + n], y[k:k + nk])); k += nk; c += n
@@ -2056,7 +2059,8 @@ def adrp_targets(d, lo, hi):
     w, out = memoryview(d)[:len(d) & ~3].cast('I'), collections.defaultdict(list)
     for i, x in enumerate(w):
         if x & 0x9f000000 != 0x90000000: continue
-        rd = x & 31; page = (i * 4 & ~0xfff) + ((((x >> 5 & 0x7ffff) << 2 | x >> 29 & 3) << 44 >> 44) << 12)
+        rd = x & 31; imm = (x >> 5 & 0x7ffff) << 2 | x >> 29 & 3   # 21 signed bits of pages (Python's integers do not sign-extend by shifting: a page before the adrp was never found)
+        page = (i * 4 & ~0xfff) + ((imm - (1 << 21) if imm & 1 << 20 else imm) << 12)
         if not lo - 0x1000 <= page < hi: continue
         for j, y in enumerate(w[i + 1:i + 9]):
             if y & 0xffc00000 == 0x91000000 and y >> 5 & 31 == rd:
@@ -2405,7 +2409,7 @@ def ue_legacy_jobs(files, parts=64, mains=()):
     for p, r in sorted(paks, key=lambda x: (x[1].endswith('_P.pak'), x[1])):   # patch paks last, so they replace; one view per pak folder (one per version given)
         try:   # all of a pak's names or none: a patch pak read halfway would still replace the base pak's files
             keys[p] = key_of(p); pk = uepak.Pak(p, keys[p])
-            view.update({(os.path.dirname(p), os.path.normpath(pk.mount + name)): (p, r, name, pk.entry(name)['raw']) for name in pk.files})
+            view.update({(os.path.dirname(p), pak_path(pk.mount, name)): (p, r, name, pk.entry(name)['raw']) for name in pk.files})
         except (OSError, ValueError) as e: print(f'[RED] /{r}: the pak cannot be read ({e}); its shaders are left out', flush=True)
     chunks, taken, folders = {}, {p for p, _ in paks}, {os.path.dirname(p) for p, _ in paks}
     for p, r in sorted(((p, r) for p, r in files if p.endswith('.utoc') and os.path.dirname(p) in folders), key=lambda x: uepak.mount_order(x[0])):
@@ -2442,11 +2446,16 @@ def ue_packages(items, out, shown=8):
             if lost <= shown: print(f'[RED] {why} (its shaders are left out)', flush=True)
     return ('unreadable', first, lost) if lost else None
 
+def pak_path(mount, name):
+    """A pak file's path under its mount point ('../../../' + 'Game/Content/…'), with '/' on every system: these paths are the map's source column and part of its
+    order, and os.path.normpath gives '\\\\' on Windows, where the split then made another shader_map.tsv than the profile's (as posix_rel for RomFS paths)"""
+    return posixpath.normpath(mount + name)
+
 def ue_legacy_shaders(path, rel, names, out, key=None):
     """Files of an Unreal pak with inline shaders (ue_legacy_jobs), each decoded block by block (Zlib and LZ4 in uepak.py; others with the game's own decoder, DRAGON QUEST XI S: LZ5) and scanned
     for the shader records the engine keeps inline; key: the AES key of a pak whose index and entries are encrypted (ue_legacy_jobs) → ue_packages's extra"""
     pk = _PAKS.get(path) or _PAKS.setdefault(path, uepak.Pak(path, key))
-    label = lambda name: re.sub(r"^(\.\./)+", "", os.path.normpath(pk.mount + name))
+    label = lambda name: re.sub(r"^(\.\./)+", "", pak_path(pk.mount, name))
     return ue_packages(((f'/{rel}#{label(name)}', lambda name=name: pk.read(name, decode=oodle)) for name in names), out)
 
 def ue_io_shaders(path, rel, chunks, out, key=None):
@@ -3048,6 +3057,16 @@ def scan_blob(d, label, out, depth=0, left=None):
     if NEEDLE in d: out.extend(needle_shaders(d, label))
     if SUMO_NX in d or NVNSH in d: out.extend(sumo_shaders(d, label))
 
+def may_hold_shaders(d):
+    """Whether scan_blob can find a shader in a loose file's bytes, so that the others are not searched at all. Every shader has a control section, so the file holds its
+    magic, unless it is a container whose members are packed (a SARC's Yaz0 members, a NARC's (cra.undo), PACX4's LZ4 chunks, MuxFDMR's zlib streams). The test was a
+    list of the readers' own magics, which scan_blob's readers outgrew: sead's NVN2 primitive drawer, PlatinumGames' shader objects and DAT archives, a '.tfxo file'
+    and Star Fox's VIPR containers were read inside an archive and left out as files of their own, with no line saying so. A file with one of those magics and no
+    control section is still passed on, so that its reader says what is wrong with it (an XNB effect without NVN shaders, mgfx_shaders)"""
+    if CTL_MAGIC in d or d[:4] == b'NARC' or d[:8] in (PACX4, SUMO_MUX) or d[:4] == b'SARC' and b'Yaz0' in d: return True
+    return (b'BNSH\0\0\0\0' in d or b'BAHS' in d or d[:4] in (b'MSHD', b'NDSR', b'NDVE') or b'\x91\x68\x86\x19' in d or MGFX in d or NEEDLE in d
+            or SUMO_NX in d or NVNSH in d)
+
 def group(label):
     """source group (second half of the package file name)"""
     if label.startswith('main'): return 'main'
@@ -3478,7 +3497,7 @@ def scan_whole(path, rel, head, found, trees):   # scan_file_in for a file no ar
         try: pairs = unity_shaders(d, '/' + rel, found, trees if not TREES else dict(TREES))
         except unityfs.NoTree: return rel, {}, set(), 'defer'
         return rel, uniq_keys(found), var_pairs(found) | {(a, b, 'prog') for a, b in pairs}, trees
-    elif b'BNSH\0\0\0\0' not in d and b'BAHS' not in d and d[:4] != b'MSHD' and d[:4] != b'NDSR' and d[:4] != b'NARC' and d[:4] != b'NDVE' and not (d[:4] == b'SARC' and b'Yaz0' in d) and b'\x91\x68\x86\x19' not in d and MGFX not in d and NEEDLE not in d and d[:8] != PACX4 and d[:8] != SUMO_MUX and SUMO_NX not in d and NVNSH not in d: return rel, {}, set(), {}   # a SARC may hold Yaz0 members, a NARC packed ones (cra.undo)
+    elif not may_hold_shaders(d): return rel, {}, set(), {}
     else:
         scan_blob(d, '/' + rel, found)
         # whole GLSLC outputs in a file no other reader takes (FINAL FANTASY TACTICS - The Ivalice Chronicles: its engine's technique files, resources_nx/…/shader/*.tec, 261 outputs beside
