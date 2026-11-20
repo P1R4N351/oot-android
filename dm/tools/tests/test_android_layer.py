@@ -196,7 +196,8 @@ class Pending(unittest.TestCase):
     def test_label_wired(self):   # Off only hides the label: the watcher still builds; the label is at the very top and see-through
         main = J / 'main/java/dev/nxnative/android'
         lw, ga = (main / 'LayerWatch.java').read_text(encoding='utf-8'), (main / 'GameActivity.java').read_text(encoding='utf-8')
-        self.assertIn('shown.show(gaveUp ? null : LayerStatus.shown(Prefs.layerLabel(ctx), n,', lw)
+        self.assertIn('String label = gaveUp ? null : LayerStatus.shown(Prefs.layerLabel(ctx), n,', lw); self.assertIn('shown.show(label)', lw)   # computed on the work thread, shown on the main thread
+        self.assertIn('new HandlerThread("nxlayer-watch")', lw, 'the tick reads the request folder off the main thread (it delivers the controller input)')
         self.assertLess(lw.index('LayerStatus.shown('), lw.index('if (LayerStatus.buildDue('), 'the label is decided before, and apart from, the build condition')
         self.assertNotIn('LayerStatus.shown', ga.split('private void layerShow')[0])
         show = ga.split('private void layerShow(String text)')[1].split('private void skipShow')[0]
