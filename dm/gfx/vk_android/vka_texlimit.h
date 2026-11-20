@@ -49,12 +49,14 @@ static inline vktl_cfg vktl_cfg_default(void) { vktl_cfg c = {0, 1, VKTL_PSI_HOL
 // reading and flap the cache at every update, so the default fills in for it (the thrashed cache is worse than the mark the player asked for). DM_VK_IMG_PSI has two
 // policies, 0 and 1, and anything else is the default's
 static inline int vktl_mark_ok(double v) { return v > 0.0 && v < 1e9; }   // (NaN and infinity fail both comparisons)
+static inline int vktl_saver_level(int raw) { return raw >= 2 ? 2 : raw > 0 ? 1 : 0; }
 static inline vktl_cfg vktl_cfg_check(vktl_cfg c) {
     if (c.psi != 0 && c.psi != 1) c.psi = 1;
     if (!vktl_mark_ok(c.hold)) c.hold = VKTL_PSI_HOLD;
     if (!vktl_mark_ok(c.ease)) c.ease = VKTL_PSI_EASE;
     if (!vktl_mark_ok(c.shrink)) c.shrink = VKTL_PSI_SHRINK;
     if (c.ease >= c.hold) { c.hold = VKTL_PSI_HOLD; c.ease = VKTL_PSI_EASE; }
+    c.saver = vktl_saver_level(c.saver);
     return c;
 }
 

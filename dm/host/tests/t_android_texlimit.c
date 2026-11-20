@@ -336,7 +336,9 @@ int main(void) {
       vktl_in tight = {.mem_total = 11 * GIB, .mem_avail = 2 * GIB, .img_bytes = 1 * GIB, .ws_bytes = 1 * GIB};
       CHECK(vktl_limit(&tight, &sv, 0) == 1 * GIB + 2 * GIB - 512 * MIB, "when RAM is the smaller figure it still decides (%llu MiB)", (unsigned long long)(vktl_limit(&tight, &sv, 0) >> 20));
       // Strong (DM_VK_RAM_SAVER=2): a sixth of MemTotal, the same floors
-      vktl_cfg st = sv; st.saver = 2;
+      CHECK(vktl_saver_level(-1) == 0 && vktl_saver_level(0) == 0 && vktl_saver_level(1) == 1 && vktl_saver_level(2) == 2 && vktl_saver_level(5) == 2, "saver level clamping");
+      vktl_cfg st = sv; st.saver = vktl_saver_level(2); st = vktl_cfg_check(st);
+      CHECK(st.saver == 2, "cfg_check preserves Strong saver level 2");
       CHECK(vktl_limit(&big, &st, 0) == 11 * GIB / 6, "strong caps it at a sixth of MemTotal (%llu MiB)", (unsigned long long)(vktl_limit(&big, &st, 0) >> 20));
       CHECK(vktl_limit(&w, &st, 0) == 4 * GIB, "strong: a working set over the sixth is still the ceiling (%llu MiB)", (unsigned long long)(vktl_limit(&w, &st, 0) >> 20));
       CHECK(vktl_limit(&sm, &st, 0) >= VKTL_FLOOR && vktl_saver_cap(&st, 2 * GIB, 0) == 512 * MIB, "strong: never under the floor");
