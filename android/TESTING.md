@@ -367,3 +367,19 @@ Frame generation needs the user's own `Lossless.dll` (Lossless Scaling for Windo
 3. Start the game. The overlay shows `<game> fps → <presented> fps (LSFG)` once the game's frame rate is steady (Eden's pacer waits about a second, and generates nothing while the game runs under 10 fps). The log: `[nxlaunch] frame generation: on; Lossless.dll from …`, `[vk] frame generation: 25 shaders from …`, `[vk] lsfg: chain WxH, flow …`, `[vk] frame generation: first 1 generated frame(s) …`, and every 15 s `[vk] fps: … (frame generation on)`.
 
 Without a DLL (or on a GPU without what the shaders need), turning it on leaves the game running as before; the overlay says `LSFG unavailable` and the log `[RED] vk: frame generation unavailable: no Lossless.dll …`. With `env.txt` alone: `DM_LSFG=1`, `DM_LSFG_MULT=2`, `DM_LSFG_TARGET=0`, `DM_LSFG_FLOW=75`, `DM_LSFG_DLL=<path>`.
+
+## Oodle games packed on a PC without a Mac (nxoodle)
+
+The shader split decodes Oodle- and LZ5-compressed game files (Unreal paks, Trinity packs, PKZ, GFPAK) with the game's own decoder, which is arm64 code: `DM_OODLE_HOST` is the Mac host in its `DM_OODLE_SERVE` tool mode. On Windows or Linux x86-64 the phone runs it instead: `nxoodle` (`android/host/nxoodle.c`) is that tool mode as an executable for adb shell, beside `libnxhost.so` as `nxreplay` is, and `dm/tools/oodle_adb.py` is the `DM_OODLE_HOST` the packer starts on the PC.
+
+```
+cmake -S android/host -B <build> -G Ninja -DCMAKE_TOOLCHAIN_FILE=<NDK>/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=33 -DGAME=<base title ID>
+cmake --build <build> --target nxoodle
+python dm/tools/oodle_adb.py push <build> <game>-work/android-pack <name>      # → /data/local/tmp/nxoodle/ (the rewritten modules: run the pack once first, it stops at the shaders)
+DM_OODLE_HOST=dm/tools/oodle_adb.py (Windows: dm\tools\oodle_adb.cmd)  DM_OODLE_MODULES=<game>-work/android-pack
+DM_OODLE_ADB_SERIAL=<serial>  DM_OODLE_ADB_MODULES=/data/local/tmp/nxoodle/<name>   then pack as usual
+```
+
+- The bytes go over TCP (toybox `nc` on the phone runs nxoodle on the connection), not adb's stdin: adb on Windows reads stdin as text and ends it at the first 0x1A byte, and `adb exec-out` does not forward stdin. A serial `ip:port` (adb over Wi-Fi) connects straight to the phone; a USB serial goes through `adb forward`.
+- Requests are independent, so the bridge keeps each until its whole answer is back: a stalled connection (Wi-Fi loses packets) gets a fresh nxoodle and the request again; a decoder that dies twice on one request is the game refusing it (the bridge exits 1, the packer reports it). `DM_OODLE_ADB_TRACE=<folder>` writes a trace per bridge with the round-trip time.
+- Measured (Yoshi and the Mysterious Book 1.0.2, Windows 11 + Odin 2, USB, `-j 12`): 3,181,630 requests, 0 failed, about 6 ms each; the whole pack in 54 min. nxoodle turns Nagle off on its answer socket: an answer is two writes, and Windows delays its ACK of the first by up to 200 ms.
