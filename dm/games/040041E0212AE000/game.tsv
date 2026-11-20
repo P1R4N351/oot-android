@@ -39,6 +39,10 @@ sys_resource	0x0
 # A row's size is the launcher's choice (one row per size), not what this game draws: 1280x720 names the handheld choice
 graphics_scale	1920x1080	1	console
 graphics_scale	1280x720	0	handheld
+# Android: the game's DLSS (NVN2) runs on vka's stand-in, Snapdragon GSR2 3-pass (vka_dlss.c); the launcher's Upscaler row offers its modes (GSR 2, FSR 1, FSR 3.1,
+# Bilinear) with Motion clarity (DM_VK_GSR2_CLARITY) and Temporal sharpness (DM_VK_DLSS_SHARP), in Game settings and the in-game panel. The stand-in keeps the colour's
+# alpha, which this game composites its 3D layer over the menu UI by
+dlss_standin	1
 
 # ---- Shader split ----
 depth_mode	zero
