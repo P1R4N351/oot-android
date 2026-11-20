@@ -132,6 +132,7 @@ DM_LSFG_AUTOFLOW	developer	Performance			text			both
 DM_LSFG_CAP_HOLD	developer	Performance			text			both							
 DM_LSFG_DLL	developer	Diagnostics			text			both							
 DM_LSFG_DUMP	developer	Performance			text			both							
+DM_LSFG_FIT	developer	Performance			text			both							
 DM_LSFG_FLOW	developer	Performance			text			both							
 DM_LSFG_GPUTIME	developer	Diagnostics			text			both							
 DM_LSFG_MIN_FPS	advanced	Performance	Frame generation floor	generated frames look bad when the game runs slowly (raise it); 0 always generates	number	0..120 fps|0,30,45,60	30 fps	game							

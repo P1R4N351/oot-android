@@ -327,6 +327,9 @@ static void fg_dump(unsigned k, uint64_t count, size_t ng) {
 int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence, int format, vka_img **gen, double *hold, double *out_period) {
     settings_init();
     *hold = 0; *out_period = 0;
+    // After a GPU hang (vka_dev.c) nothing more goes to the queue, as in the present: the fence of a submission behind the hang is never signalled, and the wait for it
+    // below had no end (the present thread never came back, and the host's exit after the hang ran into its time limit)
+    if (vka_hung()) return 0;
     int on = atomic_load(&g_on) > 0, mult = atomic_load(&g_mult), target = atomic_load(&g_target), flow = atomic_load(&g_flow);
     if (!on) {
         if (F.chain) { teardown(); VLOG("frame generation off"); }
@@ -367,6 +370,15 @@ int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence
     if (wv) { static int told; if (!told++) VLOG("frame generation: window texture serial %llu (NVN format %#x, VkFormat %d) shares an image of VkFormat %d (owner serial %llu): copied in its own format",
                                                 (unsigned long long)serial, format, wv, im->f.vk, (unsigned long long)im->serial); }
     VkExtent2D e = {(uint32_t)cw, (uint32_t)ch};
+    // The chain no larger than the picture on screen (DM_LSFG_FIT=0: the crop's size as before, live). A picture shown smaller than its crop (a 3840x2160 window texture
+    // on a 1920x1080 panel, a Picture size under 100 %) is scaled down by the present anyway: the frame goes into the chain at the size it is shown at (a linear blit,
+    // as the present's own), the chain's passes and the generated frames have that size, and the present shows them 1:1. Only when both sides are smaller, the format
+    // filters linearly, and the frame is blitted (a window texture copied in its own format, wv, cannot be scaled)
+    int fit = 0;
+    if (!wv && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) && VKA_ENV("DM_LSFG_FIT", 1)) {
+        int pw = 0, ph = 0; vka_present_picture_size(cw, ch, &pw, &ph);
+        if (pw >= 64 && ph >= 64 && pw < cw && ph < ch) { e = (VkExtent2D){(uint32_t)pw, (uint32_t)ph}; fit = 1; }
+    }
     // Room for the generated frames the settings can ask for (each has working images of its own, lsfg_chain.c): the multiplier's, or all with a target rate. A larger
     // multiplier makes the chain again; a smaller one keeps it until it is made again for another reason
     size_t gens = target > 0 ? LSFG_MAX_GENERATIONS : (size_t)((mult < 2 ? 2 : mult > 4 ? 4 : mult) - 1);
@@ -442,7 +454,8 @@ int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence
         VkFenceCreateInfo fi = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .flags = VK_FENCE_CREATE_SIGNALED_BIT};
         vk.vkAllocateCommandBuffers(V.dev, &ai, &F.fr[k].cb); vk.vkCreateFence(V.dev, &fi, NULL, &F.fr[k].fence);
     }
-    vk.vkWaitForFences(V.dev, 1, &F.fr[k].fence, VK_TRUE, UINT64_MAX);
+    for (VkResult w; !vka_hung() && (w = vk.vkWaitForFences(V.dev, 1, &F.fr[k].fence, VK_TRUE, 100000000ull)) == VK_TIMEOUT;) {}   // bounded, as present_one's
+    if (vka_hung()) { vka_tex_drop(im); return 0; }
     gputime_take(k); probe_poll();
     if (F.fr[k].held) { vka_tex_drop(F.fr[k].held); F.fr[k].held = NULL; }
     vk.vkResetFences(V.dev, 1, &F.fr[k].fence);
@@ -458,8 +471,8 @@ int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence
         VkImageCopy c = {{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {cx, cy, 0}, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, 0, 0}, {(uint32_t)cw, (uint32_t)ch, 1}};
         vk.vkCmdCopyImage(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, lsfg_chain_input(F.chain, count), VK_IMAGE_LAYOUT_GENERAL, 1, &c);
     } else {
-        VkImageBlit b = {{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{cx, cy, 0}, {cx + cw, cy + ch, 1}}, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{0, 0, 0}, {cw, ch, 1}}};
-        vk.vkCmdBlitImage(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, lsfg_chain_input(F.chain, count), VK_IMAGE_LAYOUT_GENERAL, 1, &b, VK_FILTER_NEAREST);
+        VkImageBlit b = {{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{cx, cy, 0}, {cx + cw, cy + ch, 1}}, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{0, 0, 0}, {(int32_t)e.width, (int32_t)e.height, 1}}};
+        vk.vkCmdBlitImage(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, lsfg_chain_input(F.chain, count), VK_IMAGE_LAYOUT_GENERAL, 1, &b, fit ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
     }
     if (warm) lsfg_chain_shared(F.chain, cb, count);
     if (ng) lsfg_chain_generate(F.chain, cb, count, ng, in_order);
@@ -490,7 +503,8 @@ int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence
     }
     pthread_mutex_lock(&V.qmu);
     if (fence > V.tl_queued) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VRED("frame generation waited for fence %llu, %llu is the last handed to the queue: waits for that", (unsigned long long)fence, (unsigned long long)V.tl_queued); fence = V.tl_queued; }
-    VkResult r = vk.vkQueueSubmit(V.q, 1, &si, F.fr[k].fence); pthread_mutex_unlock(&V.qmu);
+    VkResult r = vka_hung() ? VK_ERROR_DEVICE_LOST : vk.vkQueueSubmit(V.q, 1, &si, F.fr[k].fence); pthread_mutex_unlock(&V.qmu);
+    if (r) { vk.vkDestroyFence(V.dev, F.fr[k].fence, NULL); VkFenceCreateInfo sfi = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .flags = VK_FENCE_CREATE_SIGNALED_BIT}; vk.vkCreateFence(V.dev, &sfi, NULL, &F.fr[k].fence); }   // (reset and never submitted: the slot's next wait would not end)
     F.fr[k].held = im;   // the window texture stays alive until this submission is done
     if (r) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("frame generation submission %d", r); ng = 0; F.fr[k].timed = 0; F.fr[k].probed = 0; }
     { static int last, left; int d = VKA_ENV("DM_LSFG_DUMP", 0);   // (see fg_dump)
