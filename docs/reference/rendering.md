@@ -1775,6 +1775,13 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Fix:** general: RCAS takes the alpha from the input colour, read bilinearly where the output pixel lies in the input rectangle, jitter included as for the colour (`vka_dlss.c` `vka_dlss_run`, the colour view on binding 1). FSR 3.1 (`DM_VK_DLSS=4`, `vka_fsr3.c`) now preserves it the same way through `vka_dlss_scale_alpha` (`fsr/dlss_copy.comp`).
 - **Found on:** [Fast Fusion](../../dm/games/040041E0212AE000/README.md#found-on-this-game) (main menu, 2026-11-19, Odin 3 on the system driver and Turnip v32).
 
+### DLSS debug overlay setters
+
+- **Symptom:** `[RED] NVN unimplemented function called: nvnDlssParametersSetOverlayDebugLayer`, `nvnDlssParametersSetOverlayFullScreen`, `nvnDlssParametersSetOverlayJitterDebug`, or `nvnDlssParametersSetOverlayShowNans` at startup or when configuring DLSS.
+- **Cause:** NVN2 exposes debug overlay setters on `NVNdlssParameters` that games call during initialization (usually with 0).
+- **Fix:** implement the four setters as no-ops in `hle_nvn.c`.
+- **Found on:** [Fast Fusion](../../dm/games/040041E0212AE000/README.md#found-on-this-game) on the Android app on the Odin 3 (system driver and Turnip v32).
+
 ### Dense vegetation in the Kokiri Forest
 
 - **Symptom:** rendering the full vegetation in the forest takes several milliseconds of GPU time on the Odin 3.
