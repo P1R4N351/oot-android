@@ -29,6 +29,7 @@ PAGES = {
     "040015100B514001": "Game-Super-Mario-Bros-Wonder-Switch-2-Edition",
     "0400E88025B1A000": "Game-Star-Fox",
     "0400380020056000": "Game-Splatoon-Raiders",
+    "040041E0212AE000": "Game-Fast-Fusion",
 }
 
 
