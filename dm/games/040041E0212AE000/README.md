@@ -50,6 +50,7 @@ Regression level: moderate, because shared shader extraction and translation cha
 - Subword task and mesh payload accesses.
 - Indexed texture handles in NVN2 compute c0.
 - DLSS scalers released under their encoders: already fixed before this bring-up; the earlier report reached its eighth network after about nine minutes.
+- [Shin'en engine runs at half speed under a 30 fps cap](../../../docs/reference/frame-rate.md#shinen-engine-runs-at-half-speed-under-a-30-fps-cap): fixed `1/60 s` step requires `eFrameskipType` `odd` at 30 fps (0.97–1.03× speed on the Android app on the Odin 3, system driver and Turnip v32).
 
 ## Open
 

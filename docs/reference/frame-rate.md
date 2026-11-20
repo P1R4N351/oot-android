@@ -610,3 +610,10 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
 - **Cause:** `vka_present.c` `present_one` chose the image's desired time (`g_last_desired` plus the period, at least now) before its waits: the frame's timeline value (`DM_VK_PRESENT_PREWAIT`), a pending gate (`DM_VK_PRESENT_GATE_WAIT`, 30 ms on Turnip), the queue lock and the copy's submission. A time chosen at the start could be past by the present, and a submission that failed still advanced the next frame's time.
 - **Fix:** the desired time is chosen after the submission, under the same queue lock, just before `vkQueuePresentKHR`, and only when the submission succeeded. The waits, their order and the semaphores are unchanged. From Peanuts Native (igawa6/peanuts-native ea2fe46bc0e1), whose present grid had the same order; not measured on a device here.
 - **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) on an AYN Thor (Peanuts Native: walking judder at a capped 30 fps).
+
+### Shin'en engine runs at half speed under a 30 fps cap
+
+- **Symptom:** setting `DM_FPS_TARGET=30` or `DM_FPS_LIMIT=30` slows Fast Fusion to roughly half speed (~0.5×) instead of pacing at full game speed.
+- **Cause:** Shin'en's engine steps by a fixed `1/60 s` on each loop instead of measuring elapsed frame time, so capping the loop to 30 iterations per second halves game speed.
+- **Fix:** `dm/host/hle_fpslock.c` finds `CGameEngine::SetFrameSkip`, `isFrameSkipped`, the timer, and `eFrameskipType` values by name in the scripts' binding tables (no fixed addresses), writes `odd` at a 30 fps cap (60 steps, every second frame drawn) and `cpuGpu` below 30 fps, and restores the game's own frameskip type without a cap; logs `main: Shin'en frame skip: …`.
+- **Found on:** [Fast Fusion](../../dm/games/040041E0212AE000/README.md#found-on-this-game) on the Android app on the Odin 3 (system driver and Turnip v32): 0.97–1.03× speed at 30 fps.
