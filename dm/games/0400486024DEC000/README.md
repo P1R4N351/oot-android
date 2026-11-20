@@ -209,6 +209,8 @@ For a run past the opening, copy the committed save folder to the new run's `DM_
 
 ## Found on this game
 
+- [Vertex global memory lookups replayed on miss in the Vulkan replay (Android)](../../../docs/reference/shaders.md#vertex-global-memory-lookups-replayed-on-miss-in-the-vulkan-replay-android): runtime C11 `vka_spv_gmem_replay` pass (`DM_VK_GMEM_REPLAY=1`, zero `DMSH_VK_CHAIN` change) validated offline (`281/282` SPIR-V interpreter parity, `0` `spirv-val` errors) and rewritten live on AYN Thor (`Adreno 740`, Turnip `27.0.0-devel`, `70-71` sites per vertex shader including `b1f06157308e3b22`, `27d946c5a63213a1`, `ea07a4c30eb1ff0e`, `cf04467527cbcf8f`, `324/324` pipeline prewarm in `3.2 s`).
+
 - [Advertised placed maps reject guest-buffer remaps (Android)](../../../docs/reference/memory.md#advertised-placed-maps-reject-guest-buffer-remaps-android): PanVK on a Mali-G615 (issue #437) passed the readiness check and drew nothing; the check now tries the remap itself. Not run on a Mali device here.
 - [Integer unbound-image placeholders using normalized views (Android)](../../../docs/reference/rendering.md#integer-unbound-image-placeholders-using-normalized-views-android): the 1x1 `VkFormat 37` placeholder asked for views as 41 / 42 on the system driver (issue #424); fixed by typed placeholders, not checked on a phone here.
 - [The GPU stays at a low clock after a menu: the system's cap, moved by the ADPF reports](../../../docs/reference/frame-rate.md#the-gpu-stays-at-a-low-clock-after-a-menu-the-systems-cap-moved-by-the-adpf-reports-android): 20 fps for good in 1 of 6 runs on the Odin 3, System Driver v800.72 (2026-11-18), outside Kokiri Forest.
