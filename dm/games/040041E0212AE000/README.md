@@ -32,6 +32,38 @@ For development, use `--platform mac` and the command it prints, with `DM_WINDOW
 
 From the title: `L+R`, then four separate `A` presses select Championship, the first league, the first cup and the first vehicle/start. Wait between menu transitions. `A` accelerates; `LLeft` / `LRight` steer. A frame-based route from a fresh start is `f600:L+R~f30,f780:A,f900:A,f1020:A,f1140:A,f2200:A~f2400`. Capture after frame 2400 for an early race frame. The first shader and pipeline preparation can delay the first start.
 
+## Android
+
+Played with the Android app on the AYN Odin 3 (Adreno 830, 24 GB), on the phone's own driver and on Turnip v32 (2026-11-19): title, menus and races, about 60 fps. A race in Docked (1080p) takes about 14.5 ms of GPU time (DLSS 960x540 to 1920x1080 on the stand-in, GSR 2); in Handheld (720p) about 12.3 ms (640x360 to 1920x1080). Memory: the host's footprint up to about 1 GB on the phone's driver and 3 GB on Turnip, GPU memory up to about 4.6 GB ([readiness.tsv](readiness.tsv)).
+
+- **Pack.** `pack_android.py` builds 2,914 of its 2,976 shaders; the 62 that fail are its 31 task and 31 mesh programs, which the game does not use on the tested route (no mesh draw is made).
+- **Choices.** Docked (1080p) and Handheld (720p) from the `graphics_scale` rows, and the Upscaler row (`dlss_standin`): see [Graphics on Android](#graphics-on-android).
+- **Starter set.** [shader_first.tsv](shader_first.tsv): the 391 shaders a first start with no library asked for, from one run on the phone's driver. Without a library the picture is black for the whole first route while they build.
+- **Not in the profile.** A prewarm seed: the key lists of runs on both drivers (254 pipelines) were made and play their keys back in 0.1 s; the seed is a binary file built from them.
+
+### Graphics on Android
+
+The game renders its 3D scene at a size its scripts pick and evaluates NVN2 DLSS on it; the host draws that DLSS call with its stand-in (`vka_dlss.c`). Measured on the AYN Odin 3, phone's own driver, a race (2026-11-19):
+
+| Launcher choice | Operation mode | DLSS call | GPU, fps |
+|---|---|---|---|
+| Docked (1080p), the default | docked | 960x540 to 1920x1080 (2x) | about 14.5 ms, 60 fps |
+| Handheld (720p) | handheld | 640x360 to 1920x1080 (3x); the window crop is 1920x1080 since the host reports the Switch 2's 1080p screen in handheld mode (before, 1280x720) | about 12.3 ms, 60 fps |
+
+The menus evaluate DLSS at 1920x1080 to 1920x1080 (NVIDIA's DLAA: anti-aliasing at the same size). The Upscaler row picks what draws the call: GSR 2 (the default: temporal, three passes and RCAS), FSR 1 (spatial, faster), FSR 3.1 (temporal) or Bilinear. All four keep the colour's alpha, which the game composites its 3D layer over the menu UI by.
+
+The game's own Options, GRAPHICS (TV mode), docked, as its menu describes them and as they ran:
+
+| Mode | The game's description | On the phone |
+|---|---|---|
+| PURE | 60 fps, 1440p dynamic resolution, dynamic cubemap reflections, no anti-aliasing, no AO | 1920x1080 at 1:1 (DLSS call at the same size: the stand-in anti-aliases, no upscale); about 14.6 ms, 60 fps |
+| PERFORMANCE (default) | 60 fps, 1080p, realtime reflections, dynamic shadows, AA, AO | 960x540 to 1920x1080; about 14.5 ms, 60 fps |
+| BALANCED | as PERFORMANCE, 1440p | the same as PERFORMANCE |
+| QUALITY | 60 fps, 4K, realtime reflections, static and screen-space shadows, AA, AO | the same as PERFORMANCE |
+| ULTRA QUALITY | 30 fps in races, 4K, realtime reflections, dynamic shadows, AA, AO | the same as PERFORMANCE; the game kept 60 fps |
+
+The output sizes of BALANCED, QUALITY and ULTRA QUALITY (1440p, 4K) cannot show: the game draws at most the size `oe::GetDefaultDisplayResolution` reports, and the host reports a 1080p TV when docked. Whether their effects (shadows, AO) differ on the phone is not measured: the runs' screenshots are from different places on the track, and the GPU time is the same. ULTRA QUALITY's 30 fps cap did not reach the present interval (open).
+
 ## Rendering and memory
 
 The race evaluates DLSS at 960x540 to 1920x1080; the shared MetalFX temporal scaler answers it. The window's captured surface is 3840x2160. Resident memory settled around 6.7–7.0 GB during the first race; GPU allocation about 6.3–6.6 GB, with no sustained growth over the observed interval. On the M6 above, the final run's frame-3000 sample reports frame time p50 34.19 ms (about 29 fps), p95 59.81 ms; GPU time p50 20.30 ms, p95 32.77 ms. This is a diagnostic run with the Metal HUD, shader/pipeline recording and frame captures, not a controlled performance benchmark; the capture at frame 2400 caused a roughly one-second hitch. No performance optimization or comparison against a correctly rendered earlier build is claimed.
@@ -56,4 +88,6 @@ Regression level: moderate, because shared shader extraction and translation cha
 
 - Later courses, a complete race, multiplayer, online modes and frame generation have not been tested.
 - The log still reports an unbound vertex uniform slot in the startup effect (`eb5ec3e356bf7ad1`, slot 1), two unimplemented DLSS overlay setters called with zero, and a cube view of a one-face texture. Their effects outside the tested route are not established; none was hidden with a profile switch or stub.
+- Android, GRAPHICS modes: whether BALANCED, QUALITY and ULTRA QUALITY change shadows, AO or reflections on the phone is not established (same render size and GPU time as PERFORMANCE; a same-moment comparison is in progress), and ULTRA QUALITY's 30 fps race cap did not take effect ([Graphics on Android](#graphics-on-android)).
+- Android: `nvnCommandBufferSetProvokingVertexMode` is not implemented (logged once); shader `cded8d0899ba4a6d` reads unbound textures at binding 8 at race load; on Turnip one pipeline was still made on the frame path after prewarm (6.9 ms).
 - No on-device iOS validation. The app's icon is absent because the supplied NUP carries none.
