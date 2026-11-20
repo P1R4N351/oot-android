@@ -209,6 +209,8 @@ For a run past the opening, copy the committed save folder to the new run's `DM_
 
 ## Found on this game
 
+- **Low-RAM caps (`low_ram_place_part_mb 64`, `low_ram_img_cache_max_mb 1280`):** measured on AYN Thor (`QCS8550`, `Adreno 740`, Turnip `27.0.0-devel`): without low-RAM caps peak Vulkan allocation reached `4,775 MiB` (`placed 1636`, `images 3012`); with the profile caps + `DM_VK_LOW_RAM=1` peak Vulkan allocation dropped to `1,987–2,606 MiB`. `low_ram_app_pool_mb` is intentionally omitted because shrinking reported `TotalMemorySize` to `7,424 MiB` causes `SetHeapSize(4.45 GiB)` to `SIGSEGV` at `addr=0x440 pc=main+0xf942ac` during `ModuleInitializeParam` startup; `main` requires the `9,216 MiB` (`0x240000000`) pool for its `6.20 GiB` virtual heap reservation.
+
 - [Advertised placed maps reject guest-buffer remaps (Android)](../../../docs/reference/memory.md#advertised-placed-maps-reject-guest-buffer-remaps-android): PanVK on a Mali-G615 (issue #437) passed the readiness check and drew nothing; the check now tries the remap itself. Not run on a Mali device here.
 - [Integer unbound-image placeholders using normalized views (Android)](../../../docs/reference/rendering.md#integer-unbound-image-placeholders-using-normalized-views-android): the 1x1 `VkFormat 37` placeholder asked for views as 41 / 42 on the system driver (issue #424); fixed by typed placeholders, not checked on a phone here.
 - [The GPU stays at a low clock after a menu: the system's cap, moved by the ADPF reports](../../../docs/reference/frame-rate.md#the-gpu-stays-at-a-low-clock-after-a-menu-the-systems-cap-moved-by-the-adpf-reports-android): 20 fps for good in 1 of 6 runs on the Odin 3, System Driver v800.72 (2026-11-18), outside Kokiri Forest.
