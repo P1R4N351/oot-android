@@ -282,6 +282,8 @@
     <string name="game_building_shaders_label">Anzeige „Shader werden gebaut“</string>
     <string name="settings_building_shaders_label">Anzeige „Shader werden gebaut“</string>
     <string name="settings_building_shaders_label_note">Ein Spiel, das fehlende Shader während des Spielens baut, zeigt oben am Bildschirm eine kleine durchsichtige Zahl. Ein Build, der auf ein kühles Handy oder mehr Akku wartet, wird immer gemeldet. Das Ausblenden der Anzeige stoppt den Build nicht.</string>
+    <string name="settings_startup_log">Start-Log anzeigen</string>
+    <string name="settings_startup_log_note">Zeigt das Boot-Log auf dem schwarzen Bildschirm an, bis das Spiel sein erstes Bild zeichnet. Abstürze werden weiterhin angezeigt und das Log wird immer auf dem Datenträger gespeichert.</string>
     <string-array name="arr_layer_label">
         <item>Aus</item>
         <item>Nur Zahl</item>

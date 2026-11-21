@@ -25,6 +25,10 @@ final class Prefs {
     static boolean overlay(Context c) { return of(c).getBoolean("overlay", true); }
     static void overlay(Context c, boolean on) { of(c).edit().putBoolean("overlay", on).commit(); }
 
+    /** Whether GameActivity shows the newest log lines over the black screen until the game's first frame (on by default; crashes still show). */
+    static boolean startupLog(Context c) { return of(c).getBoolean("startup_log", true); }
+    static void startupLog(Context c, boolean on) { of(c).edit().putBoolean("startup_log", on).commit(); }
+
     /** Home's tile order the player chose (GameOrder: game ids, one per line); empty: the order the games were added in */
     static java.util.List<String> gameOrder(Context c) { return GameOrder.decode(of(c).getString("game_order", "")); }
     static void gameOrder(Context c, java.util.List<String> ids) { of(c).edit().putString("game_order", GameOrder.encode(ids)).commit(); }

@@ -282,6 +282,8 @@
     <string name="game_building_shaders_label">تسمية «جارٍ بناء المظلّلات»</string>
     <string name="settings_building_shaders_label">تسمية «جارٍ بناء المظلّلات»</string>
     <string name="settings_building_shaders_label_note">تعرض اللعبة التي تبني المظلّلات الناقصة أثناء اللعب عدّاداً صغيراً شبه شفاف أعلى الشاشة. يُعلَن دائماً عن البناء الذي ينتظر برودة الهاتف أو مزيداً من البطارية. إخفاء التسمية لا يوقف البناء.</string>
+    <string name="settings_startup_log">إظهار سجل بدء التشغيل</string>
+    <string name="settings_startup_log_note">إظهار سجل الإقلاع فوق الشاشة السوداء حتى ترسم اللعبة إطارها الأول. لا تزال الأعطال تظهر، ويتم حفظ السجل دائمًا على القرص.</string>
     <string-array name="arr_layer_label">
         <item>إيقاف</item>
         <item>الرقم فقط</item>
@@ -499,6 +501,7 @@
     <string name="home_copied_into_the_app">تم النسخ إلى التطبيق: %1$s</string>
     <string name="home_game_now_uses">%1$s يستخدم الآن %2$s.</string>
     <string name="home_lossless_dll_not_installed">لم يُثبَّت Lossless.dll: %1$s</string>
+    <string name="home_tile_details">التفاصيل ›</string>
     <string name="home_checking_name">جارٍ فحص %1$s…</string>
     <plurals name="home_checking_games">
         <item quantity="zero">جارٍ فحص %1$d لعبة…</item>
@@ -1328,7 +1331,6 @@
     <string name="settings_player_id">معرّف اللاعب</string>
     <string name="settings_player_id_hint">الأسماء مجرد تسميات: تتبع الحفظات المعرّف، لذا لا يؤدي تغيير الاسم إلى نقل الحفظات أو خلطها.</string>
     <string name="settings_that_picture_could_not_be_read">تعذّرت قراءة هذه الصورة</string>
-    <string name="home_tile_details">التفاصيل ›</string>
     <string name="home_move_left">نقل إلى اليسار</string>
     <string name="home_move_right">نقل إلى اليمين</string>
     <string name="home_delete_game_menu">إزالة اللعبة…</string>

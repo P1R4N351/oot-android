@@ -299,6 +299,8 @@
     <string name="game_building_shaders_label">Building shaders label</string>
     <string name="settings_building_shaders_label">Building shaders label</string>
     <string name="settings_building_shaders_label_note">A game that builds the shaders it lacks while you play shows a small see-through count at the top of the screen. A build that waits for a cool phone or more battery is always said. Hiding the label does not stop the build.</string>
+    <string name="settings_startup_log">Show startup log</string>
+    <string name="settings_startup_log_note">Show the boot log over the black screen until the game draws its first frame. Crashes still show, and the log is always saved to disk.</string>
     <string-array name="arr_layer_label">
         <item>Off</item>
         <item>Number only</item>

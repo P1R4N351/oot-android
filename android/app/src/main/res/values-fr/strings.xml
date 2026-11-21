@@ -282,6 +282,8 @@
     <string name="game_building_shaders_label">Étiquette « Construction des shaders »</string>
     <string name="settings_building_shaders_label">Étiquette « Construction des shaders »</string>
     <string name="settings_building_shaders_label_note">Un jeu qui construit pendant que vous jouez les shaders qui lui manquent affiche un petit compteur translucide en haut de l\'écran. Une construction en attente d\'un téléphone plus frais ou de plus de batterie est toujours signalée. Masquer l\'étiquette n\'arrête pas la construction.</string>
+    <string name="settings_startup_log">Afficher le journal de démarrage</string>
+    <string name="settings_startup_log_note">Affiche le journal de démarrage sur l\'écran noir jusqu\'à ce que le jeu dessine sa première image. Les plantages restent affichés et le journal est toujours enregistré sur le disque.</string>
     <string-array name="arr_layer_label">
         <item>Désactivée</item>
         <item>Nombre seul</item>
@@ -499,6 +501,7 @@
     <string name="home_copied_into_the_app">Copié dans l\'app : %1$s</string>
     <string name="home_game_now_uses">%1$s utilise maintenant %2$s.</string>
     <string name="home_lossless_dll_not_installed">Lossless.dll non installé : %1$s</string>
+    <string name="home_tile_details">Détails ›</string>
     <string name="home_checking_name">Vérification de %1$s…</string>
     <plurals name="home_checking_games">
         <item quantity="one">Vérification de %1$d jeu…</item>
@@ -1307,7 +1310,6 @@
     <string name="settings_player_id">ID du joueur</string>
     <string name="settings_player_id_hint">Les noms ne sont que des étiquettes : les sauvegardes suivent l\'ID, donc renommer ne déplace ni ne mélange jamais les sauvegardes.</string>
     <string name="settings_that_picture_could_not_be_read">Impossible de lire cette image</string>
-    <string name="home_tile_details">Détails ›</string>
     <string name="home_move_left">Déplacer à gauche</string>
     <string name="home_move_right">Déplacer à droite</string>
     <string name="home_delete_game_menu">Retirer le jeu…</string>

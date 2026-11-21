@@ -282,6 +282,8 @@
     <string name="game_building_shaders_label">“正在构建着色器”标签</string>
     <string name="settings_building_shaders_label">“正在构建着色器”标签</string>
     <string name="settings_building_shaders_label_note">边玩边构建所缺着色器的游戏,会在屏幕顶部显示一个小的半透明数字。等待手机降温或电量充足的构建总会提示。隐藏标签不会停止构建。</string>
+    <string name="settings_startup_log">显示启动日志</string>
+    <string name="settings_startup_log_note">在游戏绘制第一帧之前，在黑屏上显示启动日志。崩溃信息仍会显示，且日志始终会保存到磁盘。</string>
     <string-array name="arr_layer_label">
         <item>关闭</item>
         <item>仅数字</item>
@@ -499,6 +501,7 @@
     <string name="home_copied_into_the_app">已复制到应用中：%1$s</string>
     <string name="home_game_now_uses">%1$s 现在使用 %2$s。</string>
     <string name="home_lossless_dll_not_installed">未安装 Lossless.dll：%1$s</string>
+    <string name="home_tile_details">详情 ›</string>
     <string name="home_checking_name">正在检查 %1$s…</string>
     <plurals name="home_checking_games">
         <item quantity="other">正在检查 %1$d 个游戏…</item>
@@ -1293,7 +1296,6 @@
     <string name="settings_player_id">玩家 ID</string>
     <string name="settings_player_id_hint">名称只是标签：存档跟随 ID，所以改名不会移动或混淆存档。</string>
     <string name="settings_that_picture_could_not_be_read">无法读取该图片</string>
-    <string name="home_tile_details">详情 ›</string>
     <string name="home_move_left">向左移动</string>
     <string name="home_move_right">向右移动</string>
     <string name="home_delete_game_menu">移除游戏…</string>
