@@ -78,6 +78,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private final Handler ui = new Handler(Looper.getMainLooper());
     private PadMotion padMotion;   // a gamepad's own gyroscope and accelerometer as its player's six-axis sensor (PadMotion), the phone's own sensors stay the host's
     private BifrostBridge bifrost;
+    private OotCompanionController companion;
     private volatile Rumble rumble;   // the game's vibration on the controller's or the phone's vibrator
     private boolean input, started;
     private boolean clean;   // the saved clean picture: stats, log, tag, controls and the panel strip hidden together
@@ -1057,6 +1058,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      */
     @Override protected void onDestroy() {
         if (bifrost != null) { bifrost.close(); bifrost = null; }
+        if (companion != null) { companion.close(); companion = null; }
         if (layer != null) { layer.stop(); layer = null; }
         TextInput.gone(this);
         UserPicker.gone(this);
@@ -1214,6 +1216,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (resumedNow && !paused) { Native.motionStart(); padMotion.resume(); }   // the screen was resumed before the game started (onResume then did nothing): the sensors start here
         if (bifrost == null) bifrost = BifrostBridge.create(this, titleId());
         if (resumedNow && bifrost != null) bifrost.start();
+        if (companion == null) companion = OotCompanionController.create(this, rootView, ui, titleId());
+        if (companion != null) {
+            companion.onStart();
+            if (resumedNow && !paused) companion.onResume();
+        }
         audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN).build())
@@ -1290,6 +1297,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         paused = true;
         Native.lifecycle(4);
         Native.motionStop();
+        if (companion != null) companion.onPause();
         if (padMotion != null) padMotion.pause();
         if (rumble != null) rumble.stopAll();
         pausedView.setVisibility(View.VISIBLE);
@@ -1300,7 +1308,19 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         paused = false;
         pausedView.setVisibility(View.GONE);
         Native.lifecycle(5);
-        if (resumedNow) { Native.motionStart(); if (padMotion != null) padMotion.resume(); }
+        if (resumedNow) {
+            Native.motionStart();
+            if (padMotion != null) padMotion.resume();
+            if (companion != null) companion.onResume();
+        }
+    }
+
+    void companionDrawer(boolean on) {
+        if (companion != null) companion.setDrawerOpen(on);
+        else Prefs.companionDrawer(this, titleId(), on);
+    }
+    boolean companionDrawerOpen() {
+        return companion != null ? companion.isDrawerOpen() : Prefs.companionDrawer(this, titleId());
     }
 
     /**
@@ -1361,6 +1381,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             else Native.note("audio focus asked for again on the return: refused");
         }
         Native.lifecycle(2);
+        if (companion != null) companion.onStart();
     }
     @Override protected void onResume() {
         super.onResume();
@@ -1368,17 +1389,23 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (!started) return;
         Native.lifecycle(3);
         Native.motionRotation(getDisplay().getRotation());
-        if (!paused) { Native.motionStart(); if (padMotion != null) padMotion.resume(); }   // paused: the sensors stay off (they would wake the host at their rate for a frozen game); unpause starts them
+        if (!paused) {
+            Native.motionStart();
+            if (padMotion != null) padMotion.resume();
+            if (companion != null) companion.onResume();
+        }   // paused: the sensors stay off (they would wake the host at their rate for a frozen game); unpause starts them
         if (bifrost != null) bifrost.start();
     }
     private boolean resumedNow;
     @Override protected void onPause() {
         resumedNow = false;
         if (bifrost != null) bifrost.stop();
+        if (companion != null) companion.onPause();
         if (started) { Native.motionStop(); if (padMotion != null) padMotion.pause(); Native.lifecycle(0); }
         super.onPause();
     }
     @Override protected void onStop() {
+        if (companion != null) companion.onStop();
         if (started) { stopped = true; if (!isChangingConfigurations()) hostInBackground = true; Native.lifecycle(1); }
         super.onStop();
     }

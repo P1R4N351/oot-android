@@ -137,11 +137,17 @@ static void setup_synthetic_world(void) {
     put_int(OOT_KEY_MP_MAX, 240U);
     put_int(OOT_KEY_RUPEES, 195U);
     put_int(OOT_KEY_GOLD_TOKENS, 14U);
+    put_int(OOT_KEY_WALLET_CAP, 500U);
+    put_int(OOT_KEY_ARROWS, 22U);
+    put_int(OOT_KEY_ARROWS_CAP, 40U);
+    put_int(0x877BDCEEU, 4U);          // Water Temple Small Keys
+    put_int(0x7D48DF76U, 0x1C293517U); // Bottle 0 -> Blue Fire
     put_int(0xCBD1E58CU, 1U);  // Kokiri Emerald
     put_int(0x7D69AD47U, 1U);  // Goron Ruby
     put_int(0x692D57CBU, 1U);  // Forest Medallion
     put_flt(OOT_KEY_ROT_FOR_MAP, 135.5f);
     put_str(OOT_KEY_CURRENT_BANC, "KokiriForest_Child");
+    put_str(OOT_KEY_RADAR_LOCATION, "Kokiri Shop");
     put_str(OOT_KEY_ACTION_PROMPT, "Talk");
     put_str(OOT_KEY_EQUIP_WEAPON, "Weapon_Sword_Kokiri");
     put_str(OOT_KEY_EQUIP_SHIELD, "Weapon_Shield_Deku");
@@ -205,6 +211,9 @@ static void test_world_modes(void) {
     assert(s.songs_mask == ((1U << 0U) | (1U << 2U) | (1U << 5U)));
     assert(s.pose_valid == 1U && fabsf(s.pos[0] + 12.5f) < 1e-5f && fabsf(s.yaw_deg - 135.5f) < 1e-4f);
     assert(strcmp(s.scene, "KokiriForest_Child") == 0);
+    assert(strcmp(s.radar_loc, "Kokiri Shop") == 0);
+    assert(s.wallet_cap == 500U && s.ammo[OOT_AMMO_ARROWS] == 22U && s.ammo_cap[OOT_AMMO_ARROWS] == 40U);
+    assert(s.small_keys[3] == 4U && s.bottles[0] == OOT_BOTTLE_BLUE_FIRE);
     assert(strcmp(s.equip_weapon, "Weapon_Sword_Kokiri") == 0);
     assert(oot_companion_write_safe(&s) == 1);
 

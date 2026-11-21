@@ -9,14 +9,21 @@
 #include <string.h>
 #include <time.h>
 
+_Static_assert(OOT_BTN_A == DM_BTN_A && OOT_BTN_B == DM_BTN_B &&
+               OOT_BTN_X == DM_BTN_X && OOT_BTN_Y == DM_BTN_Y &&
+               OOT_BTN_L == DM_BTN_L && OOT_BTN_R == DM_BTN_R,
+               "OoT companion button bits must match dm_input.h");
+
 static pthread_mutex_t g_companion_mu = PTHREAD_MUTEX_INITIALIZER;
 static OotCompanionCtx g_companion_ctx;
 static int g_companion_inited;
+static uint64_t g_prev_seq_btn;
 
 static void companion_ensure_init_locked(void) {
     if (!g_companion_inited) {
         oot_companion_ctx_init(&g_companion_ctx);
         g_companion_inited = 1;
+        g_prev_seq_btn = 0ULL;
     }
 }
 
@@ -37,6 +44,13 @@ static uint64_t companion_main_base(void) {
     return 0ULL;
 }
 
+static void companion_push_seq_buttons(uint64_t seq_btn, int force_push) {
+    if (force_push || seq_btn != g_prev_seq_btn) {
+        g_prev_seq_btn = seq_btn;
+        nxhost_companion_buttons_set(seq_btn);
+    }
+}
+
 void oot_companion_note_canvas(uint64_t vtable_rel) {
     if (pthread_mutex_lock(&g_companion_mu) != 0) return;
     companion_ensure_init_locked();
@@ -54,10 +68,18 @@ void dm_companion_present(uint64_t frame) {
     uint64_t base = companion_main_base();
     uint64_t now_ns = plat_clock_ns(CLOCK_MONOTONIC);
     OotTapMem mem = {companion_plat_read, NULL};
+    uint64_t seq_btn = 0ULL;
+    int push = 0;
     if (pthread_mutex_lock(&g_companion_mu) != 0) return;
     companion_ensure_init_locked();
     oot_companion_ctx_present(&g_companion_ctx, en, build, &mem, base, now_ns);
+    seq_btn = g_companion_ctx.seq_buttons;
+    if (seq_btn != g_prev_seq_btn) {
+        g_prev_seq_btn = seq_btn;
+        push = 1;
+    }
     (void)pthread_mutex_unlock(&g_companion_mu);
+    if (push) nxhost_companion_buttons_set(seq_btn);
 }
 
 int nxhost_companion_state(int64_t out[COMPANION_STATE_FIELDS]) {
@@ -88,4 +110,65 @@ void nxhost_companion_set_page(int page) {
     companion_ensure_init_locked();
     g_companion_ctx.user_page = (int32_t)page;
     (void)pthread_mutex_unlock(&g_companion_mu);
+}
+
+int nxhost_companion_detail(
+    int32_t *ints, int max_ints, float *flts, int max_flts, char *txt, int max_txt) {
+    if (!companion_enabled()) return 0;
+    if (pthread_mutex_lock(&g_companion_mu) != 0) return 0;
+    companion_ensure_init_locked();
+    int ready = (g_companion_ctx.state.status != COMPANION_STATE_NONE && g_companion_ctx.state_ns > 0ULL);
+    if (ready) {
+        oot_companion_ctx_pack_detail(&g_companion_ctx, ints, max_ints, flts, max_flts, txt, max_txt);
+    }
+    (void)pthread_mutex_unlock(&g_companion_mu);
+    return ready ? 1 : 0;
+}
+
+int nxhost_companion_play_song(int song_idx, int classic_mode) {
+    if (!companion_enabled()) return 0;
+    uint64_t now_ns = plat_clock_ns(CLOCK_MONOTONIC);
+    int ok = 0;
+    uint64_t seq_btn = 0ULL;
+    if (pthread_mutex_lock(&g_companion_mu) != 0) return 0;
+    companion_ensure_init_locked();
+    ok = oot_companion_ctx_play_song(&g_companion_ctx, song_idx, classic_mode, now_ns);
+    seq_btn = g_companion_ctx.seq_buttons;
+    if (ok) g_prev_seq_btn = seq_btn;
+    (void)pthread_mutex_unlock(&g_companion_mu);
+    if (ok) nxhost_companion_buttons_set(seq_btn);
+    return ok;
+}
+
+int nxhost_companion_tap_note(int note_idx, int classic_mode) {
+    if (!companion_enabled()) return 0;
+    uint64_t now_ns = plat_clock_ns(CLOCK_MONOTONIC);
+    int ok = 0;
+    uint64_t seq_btn = 0ULL;
+    if (pthread_mutex_lock(&g_companion_mu) != 0) return 0;
+    companion_ensure_init_locked();
+    ok = oot_companion_ctx_tap_note(&g_companion_ctx, note_idx, classic_mode, now_ns);
+    seq_btn = g_companion_ctx.seq_buttons;
+    if (ok) g_prev_seq_btn = seq_btn;
+    (void)pthread_mutex_unlock(&g_companion_mu);
+    if (ok) nxhost_companion_buttons_set(seq_btn);
+    return ok;
+}
+
+void nxhost_companion_abort_seq(void) {
+    if (pthread_mutex_lock(&g_companion_mu) != 0) return;
+    companion_ensure_init_locked();
+    oot_companion_ctx_reset_seq(&g_companion_ctx);
+    g_prev_seq_btn = 0ULL;
+    (void)pthread_mutex_unlock(&g_companion_mu);
+    companion_push_seq_buttons(0ULL, 1);
+}
+
+int nxhost_companion_pin(int op, int slot, const char *label) {
+    int rc = -1;
+    if (pthread_mutex_lock(&g_companion_mu) != 0) return -1;
+    companion_ensure_init_locked();
+    rc = oot_companion_ctx_pin(&g_companion_ctx, op, slot, label);
+    (void)pthread_mutex_unlock(&g_companion_mu);
+    return rc;
 }

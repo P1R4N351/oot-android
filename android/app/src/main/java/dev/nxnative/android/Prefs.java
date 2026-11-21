@@ -199,7 +199,7 @@ final class Prefs {
     /** The recommended frame rate cap as the launcher stores it (Recommend.cap), null for none */
     static Integer recCap(Context c, String titleId) { return Recommend.cap(rec(c, titleId, Recommend.FPS_CAP), limited(titleId)); }
     /** Game settings › Reset to defaults: every choice of the game's own back to the main screen's default (Extra environment's lines stay) */
-    static final String[] GAME_SETTINGS = {"window", "render_pct", "gfx_quality", "fps_cap", "gpu_driver", "gpu_ts", "pause_return", "ndsr_choice2", "ndsr_sharp", "drs2", "ram_saver", "ram_saver_strong", "decouple", "hold60", "full_vegetation", "gsr2_clarity", "dlss_sharp", "dlss_mode", "scene_res", "res_preset", "aspect", "cheats", "screen_scale", "bifrost"};
+    static final String[] GAME_SETTINGS = {"window", "render_pct", "gfx_quality", "fps_cap", "gpu_driver", "gpu_ts", "pause_return", "ndsr_choice2", "ndsr_sharp", "drs2", "ram_saver", "ram_saver_strong", "decouple", "hold60", "full_vegetation", "gsr2_clarity", "dlss_sharp", "dlss_mode", "scene_res", "res_preset", "aspect", "cheats", "screen_scale", "bifrost", "companion_drawer"};
     static void resetGame(Context c, String titleId) {
         SharedPreferences.Editor e = of(c).edit();
         for (String k : GAME_SETTINGS) e.remove(gameKey(k, titleId));
@@ -540,6 +540,9 @@ final class Prefs {
     /** Game settings › Stick LEDs (Bifrost) on AYN Thor (DM_BIFROST=0 when off; on by default) */
     static boolean bifrost(Context c, String titleId) { return of(c).getBoolean(gameKey("bifrost", titleId), true); }
     static void bifrost(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("bifrost", titleId), on).commit(); }
+    /** In-game single-screen Companion HUD drawer toggle (per game; Display 4 attaches automatically when present) */
+    static boolean companionDrawer(Context c, String titleId) { return of(c).getBoolean(gameKey("companion_drawer", titleId), false); }
+    static void companionDrawer(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("companion_drawer", titleId), on).commit(); }
 
     /**
      * The game's own environment lines (KEY=VALUE, one a line; its Game settings), given to the host after the launcher's settings and env.txt, so they win for

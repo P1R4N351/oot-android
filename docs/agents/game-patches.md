@@ -729,7 +729,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - frame step `+0x805bd0`: Max Resolution: optional full-scale branch of the dynamic resolution controller
   - frame step `+0xc2a36c`: Texture Pool x2: optional doubling of the initial graphics allocation
   - frame step `+0x3b4f074`: frame step: the frame-rate controller's interval and fps follow the host's vsyncs (state page target fps; 0 = the game's own choice)
-  - host [oot_companion.h:14](../../dm/host/android/oot_companion.h#L14): build check
+  - host [oot_companion.h:18](../../dm/host/android/oot_companion.h#L18): build check
   - host [oot_fog.c:36](../../dm/host/android/oot_fog.c#L36): build check
   - host [oot_foliage.c:29](../../dm/host/android/oot_foliage.c#L29): build check
   - host [oot_shadow.c:29](../../dm/host/android/oot_shadow.c#L29): build check

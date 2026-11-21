@@ -26,6 +26,7 @@ static nxin_pad g_pad[DM_PLAYERS];
 static float g_dz = -1;
 static nxin_touch g_touch; static int g_touch_init;
 static uint64_t g_shake_btn;
+static uint64_t g_companion_btn;
 static pad_motion_cal g_pm_cal[DM_PLAYERS];   // each controller's rest offset of the gyro (pad_motion.h), under g_mu
 static int g_pm_log[DM_PLAYERS];
 static int g_held;   // the text input box is up: pad and touch events are dropped (android_text_input)
@@ -59,7 +60,7 @@ static void publish_pad(int p) {   // under g_mu
 static void publish_touch_pad(void) {   // under g_mu
     uint64_t b; int32_t lx, ly, rx, ry;
     nxin_touch_pad(&g_touch, &b, &lx, &ly, &rx, &ry);
-    dm_input_set(b | g_shake_btn, lx, ly, rx, ry);
+    dm_input_set(b | g_shake_btn | g_companion_btn, lx, ly, rx, ry);
 }
 static void publish_fingers(void) {   // under g_mu
     _Static_assert(sizeof(nxin_finger) == sizeof(dm_touch), "finger layout");
@@ -229,8 +230,23 @@ void nxhost_touch_layout(float vw, float vh, float px, float py, float pw, float
     pthread_mutex_unlock(&g_mu);
 }
 static void touch_release_all(void) {   // under g_mu
+    if (g_companion_btn) {
+        g_companion_btn = 0;
+        if (!g_touch_init) dm_input_set(0, 0, 0, 0, 0);
+    }
     if (!g_touch_init) return;
     nxin_touch_event(&g_touch, AM_CANCEL, 0, 0, 0); publish_touch_pad(); publish_fingers();
+}
+
+void nxhost_companion_buttons_set(uint64_t buttons) {
+    pthread_mutex_lock(&g_mu);
+    uint64_t want = (g_held || g_joining) ? 0ULL : (buttons & 0xFFFFULL);
+    if (want != g_companion_btn) {
+        g_companion_btn = want;
+        touch_once();
+        publish_touch_pad();
+    }
+    pthread_mutex_unlock(&g_mu);
 }
 void nxhost_touch_controls_enable(bool on) {
     pthread_mutex_lock(&g_mu); touch_once();

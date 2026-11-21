@@ -107,3 +107,13 @@ NXHOST_API void nxhost_codecs_log(void);
 NXHOST_API int nxhost_companion_state(int64_t out[8]);
 // Sets the second screen's user-chosen page index (-1 when none / cleared)
 NXHOST_API void nxhost_companion_set_page(int page);
+// Companion virtual controller button mask (ORed with touch pad; automatically released while g_held || g_joining || paused)
+NXHOST_API void nxhost_companion_buttons_set(uint64_t buttons);
+// Detailed companion telemetry snapshot for Display 4 / drawer UI; returns 1 when populated
+NXHOST_API int nxhost_companion_detail(int32_t *ints, int max_ints, float *flts, int max_flts, char *txt, int max_txt);
+// Trigger Ocarina song playback (0..11) or single note tap (0..4) when safety gates allow; returns 1 when started
+NXHOST_API int nxhost_companion_play_song(int song_idx, int classic_mode);
+NXHOST_API int nxhost_companion_tap_note(int note_idx, int classic_mode);
+NXHOST_API void nxhost_companion_abort_seq(void);
+// Session waypoint pins (op: 0=add at current pose, 1=remove slot, 2=clear all)
+NXHOST_API int nxhost_companion_pin(int op, int slot, const char *label);

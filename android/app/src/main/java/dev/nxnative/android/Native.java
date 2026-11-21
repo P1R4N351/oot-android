@@ -182,6 +182,16 @@ final class Native {
     static native boolean companionState(long[] out);
     /** Sets the user-chosen companion page index (-1 when none / cleared) */
     static native void companionSetPage(int page);
+    /** Detailed companion snapshot (oot_companion.c): fills ints[52] &amp; floats[412], returns newline-delimited strings or null */
+    static native String companionDetail(int[] ints, float[] floats);
+    /** Triggers automatic Switch 2 Ocarina melody playback (0..11) when safety gates allow */
+    static native boolean companionPlaySong(int songIdx, boolean classic);
+    /** Triggers single Ocarina note button tap (0..4) when safety gates allow */
+    static native boolean companionTapNote(int noteIdx, boolean classic);
+    /** Immediately cancels any active Ocarina note sequence */
+    static native void companionAbortSeq();
+    /** Session waypoint management: op 0=add at current pose, 1=remove slot, 2=clear all */
+    static native int companionPin(int op, int slot, String label);
     /** Bifrost stick-LED bridge mode (DM_BIFROST): 0 off, 1 Pip-Boy feed (default), 2 classic public effects */
     static native int bifrostMode();
 }

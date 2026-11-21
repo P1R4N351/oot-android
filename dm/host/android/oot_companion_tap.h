@@ -17,6 +17,7 @@
 #ifndef OOT_COMPANION_TAP_H
 #define OOT_COMPANION_TAP_H
 
+#include "oot_companion_catalog.h"
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -87,6 +88,7 @@ extern "C" {
 
 // MurmurHash3_x86_32 (seed 0) keys for gmd::GameDataMgr flags.
 #define OOT_KEY_CURRENT_BANC      0x1D6189DAU
+#define OOT_KEY_RADAR_LOCATION    0xF74E0E8EU
 #define OOT_KEY_LOADING_BANC      0xEF2B60C2U
 #define OOT_KEY_IS_CHILDHOOD      0xCEA220D3U
 #define OOT_KEY_ROT_FOR_MAP       0xA4AEE8CDU
@@ -96,6 +98,7 @@ extern "C" {
 #define OOT_KEY_MP_MAX            0x12D63A97U
 #define OOT_KEY_MP_UNLOCKED       0xB1309073U
 #define OOT_KEY_RUPEES            0xA77921D7U
+#define OOT_KEY_WALLET_CAP        0xE0010A50U
 #define OOT_KEY_GOLD_TOKENS       0x04735978U
 #define OOT_KEY_ACTION_PROMPT     0x9824206CU
 #define OOT_KEY_EQUIP_WEAPON      0xA95A3521U
@@ -103,6 +106,30 @@ extern "C" {
 #define OOT_KEY_EQUIP_ARMOR       0x008D7F0CU
 #define OOT_KEY_EQUIP_BOOT        0xD107A85DU
 #define OOT_KEY_EQUIP_OCARINA     0xB72CD3FCU
+#define OOT_KEY_EQUIP_EXTRA0      0xA1F7EE2BU
+#define OOT_KEY_EQUIP_EXTRA1      0x2342B619U
+#define OOT_KEY_STICKS            0xB9494411U
+#define OOT_KEY_STICKS_CAP        0x457616B0U
+#define OOT_KEY_NUTS              0xF30D9F54U
+#define OOT_KEY_NUTS_CAP          0x735B00F7U
+#define OOT_KEY_SEEDS             0x5FADF7FCU
+#define OOT_KEY_SEEDS_CAP         0xAE8CC742U
+#define OOT_KEY_ARROWS            0x518EC74BU
+#define OOT_KEY_ARROWS_CAP        0x418DB791U
+#define OOT_KEY_BOMBS             0xDB1BCD4FU
+#define OOT_KEY_BOMBCHUS          0xDF7C517AU
+#define OOT_KEY_BOMBS_CAP         0xE753508BU
+#define OOT_KEY_BEANS             0xB003124DU
+
+#define OOT_AMMO_STICKS           0U
+#define OOT_AMMO_NUTS             1U
+#define OOT_AMMO_SEEDS            2U
+#define OOT_AMMO_ARROWS           3U
+#define OOT_AMMO_BOMBS            4U
+#define OOT_AMMO_BOMBCHUS         5U
+#define OOT_AMMO_COUNT            6U
+#define OOT_KEY_DUNGEON_N         8U
+#define OOT_BOTTLE_SLOTS          5U
 
 typedef int (*oot_guest_read_fn)(void *ctx, uint64_t addr, void *dst, size_t len);
 
@@ -129,13 +156,20 @@ typedef struct {
     uint32_t max_magic;
     uint32_t magic_unlocked;
     uint32_t rupees;
+    uint32_t wallet_cap;
     uint32_t tokens;
+    uint32_t beans;
+    uint32_t ammo[OOT_AMMO_COUNT];
+    uint32_t ammo_cap[OOT_AMMO_COUNT];
+    uint32_t small_keys[OOT_KEY_DUNGEON_N];
+    uint8_t bottles[OOT_BOTTLE_SLOTS];
     float pos[3];
     float yaw_deg;
     uint32_t stones_mask;
     uint32_t medallions_mask;
     uint32_t songs_mask;
     char scene[64];
+    char radar_loc[64];
     char as_command[64];
     char action_prompt[64];
     char equip_weapon[32];
@@ -143,6 +177,7 @@ typedef struct {
     char equip_armor[32];
     char equip_boot[32];
     char equip_ocarina[32];
+    char c_slots[4][32];
 } OotCompanionSnapshot;
 
 static inline uint32_t oot_rotl32(uint32_t v, uint32_t r) {
@@ -440,6 +475,62 @@ static inline void oot_tap_read_world_context(
     }
 }
 
+static inline void oot_tap_read_supplies_and_keys(
+    const OotTapMem *mem, uint64_t mgr, OotCompanionSnapshot *out) {
+    static const uint32_t kAmmo[OOT_AMMO_COUNT] = {
+        OOT_KEY_STICKS, OOT_KEY_NUTS, OOT_KEY_SEEDS,
+        OOT_KEY_ARROWS, OOT_KEY_BOMBS, OOT_KEY_BOMBCHUS
+    };
+    static const uint32_t kCap[OOT_AMMO_COUNT] = {
+        OOT_KEY_STICKS_CAP, OOT_KEY_NUTS_CAP, OOT_KEY_SEEDS_CAP,
+        OOT_KEY_ARROWS_CAP, OOT_KEY_BOMBS_CAP, OOT_KEY_BOMBS_CAP
+    };
+    static const uint32_t kSmallKeys[OOT_KEY_DUNGEON_N] = {
+        0x7DD79D10U, 0x90237092U, 0x1DF11487U, 0x877BDCEEU,
+        0x5EDDA9E3U, 0x79EEEC8EU, 0x3A28B6A4U, 0xEA9786F5U
+    };
+    (void)oot_tap_gdm_u32(mem, mgr, OOT_KEY_WALLET_CAP, &out->wallet_cap);
+    (void)oot_tap_gdm_u32(mem, mgr, OOT_KEY_BEANS, &out->beans);
+    for (uint32_t i = 0U; i < OOT_AMMO_COUNT; i++) {
+        (void)oot_tap_gdm_u32(mem, mgr, kAmmo[i], &out->ammo[i]);
+        (void)oot_tap_gdm_u32(mem, mgr, kCap[i], &out->ammo_cap[i]);
+    }
+    for (uint32_t i = 0U; i < OOT_KEY_DUNGEON_N; i++) {
+        (void)oot_tap_gdm_u32(mem, mgr, kSmallKeys[i], &out->small_keys[i]);
+    }
+}
+
+static inline void oot_tap_read_bottles_and_slots(
+    const OotTapMem *mem, uint64_t mgr, OotCompanionSnapshot *out) {
+    static const uint32_t kBottles[OOT_BOTTLE_SLOTS][3] = {
+        { 0xD53CE3A7U, 0xF39CE410U, 0x7D48DF76U },
+        { 0xFCA29A04U, 0x000FF6EAU, 0x1EDD164AU },
+        { 0x893216A1U, 0xF63B1194U, 0xB80C70A8U },
+        { 0x5324F9D3U, 0xB7F052CEU, 0xE4C1B1FCU },
+        { 0xC92B16BEU, 0xE27B136DU, 0x365E1953U }
+    };
+    static const uint32_t kSlots[4] = {
+        OOT_KEY_EQUIP_WEAPON, OOT_KEY_EQUIP_SHIELD,
+        OOT_KEY_EQUIP_EXTRA0, OOT_KEY_EQUIP_EXTRA1
+    };
+    (void)oot_tap_gdm_str(mem, mgr, OOT_KEY_RADAR_LOCATION, out->radar_loc, sizeof(out->radar_loc));
+    for (uint32_t i = 0U; i < 4U; i++) {
+        (void)oot_tap_gdm_str(mem, mgr, kSlots[i], out->c_slots[i], sizeof(out->c_slots[i]));
+    }
+    for (uint32_t i = 0U; i < OOT_BOTTLE_SLOTS; i++) {
+        for (uint32_t k = 0U; k < 3U; k++) {
+            uint32_t raw = 0U;
+            if (oot_tap_gdm_u32(mem, mgr, kBottles[i][k], &raw)) {
+                uint8_t kind = oot_sw2_bottle_decode(raw);
+                if (kind != OOT_BOTTLE_NONE) {
+                    out->bottles[i] = kind;
+                    break;
+                }
+            }
+        }
+    }
+}
+
 static inline int oot_companion_sample(
     const OotTapMem *mem, uint64_t main_addr, OotCompanionSnapshot *out) {
     if (!mem || !mem->read || !out || main_addr < 0x10000U) return 0;
@@ -466,6 +557,8 @@ static inline int oot_companion_sample(
         (void)oot_tap_gdm_str(mem, mgr, OOT_KEY_EQUIP_BOOT, out->equip_boot, sizeof(out->equip_boot));
         (void)oot_tap_gdm_str(mem, mgr, OOT_KEY_EQUIP_OCARINA, out->equip_ocarina, sizeof(out->equip_ocarina));
         oot_tap_read_quest_bits(mem, mgr, out);
+        oot_tap_read_supplies_and_keys(mem, mgr, out);
+        oot_tap_read_bottles_and_slots(mem, mgr, out);
     }
     uint64_t actor = oot_tap_find_actor(mem, main_addr);
     uint32_t link_bound = 0U;
