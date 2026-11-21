@@ -71,6 +71,7 @@ No `pad_layout`: the virtual gamepad starts in the 2D layout. `present_interval`
 
 General host changes first needed here; each applies to every game:
 
+- **The targeted split took the full scan** (a Unity bundle member's source, a Unity file without type trees, or a whole CPK): [The targeted split misses Unity bundle members, Unity files without type trees and CPK entries](../../../docs/reference/packing.md#the-targeted-split-misses-unity-bundle-members-unity-files-without-type-trees-and-cpk-entries-android).
 - **The main thread's stack without Bionic's guard page** (`plat_thread_stack`): [The main thread's stack reported with its guard page (Android)](../../../docs/reference/memory.md#the-main-threads-stack-reported-with-its-guard-page-android).
 - **Unity's x18 shapes** (`site_br_tab`, `site_blr`, `site_sp`): [Offset jump tables through x18 read at rewrite time](../../../docs/reference/rewriter.md#offset-jump-tables-through-x18-read-at-rewrite-time), [Indirect calls through x18](../../../docs/reference/rewriter.md#indirect-calls-through-x18), [Stack pointer writes through x18](../../../docs/reference/rewriter.md#stack-pointer-writes-through-x18).
 - **Node area cut by `sdk` build** (`dm/tools/sdk_patches.py`) and **sizing a virtual-address-memory game's reservation**: [The SDK's address-region node area](../../../docs/reference/memory.md#the-sdks-address-region-node-area), [Sizing the pool and alias region for virtual address memory](../../../docs/reference/memory.md#sizing-the-pool-and-alias-region-for-virtual-address-memory).
