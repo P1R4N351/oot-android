@@ -26,6 +26,14 @@ class Wiring(unittest.TestCase):
         for s in ('boolean padKey(KeyEvent e)', 'boolean padMotion(MotionEvent e)', 'requestFocusFromTouch', 'OnGlobalFocusChangeListener', 'TAB_NAMES'):
             self.assertIn(s, t)
 
+    def test_menu(self):
+        # Back and the controller's combination open the in-game menu (Eden's drawer) first; a tab picked there opens the panel on it
+        a = (JAVA / 'GameActivity.java').read_text()
+        self.assertIn('panel.back()', a)
+        t = (JAVA / 'SidePanel.java').read_text()
+        for s in ('void openMenu()', 'void back()', 'showPage(k)', 'isOpen() { return open || menuOpen; }'):
+            self.assertIn(s, t)
+
     def test_settings(self):
         self.assertIn('R.array.arr_pad_open', open(JAVA / 'MainActivity.java', encoding='utf-8').read(), 'the launcher shows the translated names of PadPanel.OPEN_NAMES')
         self.assertIn('panel_pad', (JAVA / 'Prefs.java').read_text())

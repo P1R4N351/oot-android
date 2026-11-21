@@ -573,7 +573,9 @@
     <string name="err_cannot_start_name">Nie można uruchomić: %1$s</string>
     <string name="err_name_is_running">%1$s działa</string>
     <string name="err_stop_it_first_then_start">Najpierw ją zatrzymaj (panel w grze › Zatrzymaj grę), potem uruchom %1$s. Naraz działa jedna gra.</string>
-    <string name="game_menu_hint">Menu: przesuń od prawej krawędzi lub naciśnij Wstecz</string>
+    <string name="game_menu_hint">Menu: naciśnij Wstecz\nUstawienia: przesuń od prawej krawędzi</string>
+    <string name="game_menu_gpu_driver">Sterownik GPU: %1$s</string>
+    <string name="game_menu_system_driver">Systemowy</string>
     <string name="game_tab_n_of_m">Karta %1$s, %2$d z %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">Rozmiar %1$d %%</string>

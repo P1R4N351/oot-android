@@ -569,7 +569,9 @@
     <string name="err_cannot_start_name">Başlatılamıyor: %1$s</string>
     <string name="err_name_is_running">%1$s çalışıyor</string>
     <string name="err_stop_it_first_then_start">Önce durdurun (oyun içi panel › Oyunu durdur), sonra %1$s oyununu başlatın. Aynı anda tek oyun çalışır.</string>
-    <string name="game_menu_hint">Menü: sağ kenardan içeri kaydırın veya Geri\'ye basın</string>
+    <string name="game_menu_hint">Menü: Geri\'ye basın\nAyarlar: sağ kenardan içeri kaydırın</string>
+    <string name="game_menu_gpu_driver">GPU sürücüsü: %1$s</string>
+    <string name="game_menu_system_driver">Sistem</string>
     <string name="game_tab_n_of_m">%1$s sekmesi, %2$d / %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">Boyut %1$d %%</string>

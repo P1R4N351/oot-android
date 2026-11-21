@@ -573,7 +573,9 @@
     <string name="err_cannot_start_name">Не вдається запустити %1$s</string>
     <string name="err_name_is_running">%1$s уже запущено</string>
     <string name="err_stop_it_first_then_start">Спершу зупиніть її (внутрішньоігрова панель › Зупинити гру), а потім запустіть %1$s. Одночасно може працювати лише одна гра.</string>
-    <string name="game_menu_hint">Меню: проведіть пальцем від правого краю або натисніть «Назад»</string>
+    <string name="game_menu_hint">Меню: натисніть «Назад»\nНалаштування: проведіть від правого краю</string>
+    <string name="game_menu_gpu_driver">Драйвер GPU: %1$s</string>
+    <string name="game_menu_system_driver">Системний</string>
     <string name="game_tab_n_of_m">Вкладка «%1$s», %2$d із %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">Розмір %1$d %%</string>

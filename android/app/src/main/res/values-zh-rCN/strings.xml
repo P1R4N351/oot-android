@@ -567,7 +567,9 @@
     <string name="err_cannot_start_name">无法启动 %1$s</string>
     <string name="err_name_is_running">%1$s 正在运行</string>
     <string name="err_stop_it_first_then_start">请先停止它（游戏内面板 › 停止游戏），然后再启动 %1$s。同一时间只能运行一个游戏。</string>
-    <string name="game_menu_hint">菜单：从右边缘向内滑动，或按返回键</string>
+    <string name="game_menu_hint">菜单：按返回键\n设置：从右边缘向内滑动</string>
+    <string name="game_menu_gpu_driver">GPU 驱动：%1$s</string>
+    <string name="game_menu_system_driver">系统</string>
     <string name="game_tab_n_of_m">%1$s 标签页，第 %2$d 个，共 %3$d 个</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">大小 %1$d %%</string>

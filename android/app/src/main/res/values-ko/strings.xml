@@ -567,7 +567,9 @@
     <string name="err_cannot_start_name">%1$s을(를) 시작할 수 없음</string>
     <string name="err_name_is_running">%1$s 실행 중</string>
     <string name="err_stop_it_first_then_start">먼저 중지한 뒤(게임 내 패널 › 게임 중지) %1$s을(를) 시작하세요. 한 번에 게임 하나만 실행돼요.</string>
-    <string name="game_menu_hint">메뉴: 오른쪽 가장자리에서 안쪽으로 스와이프하거나 뒤로 버튼을 누르세요</string>
+    <string name="game_menu_hint">메뉴: 뒤로 버튼을 누르세요\n설정: 오른쪽 가장자리에서 안쪽으로 스와이프</string>
+    <string name="game_menu_gpu_driver">GPU 드라이버: %1$s</string>
+    <string name="game_menu_system_driver">시스템</string>
     <string name="game_tab_n_of_m">%1$s 탭, %3$d개 중 %2$d번째</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">크기 %1$d %%</string>

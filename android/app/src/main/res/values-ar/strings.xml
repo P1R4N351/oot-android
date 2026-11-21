@@ -577,7 +577,9 @@
     <string name="err_cannot_start_name">تعذّر تشغيل %1$s</string>
     <string name="err_name_is_running">%1$s قيد التشغيل</string>
     <string name="err_stop_it_first_then_start">أوقفها أولًا (لوحة اللعبة › إيقاف اللعبة)، ثم شغّل %1$s. تعمل لعبة واحدة في كل مرة.</string>
-    <string name="game_menu_hint">القائمة: اسحب من الحافة اليمنى، أو اضغط رجوع</string>
+    <string name="game_menu_hint">القائمة: اضغط رجوع\nالإعدادات: اسحب من الحافة اليمنى</string>
+    <string name="game_menu_gpu_driver">برنامج تشغيل GPU: %1$s</string>
+    <string name="game_menu_system_driver">النظام</string>
     <string name="game_tab_n_of_m">علامة التبويب %1$s، %2$d من %3$d</string>
     <string name="game_n_fps">%1$d fps</string>
     <string name="game_size_percent">الحجم %1$d %%</string>
