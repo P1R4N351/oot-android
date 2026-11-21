@@ -105,7 +105,7 @@ static inline uint64_t vktl_pressure_limit(uint64_t lim, const vktl_in *in, cons
 // RAM saver's ceiling on the limit (DM_VK_RAM_SAVER): a quarter of MemTotal (2.7 GiB on 11 GiB, 6 GiB on 24 GiB), a sixth with Strong (DM_VK_RAM_SAVER=2: 1.8 GiB on 11 GiB),
 // never under the working set (evicting that only uploads it again) or the floor. 0 = no ceiling (switch off, or MemTotal not known)
 static inline uint64_t vktl_saver_cap(const vktl_cfg *c, uint64_t mem_total, uint64_t ws_bytes) {
-    if (!c->saver || !mem_total) return 0;
+    if (c->saver <= 0 || !mem_total) return 0;
     uint64_t cap = mem_total / (c->saver >= 2 ? 6 : 4);
     if (cap < ws_bytes) cap = ws_bytes;
     return cap < VKTL_FLOOR ? VKTL_FLOOR : cap;

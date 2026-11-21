@@ -1527,7 +1527,7 @@ static vktl_cfg img_cfg(void) {
     c.hold = VKA_ENVF("DM_VK_IMG_PSI_HOLD", VKTL_PSI_HOLD);
     c.ease = VKA_ENVF("DM_VK_IMG_PSI_EASE", VKTL_PSI_EASE);
     c.shrink = VKA_ENVF("DM_VK_IMG_PSI_SHRINK", VKTL_PSI_SHRINK);
-    c.saver = VKA_ENV("DM_VK_RAM_SAVER", 0) != 0;
+    c.saver = VKA_ENV("DM_VK_RAM_SAVER", 0);
     return vktl_cfg_check(c);   // (vktl_cfg_check: a hold mark at or under the ease mark flaps, so the defaults fill in for it)
 }
 enum { IK_GPU, IK_ZERO_SHARED, IK_BC, IK_RAW, IK_SPARSE, IK_CLEARED, IK_N };
