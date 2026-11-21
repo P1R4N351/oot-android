@@ -371,6 +371,14 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Found on:** [The Legend of Zelda: Link's Awakening](../../dm/games/01006BB00C6F0000/README.md).
 - **Check:** `t_hid` (a change of operation mode signals No1's and Handheld's events).
 
+### A game that takes no full-key controller
+
+- **Symptom:** docked (and for players 2 to 8), the game ignores the controller and the keyboard: it opens the controller applet again and again, or waits at its title.
+- **Cause:** the hid service connects a controller only in a style the game supports (`SetSupportedNpadStyleSet`), and games test the style before anything else. The host showed every whole controller on No1 to No8 as a full-key one, a style these games never asked for: Nintendo Switch Sports Resort's lobby takes Handheld and JoyDual only, so its player check found no player 1 and it opened the controller applet every frame (upstream nxnative); Pokémon: Let's Go takes Handheld, JoyLeft, JoyRight and Palma, and docked it read nothing (upstream nxnative PR #3086).
+- **Fix:** a whole controller is shown in the supported style closest to it (`pad_style` in `hle_hid.c`): full-key when supported, else a JoyDual pair (every button, both sticks, two six-axis sensors, two vibration devices), else one Joy-Con, the right one first since it has the controller's own A / B / X / Y, then the left one; a game with none of these keeps full-key, and the Handheld npad stays Handheld. As one Joy-Con, the other half's buttons count as the ones in the same place on the shown side (`single_joy_fold`: the D-pad as A / B / X / Y on a right Joy-Con, L as R, − as +, and the other way round), and the more deflected stick is that side's stick; the state's attributes name only that half. It has one six-axis sensor (a right Joy-Con's is device 1) and one vibration device, style index 6 or 7, which drives the pad's motor on that side; a full-key handle the game got before still reaches the pair, or the shown side's motor. A change of the supported styles that changes the shown style signals the connected npads' style events and stops the rumble of the old style's motors. Six-axis handles of a set of several styles take the shown style when the set holds it.
+- **Found on:** upstream nxnative: [Nintendo Switch Sports Resort](../../dm/games/04008E001F098000/README.md#motion-controls) (Handheld | JoyDual) and Pokémon: Let's Go, Eevee! (docked keyboard input checked there; no profile here). Not run on Android.
+- **Check:** `t_hid` (`t_joy_styles`: a JoyDual pair, a right and a left Joy-Con, their buttons, sticks, attributes, sensors and vibration handles, the style events, handheld mode and a game with none of these styles).
+
 ### Six-axis sensors
 
 - **Symptom:** motion moves never happen; shaking does nothing (Super Mario Odyssey: cap throws by shaking).
