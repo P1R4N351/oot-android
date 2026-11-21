@@ -789,6 +789,50 @@ int dm_fs_clone_committed(const char *dir, const char *to) {
     pthread_mutex_unlock(&g_lock);
     errno = e; return r;
 }
+// Deduplicate repeated commit failures on the same .new path (e.g. a leftover directory the app lacks permission to remove) so a retry loop does not flood the log. Caller holds g_lock.
+enum { COMMIT_ERR_NONE = 0, COMMIT_ERR_CLEAR, COMMIT_ERR_CLONE, COMMIT_ERR_SWAP };
+#define COMMIT_ERR_MAX 32
+typedef struct {
+    char path[1100];
+    int kind, err;
+    uint64_t count, next_log;
+} commit_err_t;
+static commit_err_t g_commit_err[COMMIT_ERR_MAX];
+static int g_ncommit_err;
+static commit_err_t *commit_err_find(const char *path, int create) {
+    for (int i = 0; i < g_ncommit_err; i++)
+        if (!strcmp(g_commit_err[i].path, path)) return &g_commit_err[i];
+    if (!create || g_ncommit_err >= COMMIT_ERR_MAX) return NULL;
+    commit_err_t *e = &g_commit_err[g_ncommit_err++];
+    memset(e, 0, sizeof *e);
+    strlcpy(e->path, path, sizeof e->path);
+    return e;
+}
+static void commit_err_emit(const char *path, int kind, int err) {
+    if (kind == COMMIT_ERR_CLEAR) LOG("[RED] save commit: cannot clear the %s left over errno=%d (committed version unchanged)", path, err);
+    else if (kind == COMMIT_ERR_CLONE) LOG("[RED] save commit: clonefile %s failed errno=%d (committed version unchanged)", path, err);
+    else LOG("[RED] save commit: atomic swap failed errno=%d (committed version unchanged)", err);
+}
+static void commit_err_log(const char *path, int kind, int err) {
+    commit_err_t *e = commit_err_find(path, 1);
+    if (!e) { commit_err_emit(path, kind, err); return; }
+    if (e->count && e->kind == kind && e->err == err) {
+        if (++e->count == e->next_log) {
+            LOG("[RED] save commit: %s still failing (errno=%d, %llu times so far)", path, err, (unsigned long long)e->count);
+            e->next_log = e->next_log <= UINT64_MAX / 10 ? e->next_log * 10 : UINT64_MAX;
+        }
+        return;
+    }
+    if (e->count > 1) LOG("save commit: %s previous error (errno=%d) occurred %llu times", path, e->err, (unsigned long long)e->count);
+    e->kind = kind; e->err = err; e->count = 1; e->next_log = 10;
+    commit_err_emit(path, kind, err);
+}
+static void commit_err_clear(const char *path) {
+    commit_err_t *e = commit_err_find(path, 0);
+    if (!e || !e->count) return;
+    if (e->count > 1) LOG("save commit: %s cleared after %llu failed attempts (last errno=%d)", path, (unsigned long long)e->count, e->err);
+    e->kind = COMMIT_ERR_NONE; e->err = 0; e->count = 0; e->next_log = 0;
+}
 // Both Commit overloads share this transaction engine. Caller holds the path
 // and mount locks; front-end failure notification is delivered after unlocking.
 static Result commit_mount_locked(int i, int *notify_error) {
@@ -826,12 +870,12 @@ static Result commit_mount_locked(int i, int *notify_error) {
     }
     char neu[1100]; snprintf(neu, sizeof neu, "%s.new", g_mnt[i].commit);
     Result r = RES_OK;
-    if (!access(neu, F_OK) && rm_tree(neu)) { LOG("[RED] save commit: cannot clear the %s left over errno=%d (committed version unchanged)", neu, errno); r = RES_FAIL; }
-    else if (plat_clone_tree(g_mnt[i].dir, neu)) { LOG("[RED] save commit: clonefile %s failed errno=%d (committed version unchanged)", neu, errno); r = RES_FAIL; }
-    else if (plat_rename_swap(neu, g_mnt[i].commit)) { LOG("[RED] save commit: atomic swap failed errno=%d (committed version unchanged)", errno); rm_tree(neu); r = RES_FAIL; }
+    if (!access(neu, F_OK) && rm_tree(neu)) { commit_err_log(neu, COMMIT_ERR_CLEAR, errno); r = RES_FAIL; }
+    else if (plat_clone_tree(g_mnt[i].dir, neu)) { commit_err_log(neu, COMMIT_ERR_CLONE, errno); r = RES_FAIL; }
+    else if (plat_rename_swap(neu, g_mnt[i].commit)) { commit_err_log(neu, COMMIT_ERR_SWAP, errno); rm_tree(neu); r = RES_FAIL; }
     else rm_tree(neu);                                                  // the old version that was swapped out
     // Timing readouts (integer microseconds, no floating point): how long the clone + atomic swap took; how long in total from this transaction's first save write to the end of the commit (the game writing files + the commit; 0 = no save write in this transaction)
-    static int n; if (r == RES_OK) { uint64_t tc2 = plat_clock_ns(CLOCK_MONOTONIC);
+    static int n; if (r == RES_OK) { commit_err_clear(neu); uint64_t tc2 = plat_clock_ns(CLOCK_MONOTONIC);
         LOG("save commit #%d: %s swapped atomically into %s (%d save writes so far) (clone + swap %llu us, since this transaction's first write %llu us)", ++n, g_mnt[i].dir, g_mnt[i].commit, atomic_load(&g_save_writes),
             (unsigned long long)((tc2 - tc1) / 1000), (unsigned long long)(tw0 ? (tc2 - tw0) / 1000 : 0)); atomic_fetch_add(&g_save_commits, 1);
         save_sync_committed();   // wakes the cloud sender, which clones the committed save through dm_fs_clone_committed above (save_sync.h)
