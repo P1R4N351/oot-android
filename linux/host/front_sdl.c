@@ -92,6 +92,17 @@ static void size_update(void) {
     if (w > 0 && h > 0) { g_anw.width = w; g_anw.height = h; nxhost_touch_layout((float)w, (float)h, 0, 0, 1, 1); }
 }
 static void quit(const char *why) { fprintf(stderr, "[front] %s: the host is asked to end (SIGTERM)\n", why); kill(getpid(), SIGTERM); }
+// Select + Start held for 2 s on any pad quits: on a handheld's desktop there is no keyboard for Shift+Esc and a full-screen window has no close button
+// (seen on the Odin 2 Pro, 2026-11-17: a game started from the desktop could only be ended by a reboot). The buttons still reach the game as well
+#define QUIT_HOLD_MS 2000
+static unsigned g_quit_bits;   // bit 0 Select (Back), bit 1 Start, of any pad
+static Uint64 g_quit_since;
+static void quit_combo(int button, bool down) {
+    unsigned b = button == SDL_GAMEPAD_BUTTON_BACK ? 1u : button == SDL_GAMEPAD_BUTTON_START ? 2u : 0u;
+    if (!b) return;
+    g_quit_bits = down ? g_quit_bits | b : g_quit_bits & ~b;
+    if (g_quit_bits == 3u) { if (!g_quit_since) g_quit_since = SDL_GetTicks(); } else g_quit_since = 0;
+}
 
 static void *front_thread(void *arg) {
     (void)arg;
@@ -124,14 +135,17 @@ static void *front_thread(void *arg) {
     nxhost_touch_controls_enable(false);   // no on-screen controls are drawn here: every touch goes to the game
     nxhost_rumble_callback(rumble, NULL);
     for (SDL_Event e;;) {
-        if (!SDL_WaitEvent(&e)) continue;
+        int got = SDL_WaitEventTimeout(&e, 250);   // (a timeout so a held quit combo is seen without a new event)
+        if (g_quit_since && SDL_GetTicks() - g_quit_since >= QUIT_HOLD_MS) { g_quit_since = 0; quit("Select+Start held 2 s"); }
+        if (!got) continue;
         switch (e.type) {
         case SDL_EVENT_QUIT: quit("window closed"); break;
         case SDL_EVENT_KEY_DOWN: if (e.key.key == SDLK_ESCAPE && (e.key.mod & SDL_KMOD_SHIFT)) quit("Shift+Esc"); break;
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: size_update(); break;
         case SDL_EVENT_GAMEPAD_ADDED: pad_add(e.gdevice.which); break;
         case SDL_EVENT_GAMEPAD_REMOVED: pad_remove(e.gdevice.which); break;
-        case SDL_EVENT_GAMEPAD_BUTTON_DOWN: case SDL_EVENT_GAMEPAD_BUTTON_UP: { int k = pad_key(e.gbutton.button); if (k >= 0) nxhost_input_key((int)e.gbutton.which, k, e.gbutton.down); break; }
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN: case SDL_EVENT_GAMEPAD_BUTTON_UP: { int k = pad_key(e.gbutton.button); if (k >= 0) nxhost_input_key((int)e.gbutton.which, k, e.gbutton.down);
+                                                                         quit_combo(e.gbutton.button, e.gbutton.down); break; }
         case SDL_EVENT_GAMEPAD_AXIS_MOTION: pad_axis(e.gaxis.which, e.gaxis.axis, e.gaxis.value); break;
         case SDL_EVENT_GAMEPAD_SENSOR_UPDATE: pad_sensor(e.gsensor.which, e.gsensor.sensor, e.gsensor.data); break;
         case SDL_EVENT_FINGER_DOWN: nxhost_input_touch(AM_POINTER_DOWN, (int)(e.tfinger.fingerID & 0x7fff), e.tfinger.x, e.tfinger.y); break;

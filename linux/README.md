@@ -75,7 +75,8 @@ Game settings are the host's `DM_*` variables (`docs/env_switches.tsv`); what th
 `GameActivity.java` (720p: `DM_GRAPHICS_SCALE=2 DM_OPMODE=handheld`; RAM saver:
 `DM_MEM_FILEBACK=1 DM_MEM_FILEBACK_KINDS=shader,texture`). Linux-only switches: `NX_WINDOW=<w>x<h>` (a window instead of
 full screen), `NX_HEADLESS=1` (no window), `NX_NO_WINDOW_OK=1` (go on when no window can be made; by default the host
-ends with a `[RED]` line naming the display variables), `NX_VK_DISPLAY_TIMING=1` (below). Quit: close the window.
+ends with a `[RED]` line naming the display variables), `NX_VK_DISPLAY_TIMING=1` (below). Quit: close the window, Shift+Esc, or hold Select + Start on a pad for 2 seconds (a handheld's desktop has no keyboard, and a
+full-screen window no close button).
 
 ## Device notes (docs/reference)
 
