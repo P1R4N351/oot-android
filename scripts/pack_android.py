@@ -932,8 +932,7 @@ def main():
             if gaps: raise Error(f'--keep-code: the rewrite step has not finished for {", ".join(gaps)} in {out}: run the rewrite step again')
             print('  modules kept as they are (--keep-code)')
         else:
-            work = folder.parent / f'{app:016X}-work'
-            nros = collect_nros(exe, romfs, work, a.in_process)
+            nros = collect_nros(exe, romfs, work, a.in_process)   # into the pack's work folder (work_dir), as the shaders
             try:
                 rewrite(sys.executable, srcs | nros, out, max(1, a.j), g, a.in_process)
                 rewrite_variants(sys.executable, srcs, out, g, a.in_process)   # game.tsv variant rows (a native 4:3 mod) into <pack>/<variant>/
@@ -941,7 +940,7 @@ def main():
             place_nros(work / 'android-nro' if nros else None, out)
         if a.code_only: print(f'done: the modules in {out} (--code-only: pack.tsv and the shaders unchanged)'); return
         if a.keep_code:
-            coll = collected_nros(folder.parent / f'{app:016X}-work')   # the collected NROs the keys were made from, when this machine collected them
+            coll = collected_nros(work)   # the collected NROs the keys were made from, when this machine collected them (the pack's work folder, as collect_nros)
             upgrade_keys(srcs | {n: coll / f'{n}.nro' for n in pack_nros(out) if coll and (coll / f'{n}.nro').is_file()}, out, g)   # before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
         shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
         place_cheats(g, out)
