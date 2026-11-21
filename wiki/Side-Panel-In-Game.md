@@ -31,7 +31,7 @@ The live lines on this tab (the frame rate now) refresh twice a second while it 
 
 ### Display
 - **Resolution**: the same choice as on the game page. For some games the window changes at once and the 3D picture at the next start; a line says which. Fire Emblem: Fortune's Weave shows Resolution alone here (its Upscaling quality and Graphics quality are on Performance).
-- **Screen scaling** (and **Screen sharpness** under FSR 1): a game on the DLSS stand-in (Fire Emblem: Fortune's Weave, Star Fox); how the picture is scaled to the screen, the same choice as on the game page ([Settings: Performance](Settings-Performance#upscaler)); applies from the next frame.
+- **Screen scaling** (and **Screen sharpness** under FSR 1): a game on the DLSS stand-in (Fire Emblem: Fortune's Weave, Star Fox, Fast Fusion); how the picture is scaled to the screen, the same choice as on the game page ([Settings: Performance](Settings-Performance#upscaler)); applies from the next frame.
 - **Picture**: **Fit** or **Stretch**, **Size** 50 to 100 % in 5 % steps (the picture shrinks with its shape kept and black around it), and **Position (this screen)**: Top, Centre, Bottom.
 - **Overlay**: the master switch and one switch per item.
 

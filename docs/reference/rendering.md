@@ -1829,3 +1829,10 @@ The slot is freed by the waiter when the compile finished in time, else by the c
 - **Fix:** on Linux the replay does not use display timing unless `NX_VK_DISPLAY_TIMING=1` (`vka_dev.c`, inside `#ifdef NX_LINUX`). Android is unchanged.
 - **Open:** the cause, in Turnip or in the layer. Not tried on other Adreno GPUs or other Mesa versions.
 - **Found on:** [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) 1.8.0, aarch64 Linux build of the host on an AYN Odin 2 Pro (12 GB RAM, 2026-11-15).
+
+### NVN2 draws with 32 vertex attributes (Android)
+
+- **Symptom:** `[RED] BindVertexAttribState n=32` (logged 11,786 times in 50 s) and a black frame on Android.
+- **Cause:** NVN2 (Ampere) supports up to 32 vertex attributes, whereas the host kept a 16-attribute cap and dropped the entire `BindVertexAttribState` call when `n > 16`.
+- **Fix:** `p_bind_vattr` (`nvn_obj.h`), `vka_dstate` (`vka.h`), and `vka_draw.c` record and replay up to 32 vertex attributes on Android Vulkan; Metal continues to clamp to 16.
+- **Found on:** [Fast Fusion](../../dm/games/040041E0212AE000/README.md#found-on-this-game) on the Android app on the Odin 3 (system driver and Turnip v32).
