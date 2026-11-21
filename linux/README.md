@@ -99,13 +99,28 @@ PATH (SPIRV-Tools). The pack goes to `<title ID>-work/android-pack` beside the g
 finds it. Checked on the Odin 2 with Mario Kart World 1.8.0 (`.nup`): the code modules equal the phone's pack byte
 for byte except `sdk`, which carries the two `AddressRegionManager` cuts the 0.3.24 rewriter adds; the pack boots.
 
+`linux/tools/linux-pack.sh lib` (optional, once per source tree) builds the translator as a shared library for this
+machine (`libdmsh_xlate.so`, NativeAOT from the phone's project `dm/gfx/tools/dmsh_xlate_android`, `Program.cs`
+unchanged) in `<env>/xlate/<source tree digest>/`, with the .NET 10 SDK (pinned below) and clang. Its NuGet packages
+(the NativeAOT compiler, the runtime packs, the project's own) are restored into an empty folder first and each checked
+against `linux/tools/xlate-nuget.sha512` before anything is built from them. With the library and SPIRV-Tools'
+`libSPIRV-Tools-shared.so` a pack runs the shader build's Python half in one worker interpreter per core, up to 12
+(`DMSH_VK_PROCS`, as the phone's Prepare does); without them, in one interpreter, whose threads share one core. Fedora
+ships the SPIRV-Tools library in `spirv-tools-libs`; Debian and Ubuntu package only the programs, so build SPIRV-Tools
+(the tag of the system's `spirv-val`) and name the library in `SPIRV_VAL`. The shader library is the same byte for byte.
+Measured (2026-11-18): on x86_64 with 12 cores, Pokémon Pokopia's whole pack 5 min 28 s instead of 33 min 18 s; on an
+Odin 2 (8 cores), Mario Kart World's library 141 s instead of 585 s ([packing.md](../docs/reference/packing.md), "The
+Linux packer's shader build runs on about one core"). A new source tree needs `lib` again; until then the packer uses
+the program, and its first line says which one it uses.
+
 What setup downloads is pinned at the top of `linux-pack.sh`: the .NET runtime 10.0.15 (linux-arm64 or linux-x64, glibc
 only: musl stops setup) and, without `ensurepip`, `get-pip.py` and the pip 26.3 wheel it installs with no index, each checked
 against its sha512/sha256 before use; a mismatch stops setup with a `[RED]` line and installs nothing. The Python packages
 (capstone 5.0.9, lz4 4.4.5, zbic 1.0.1.post1) are exact versions, wheels only, not hash-checked. An environment that
 already has a .NET 10 runtime keeps it (it is not checked again). To bump a pin, change the version and its hash: pip's
 from `https://pypi.org/pypi/pip/<version>/json` (and get-pip.py at the same tag of `pypa/get-pip`), .NET's from
-`https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json`.
+`https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json` (`lib`'s SDK 10.0.404 too: the SDK of the
+runtime's release).
 
 ## AppImage
 
