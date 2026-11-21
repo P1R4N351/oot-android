@@ -130,6 +130,7 @@ Current (2026-11-13, branch `dkb-wide`): the 3D camera and the 2D layer follow t
 
 ## Found on this game
 
+- [Shaders in a loose file that only an archive's reader was reached for](../../../docs/reference/shaders.md#shaders-in-a-loose-file-that-only-an-archives-reader-was-reached-for): sead's NVN2 primitive drawer, two shaders the split passed over; open until the profile is split again.
 - [A tools change without a Mac build leaves every player on an older library (Android)](../../../docs/reference/shaders.md#a-tools-change-without-a-mac-build-leaves-every-player-on-an-older-library-android): sampled keep takes the older library over when a random sample of its shaders comes out the same.
 - [Prepare refuses or stays a half-hour job when the pack has no shader library (Android)](../../../docs/reference/packing.md#prepare-refuses-or-stays-a-half-hour-job-when-the-pack-has-no-shader-library-android): Prepare is code only by default now, the whole shader set an optional later step.
 - [A GPU hang or lost device in warm play (Android, open)](../../../docs/reference/rendering.md#a-gpu-hang-or-lost-device-in-warm-play-android-open): Forgejo #91, #93, #113, #226: the big queue-1 submission (574-8,773 draws) never finishes, on every driver seen; cause open, the hang report now names the part.
