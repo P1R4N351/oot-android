@@ -172,4 +172,7 @@ target_link_libraries(main_hook PRIVATE hook_impl)
 if(NOT NX_GAMES)
   add_executable(nxreplay EXCLUDE_FROM_ALL nxreplay.c)
   target_link_libraries(nxreplay PRIVATE nxhost)
+  # nxoodle: the game's own Oodle decoder on the phone for a PC packer (DM_OODLE_SERVE tool mode, nxoodle.c); not in the APK either: --target nxoodle
+  add_executable(nxoodle EXCLUDE_FROM_ALL nxoodle.c)
+  target_link_libraries(nxoodle PRIVATE nxhost)
 endif()
