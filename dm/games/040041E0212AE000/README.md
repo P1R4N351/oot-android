@@ -53,6 +53,7 @@ Regression level: moderate, because shared shader extraction and translation cha
 - DLSS scalers released under their encoders: already fixed before this bring-up; the earlier report reached its eighth network after about nine minutes.
 - [A 2D texture in a cube slot binds the zero cube](../../../docs/reference/rendering.md#a-2d-texture-in-a-cube-slot-binds-the-zero-cube) (Android): `vka_tex_id_can_cube` falls back to the cube placeholder for `1x1` 2D placeholders behind cubemap views (`cded8d0899ba4a6d`, `4927a5fe392e5496` at race load on the Android app on the Odin 3, system driver and Turnip v32).
 - [DLSS debug overlay setters](../../../docs/reference/rendering.md#dlss-debug-overlay-setters): `nvnDlssParametersSetOverlayDebugLayer`, `nvnDlssParametersSetOverlayFullScreen`, `nvnDlssParametersSetOverlayJitterDebug`, and `nvnDlssParametersSetOverlayShowNans` implemented as no-ops (Android app on the Odin 3, system driver and Turnip v32).
+- [Shin'en engine runs at half speed under a 30 fps cap](../../../docs/reference/frame-rate.md#shinen-engine-runs-at-half-speed-under-a-30-fps-cap): fixed `1/60 s` step requires `eFrameskipType` `odd` at 30 fps (0.97–1.03× speed on the Android app on the Odin 3, system driver and Turnip v32).
 
 ## Open
 
