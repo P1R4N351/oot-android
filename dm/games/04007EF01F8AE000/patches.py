@@ -426,6 +426,10 @@ _UI_V22 = [
 # takes the edge move, so the left column stood 180 below the right one at 4:3; it now moves up by the same shape shift (v23's L_Info move, 0x5d7988).
 # v26: also L_UnitIn* (Common_UnitInfoScout's L_UnitInfo 3400x1625: Character Info when recruiting, stretched tall; v17 already keeps its children in place),
 # cave 0x55a9a4 after the L_Scroll check.
+# v35: the result telops (Quest Complete, class mastered, ability learned after training, items acquired) still came out 4/3 tall now and then
+# on the phone: Common_TlpResult is built anew for each telop, and its first layout pass can run before N_Pos has its name, so v24's name test
+# missed it and the game kept the stretched matrix (the same race as v32 / v34). N_Pos is now told by its layout height, 1200, set when the
+# pane is made; no other pane in the game's layouts is 1200 tall (cave 0x5b4d04, same place in the chain).
 _UI_V24 = [
     (0x005760a4, '00000000', '8ae98bd2', 'v24: L_EquipL not stretched'),
     (0x005760a8, '00000000', 'aa28aef2', 'v24: movk x10, #0x7145, lsl #16'),
@@ -434,13 +438,13 @@ _UI_V24 = [
     (0x005760b4, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
     (0x005760b8, '00000000', 'a0cf0c54', 'v24: b.eq #0x58faac'),
     (0x005760bc, '00000000', '12fb0014', 'v24: b #0x5b4d04'),
-    (0x005b4d04, '00000000', 'cae98bd2', 'v24: N_Pos not stretched'),
-    (0x005b4d08, '00000000', '0aeaadf2', 'v24: movk x10, #0x6f50, lsl #16'),
-    (0x005b4d0c, '00000000', '6a0ec0f2', 'v24: movk x10, #0x73, lsl #32'),
-    (0x005b4d10, '00000000', '0a00e0f2', 'v24: movk x10, #0x0, lsl #48'),
-    (0x005b4d14, '00000000', '7f010aeb', 'v24: cmp x11, x10'),
-    (0x005b4d18, '00000000', 'a06ced54', 'v24: b.eq #0x58faac'),
-    (0x005b4d1c, '00000000', 'dac5fe17', 'v24: b #0x566484'),
+    (0x005b4d04, '00000000', '0aac4079', 'v35: ldrh w10, [x0, #0x56] (top half of the pane height; v24 tested the name N_Pos)'),
+    (0x005b4d08, '00000000', '4a114051', 'v35: sub w10, w10, #0x4000'),
+    (0x005b4d0c, '00000000', '5f591271', 'v35: cmp w10, #0x496 (height 1200 to 1201.99: Common_TlpResult N_Pos, the only pane that tall)'),
+    (0x005b4d10, '00000000', 'e06ced54', 'v35: b.eq 0x58faac (the result telops: not stretched)'),
+    (0x005b4d14, '00000000', 'dcc5fe17', 'v35: b 0x566484 (the MenuItem check, as before)'),
+    (0x005b4d18, '00000000', '1f2003d5', 'v35: nop'),
+    (0x005b4d1c, '00000000', '1f2003d5', 'v35: nop'),
     (0x00566484, '00000000', 'aaa98cd2', 'v24: MenuItem not stretched'),
     (0x00566488, '00000000', 'caadaef2', 'v24: movk x10, #0x756e, lsl #16'),
     (0x0056648c, '00000000', '2a89cef2', 'v24: movk x10, #0x7449, lsl #32'),
