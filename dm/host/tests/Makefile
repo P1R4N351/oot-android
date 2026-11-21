@@ -69,6 +69,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_vorbis
 	$(B)/t_vorbis_divides
 	$(B)/t_movie_vpx
+	$(B)/t_codec_opus
 	$(B)/t_codec_video
 	$(B)/t_movie_avc
 	$(B)/t_nv
@@ -353,6 +354,7 @@ $(B)/t_vorbis: t_vorbis.c ../../third_party/stb_vorbis/stb_vorbis.c | $(B)
 $(B)/t_vorbis_divides: t_vorbis.c ../../third_party/stb_vorbis/stb_vorbis.c | $(B)
 	$(CLANG) -O1 -g -DSTB_VORBIS_DIVIDES_IN_RESIDUE -Wno-unused-function -Wno-tautological-compare -o $@ t_vorbis.c
 run: $(B)/t_movie_vpx
+run: $(B)/t_codec_opus
 run: $(B)/t_codec_video
 run: $(B)/t_movie_avc
 $(B)/t_movie_avc: t_movie_avc.c ../hle_movie.c ../hle_movie_avc.c ../hle_movie_avc.h $(GAME_H) ../gen/vpx/libvpx.a | $(B)
@@ -360,6 +362,8 @@ $(B)/t_movie_avc: t_movie_avc.c ../hle_movie.c ../hle_movie_avc.c ../hle_movie_a
 		-framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework CoreFoundation
 $(B)/t_movie_vpx: t_movie_vpx.c ../hle_movie.c $(GAME_H) ../gen/vpx/libvpx.a | $(B)
 	$(CLANG) -O1 -g -Wno-unused-function -Wno-tautological-compare $(GINC) -I../../third_party/libvpx -I../../third_party/libvpx/config -I../../third_party/stb_vorbis -Wl,-dead_strip $(WEAK_HOST) -o $@ t_movie_vpx.c ../gen/vpx/libvpx.a -framework AudioToolbox
+$(B)/t_codec_opus: t_codec_opus.c ../hle_codec.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -I.. $(GINC) -o $@ t_codec_opus.c
 $(B)/t_codec_video: t_codec_video.c ../hle_codec_video.c ../hle_movie.c ../hle_movie_avc.c ../hle_movie_avc.h ../hle_movie_yuv.h $(GAME_H) ../gen/vpx/libvpx.a | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -Wno-tautological-compare -fsanitize=address,undefined $(GINC) -I../../third_party/libvpx -I../../third_party/libvpx/config -I../../third_party/stb_vorbis $(WEAK_HOST) -o $@ t_codec_video.c ../gen/vpx/libvpx.a \
 		-framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework CoreFoundation
@@ -427,6 +431,15 @@ notify-scheduler: $(B)/t_notify_sched
 	$(B)/t_notify_sched --all-peers
 run: notify-scheduler
 
+# Same-core handoff notification and timed recheck, using real thread SVCs.
+$(B)/t_handoff_wait: t_handoff_wait.c t_condvar_stub.c ../hle_thread.c ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -DDM_TEST_THREAD_ENTER -I.. $(GINC) -o $@ t_handoff_wait.c t_condvar_stub.c
+.PHONY: handoff-wait
+handoff-wait: $(B)/t_handoff_wait
+	$(B)/t_handoff_wait
+	$(B)/t_handoff_wait --all-peers
+run: handoff-wait
+
 # Sanitizer builds (../../sanitizers/sanitizers.mk): make asan runs every test of run under ASan and UBSan; make tsan-threads runs the tests that start threads under TSan
 # (t_audio_spsc, t_hid and t_svc_memory have their own TSan targets above: tsan, memory-tsan)
 include ../../sanitizers/sanitizers.mk
@@ -434,7 +447,7 @@ include ../../sanitizers/sanitizers.mk
 asan:
 	@$(call san_fresh,$(B)/asan,$(ASAN_FLAGS))
 	$(ASAN_ENV) $(MAKE) B=$(B)/asan SAN="$(ASAN_FLAGS)" run
-TSAN_T = t_audio t_audio_stats t_audio_device t_thread_leak t_oe t_fs_commit_list t_fs_case t_save_sync t_condvar t_condvar_old t_preempt t_system_event t_notify_sched t_altstack
+TSAN_T = t_audio t_audio_stats t_audio_device t_thread_leak t_oe t_fs_commit_list t_fs_case t_save_sync t_condvar t_condvar_old t_preempt t_system_event t_notify_sched t_handoff_wait t_altstack
 tsan-threads:
 	@$(call san_fresh,$(B)/tsan,$(TSAN_FLAGS))
 	$(TSAN_ENV) $(MAKE) B=$(B)/tsan SAN="$(TSAN_FLAGS)" tsan-threads-run
@@ -454,6 +467,8 @@ tsan-threads-run: $(addprefix $(B)/,$(TSAN_T))
 	$(B)/t_system_event
 	$(B)/t_notify_sched
 	$(B)/t_notify_sched --all-peers
+	$(B)/t_handoff_wait
+	$(B)/t_handoff_wait --all-peers
 	$(B)/t_altstack
 	DM_QOS_MAP=1 $(B)/t_notify_sched
 	DM_QOS_MAP=1 $(B)/t_notify_sched --all-peers
