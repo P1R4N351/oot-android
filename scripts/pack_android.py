@@ -703,7 +703,9 @@ def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: th
     py = shader_python(a.shader_python, split=True)
     tmp = pkg.with_name(pkg.name + '.tmp'); shutil.rmtree(tmp, ignore_errors=True); tmp.mkdir(parents=True)
     print(f'shaders: splitting the shaders out of {rd} into {pkg} with {py} (a few minutes)', flush=True)
-    env = child_env(DM_GAME=g.id, DM_SPLIT_TARGETED='1', **({'DM_NRO_DIR': str(nros)} if nros else {}))   # as the phone: only the files the profile's map names, when the build is the profile's and the tables come out the same
+    env = child_env(DM_GAME=g.id, DM_SPLIT_TARGETED='1',
+                    **({'J': str(a.J)} if getattr(a, 'J', None) is not None else {}),
+                    **({'DM_NRO_DIR': str(nros)} if nros else {}))   # as the phone: only the files the profile's map names, when the build is the profile's and the tables come out the same
     # a program n > 0 keeps its shaders in the application's add-ons (pack_dump.split_addons): a Switch 2 Edition's NVN2 archives are in its add-on (Wonder's 010015100B515001)
     r = subprocess.run([py, str(SPLIT), str(rd), str(ed / 'main'), str(tmp / 'pkg'),
                         *[str(tmp / f) for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv', 'pso_pairs.tsv')], *([LIST_SEP.join(map(str, aoc))] if aoc else [])], env=env)   # LIST_SEP: shader_split.py's path_list (a path may hold a comma)
