@@ -182,8 +182,14 @@ release tag. If you build from your own commits, push them to your own fork on g
 `NX_SOURCE_URL=https://git.eden-emu.dev/<you>/BananaNative linux/appimage/build-appimage.sh ...`; else Prepare stops
 with a download error (an existing pack still plays).
 
-A new release can change the shader chain (`DMSH_VK_CHAIN`): a pack made with an older version then shows a white
-screen with the new AppImage. Press **Prepare** again for each game after updating.
+A new release can change the shader chain (`DMSH_VK_CHAIN`). The host still plays a pack's library of another version
+when its ABI (`DMSH_VK_ABI`) is the host's, but the launcher shows such a pack as **Needs preparing again**, unless
+the two versions are a row of `dm/gfx/vk_android/vka_known_transitions.tsv` (an update upstream checked to change
+nothing visible; [android/SHADERS.md](../android/SHADERS.md), "Known transitions"). The AppImage carries that table, and
+the launcher then shows the pack as **Ready to play** ("Shaders: version …, kept for …"). It reads the library's header
+for that: the version, the game and the ABI. Nothing in the pack is changed (the APK moves the library to the new
+version; the launcher does not), so an older AppImage still plays it too. **Prepare again** makes the new version's
+library.
 
 ### What the script does
 

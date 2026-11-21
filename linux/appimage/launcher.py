@@ -74,7 +74,7 @@ def games():
         t = tsv(os.path.join(d, 'pack.tsv')); i = t.get('title_id', '').upper()
         if not i: continue
         m = re.search(r'v-([0-9a-f]+)/', t.get('shaders', ''))
-        e = {'name': t.get('name', i), 'pack': d, 'chain': m.group(1) if m else None, 'mtime': os.path.getmtime(os.path.join(d, 'pack.tsv'))}
+        e = {'name': t.get('name', i), 'pack': d, 'chain': m.group(1) if m else None, 'shaders': t.get('shaders'), 'mtime': os.path.getmtime(os.path.join(d, 'pack.tsv'))}
         if i not in g or e['mtime'] > g[i].get('mtime', 0): g.setdefault(i, {}).update(e)
     for f in nup_files():
         m = ID_RE.search(os.path.basename(f))
@@ -87,6 +87,32 @@ def games():
             if os.path.isfile(f): e['nup'] = f
         except OSError: pass
     return g
+
+def known_transitions():
+    """{(older VK chain, newer VK chain)}: the rows of upstream's dm/gfx/vk_android/vka_known_transitions.tsv the AppImage carries (android/SHADERS.md, "Known transitions")"""
+    out = set()
+    try:
+        for l in open(os.path.join(APPDIR, 'usr/share/banananative/known_transitions.tsv'), encoding='utf-8'):
+            c = l.rstrip('\n').split('\t')
+            if not l.startswith('#') and len(c) >= 2 and all(re.fullmatch(r'[0-9a-f]{12}', x) for x in c[:2]): out.add((c[0], c[1]))
+    except OSError: pass
+    return out
+KNOWN = known_transitions()
+
+def lib_header(path):
+    """{vk_chain, game, abi} of a dmsh_vk.lib's header (dm/gfx/nvn/dmsh_abi_vk.h: magic "MSVK", format 1; the VK chain at 24, the game at 40, the abi at 116), or None"""
+    try:
+        with open(path, 'rb') as f: h = f.read(128)
+    except OSError: return None
+    if len(h) < 128 or h[:8] != b'MSVK\x01\x00\x00\x00': return None
+    s = lambda a, n: h[a:a + n].rstrip(b'\0').decode('ascii', 'replace')
+    return {'vk_chain': s(24, 16), 'game': s(40, 16), 'abi': s(116, 12)}
+
+def kept_library(i, e, chain):
+    """The pack's library is of another version that this AppImage plays as it is: its header's VK chain and this AppImage's are a known transition, and its ABI is this
+    host's (vka_shader.c lib_load then plays it: "playing version <V>, the same ABI"). The pack is left untouched, so an older AppImage still plays it too"""
+    h = lib_header(os.path.join(e['pack'], e['shaders'])) if e.get('pack') and e.get('shaders') else None
+    return bool(h and SRC.get('abi') and h['abi'] == SRC['abi'] and h['game'].upper() == i and (h['vk_chain'], chain) in KNOWN)
 
 def yes(parent, text):   # NX_LAUNCHER_YES=1: every question answered yes (unattended tests)
     return os.environ.get('NX_LAUNCHER_YES') == '1' or QMessageBox.question(parent, 'BananaNative', text) == QMessageBox.StandardButton.Yes
@@ -296,11 +322,13 @@ class Window(QWidget):
         elif not pack:
             st.setText('Needs preparing (once)'); st.setObjectName('todo')
             button('Prepare', lambda: self.prepare(nup), 'primary')
-        elif chain and e.get('chain') and e['chain'] != chain:
+        elif chain and e.get('chain') and e['chain'] != chain and not kept_library(i, e, chain):
             st.setText('Needs preparing again: BananaNative was updated'); st.setObjectName('todo')
             button('Prepare again', lambda: self.prepare(nup), 'primary')
         else:
             st.setText('Ready to play'); st.setObjectName('ok')
+            if chain and e.get('chain') and e['chain'] != chain:
+                det.setText(det.text() + f'<br>Shaders: version {e["chain"]}, kept for {chain} (an update known to change nothing visible)')
             button('Play', lambda: self.play(pack), 'primary')
             b = button('Prepare again', lambda: self.prepare(nup), 'flat'); b.setToolTip('Not needed: only when the game says so')
             name = e.get('name', i)

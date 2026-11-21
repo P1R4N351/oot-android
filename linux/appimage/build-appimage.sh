@@ -31,8 +31,12 @@ cp "$ROOT/linux/README.md" "$APPDIR/README.md"
 mkdir -p "$APPDIR/usr/share/banananative"; cp "$ROOT/linux/tools/banananative-governor" "$ROOT/linux/tools/install-governor-helper.sh" "$APPDIR/usr/share/banananative/"
 # the source it was built from, for the launcher's "Prepare a game" (it downloads that exact tree for the packer): NX_SOURCE_URL is a repository on
 # git.eden-emu.dev (Forgejo: <url>/archive/<commit>.tar.gz) that has the commit
-printf 'commit %s\nurl %s\nversion %s\nchain %s\n' "$(git -C "$ROOT" rev-parse HEAD)" "${NX_SOURCE_URL:-https://git.eden-emu.dev/moceure/BananaNative}" "$VER" \
-  "$(sed -n 's/^#define DMSH_VK_CHAIN "\([0-9a-f]*\)".*/\1/p' "$ROOT/dm/gfx/nvn/dmsh_chain_vk.h")" > "$APPDIR/usr/share/banananative/source"
+printf 'commit %s\nurl %s\nversion %s\nchain %s\nabi %s\n' "$(git -C "$ROOT" rev-parse HEAD)" "${NX_SOURCE_URL:-https://git.eden-emu.dev/moceure/BananaNative}" "$VER" \
+  "$(sed -n 's/^#define DMSH_VK_CHAIN "\([0-9a-f]*\)".*/\1/p' "$ROOT/dm/gfx/nvn/dmsh_chain_vk.h")" \
+  "$(sed -n 's/^#define DMSH_VK_ABI "\([0-9a-f]*\)".*/\1/p' "$ROOT/dm/gfx/nvn/dmsh_chain_vk.h")" > "$APPDIR/usr/share/banananative/source"
+# the known transitions of the shader library (android/SHADERS.md, "Known transitions"), as the APK carries its chain's rows: the launcher shows a pack whose
+# library is of a row's older version as ready (the host plays a library of another version with its ABI), not as one to prepare again
+cp "$ROOT/dm/gfx/vk_android/vka_known_transitions.tsv" "$APPDIR/usr/share/banananative/known_transitions.tsv"
 cp "$HERE/launcher.py" "$HERE/steam_shortcut.py" "$APPDIR/usr/share/banananative/"
 # The shared-font stand-ins, as the APK carries them (GameFonts.java, build.gradle nxExtFont): Noto Sans as standard.ttf and the button icons' nintendo_ext.ttf
 # (dm/tools/make_ext_font.py, letters from the same Noto Sans; fontTools in a Python environment of its own under tools/). AppRun sets DM_FONT_DIR to them
