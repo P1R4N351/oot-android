@@ -1351,6 +1351,7 @@ static int floor_top(void) { int s = VKA_ENV("DM_VK_GPU_FLOOR", 100); return s <
 // the game could run at. Before 2026-11-05 there was no floor at all there: on Turnip DKB stayed at 20 fps with 33-36 ms of GPU time a frame, as the system driver did with
 // DM_VK_GPU_FLOOR=0. It has no level: DM_VK_GPU_FLOOR > 0 turns it on, 0 off, as does DM_VK_GPU_FLOOR_ADPF=0 (live); DM_VK_ADPF_SPAN set explicitly decides the reports. On the Adreno 840 with Turnip it did not raise the GPU clock (282-646 MHz, mean 380; 2026-11-05)
 int vka_floor_adpf(void) { return !V.perf_hint && !g_kg_n && floor_top() > 0 && VKA_ENV("DM_VK_GPU_FLOOR_ADPF", 1); }
+int vka_floor_on(void) { return floor_top() > 0 && (V.perf_hint || g_kg_n || vka_floor_adpf()); }   // any GPU clock floor (vka_perf.c: the ADPF reports then aim at the shortest period)
 int vka_floor_tail_add(void) { if (floor_mode() != 2) return 0; atomic_fetch_add(&g_tail_n, 1); return 1; }   // vka_exec.c, a submission with draws: 1 = counted
 void vka_floor_commit(int counted) { if (counted) floor_set_(floor_top(), 1, 0); }   // before that submission is handed to the queue
 void vka_floor_done(int counted) {     // the completion thread, that submission done
