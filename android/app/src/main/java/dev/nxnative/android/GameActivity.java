@@ -1057,7 +1057,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      * overlay and log loops stop, so a screen created again does not double them (two deviceAdded per pad, two route resets per change) or keep this one alive.
      * The game itself is left as it is: onStop has suspended it
      */
+    private Runnable lsfgFollow;   // stops Lsfg.follow (frame generation's choices following the screen while the game runs)
+
     @Override protected void onDestroy() {
+        if (lsfgFollow != null) { lsfgFollow.run(); lsfgFollow = null; }
         if (layer != null) { layer.stop(); layer = null; }
         TextInput.gone(this);
         UserPicker.gone(this);
@@ -1195,6 +1198,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     // ---- The host's side of the Activity: input devices, audio focus and route, motion, lifecycle ----
     private void hostSetup() {
+        if (lsfgFollow == null) lsfgFollow = Lsfg.follow(this, ui);   // the screen's refresh set higher or lower while the game runs: frame generation's choices follow
         inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         inputManager.registerInputDeviceListener(this, ui);
         padMotion = new PadMotion();

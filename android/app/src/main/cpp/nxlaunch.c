@@ -56,6 +56,7 @@ void nxhost_motion_sens(float factor);
 #pragma weak nxhost_overlay_set
 #pragma weak nxhost_overlay_state
 #pragma weak nxhost_framegen_set
+#pragma weak nxhost_framegen_quality
 #pragma weak nxhost_framegen_status
 #pragma weak nxhost_picture_place
 #pragma weak nxhost_fps_cap_set
@@ -441,6 +442,9 @@ JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_overlayState(JNIEnv *env
 // generating, -1 unavailable; "-2 ..." when this host has no frame generation)
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_frameGenSet(JNIEnv *env, jclass cls, jboolean on, jint mult, jint target, jint flow) {
     (void)env; (void)cls; if (nxhost_framegen_set) nxhost_framegen_set(on, mult, target, flow);
+}
+JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_frameGenQuality(JNIEnv *env, jclass cls, jboolean quality) {
+    (void)env; (void)cls; if (nxhost_framegen_quality) nxhost_framegen_quality(quality);
 }
 JNIEXPORT jstring JNICALL Java_dev_nxnative_android_Native_frameGenStatus(JNIEnv *env, jclass cls) {
     (void)cls; char buf[300], out[320];

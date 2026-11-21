@@ -271,7 +271,9 @@
     <string name="game_link_play">Link Play</string>
     <string name="game_looking_at_the_app_s">Revisando el almacenamiento de la app…</string>
     <string name="game_made_when_first_drawn_may">Se crean al dibujarse por primera vez: puede haber tirones</string>
-    <string name="game_mode_performance_the_only_shader">Modo: rendimiento (el único conjunto de shaders que usa LSFG de Eden)</string>
+    <string name="game_lsfg_quality">Calidad</string>
+    <string name="game_lsfg_shaders">Shaders (Calidad: más detalle en los fotogramas generados, aprox. cuatro veces el tiempo de GPU)</string>
+    <string name="game_lsfg_screen_limit">La pantalla funciona a %1$d Hz como máximo (ajustes de pantalla de Android): no se ofrecen objetivos más rápidos ni más fotogramas por fotograma del juego</string>
     <string name="game_motion_clarity">Claridad de movimiento</string>
     <string name="game_motion_estimation_resolution_lower_i">Resolución de estimación de movimiento (menor es más rápido)</string>
     <string name="game_motion_sensitivity">Sensibilidad de movimiento</string>

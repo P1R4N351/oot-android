@@ -271,7 +271,9 @@
     <string name="game_link_play">Link Play</string>
     <string name="game_looking_at_the_app_s">Uygulamanın depolaması inceleniyor…</string>
     <string name="game_made_when_first_drawn_may">İlk çizildiğinde oluşturulur: takılabilir</string>
-    <string name="game_mode_performance_the_only_shader">Mod: performans (Eden\'in LSFG\'sinin kullandığı tek gölgelendirici kümesi)</string>
+    <string name="game_lsfg_quality">Kalite</string>
+    <string name="game_lsfg_shaders">Gölgelendiriciler (Kalite: üretilen karelerde daha fazla ayrıntı, yaklaşık dört kat GPU süresi)</string>
+    <string name="game_lsfg_screen_limit">Ekran en fazla %1$d Hz ile çalışıyor (Android ekran ayarları): daha hızlı hedefler ve oyun karesi başına daha fazla kare sunulmuyor</string>
     <string name="game_motion_clarity">Hareket netliği</string>
     <string name="game_motion_estimation_resolution_lower_i">Hareket kestirimi çözünürlüğü (düşük olan daha hızlı)</string>
     <string name="game_motion_sensitivity">Hareket hassasiyeti</string>

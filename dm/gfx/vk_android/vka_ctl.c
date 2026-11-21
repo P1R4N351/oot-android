@@ -102,7 +102,8 @@ static void apply(void) {
     pthread_mutex_unlock(&g_emu);
     atomic_fetch_add(&vka_env_gen, 1);
     (void)pre;   // the present reads DM_VK_PRETRANSFORM through VKA_ENV and makes a new swapchain when it changed (vka_present.c)
-    if (lsfg) nxhost_framegen_set(lsfg_int("DM_LSFG", 0) != 0, lsfg_int("DM_LSFG_MULT", 2), lsfg_int("DM_LSFG_TARGET", 0), lsfg_int("DM_LSFG_FLOW", 75));
+    if (lsfg) { nxhost_framegen_set(lsfg_int("DM_LSFG", 0) != 0, lsfg_int("DM_LSFG_MULT", 2), lsfg_int("DM_LSFG_TARGET", 0), lsfg_int("DM_LSFG_FLOW", 75));
+                nxhost_framegen_quality(lsfg_int("DM_LSFG_QUALITY", 0) != 0); }
 }
 void vka_ctl_sub(void) {   // mtl_sub_begin: the submit lock is held, no submission is being recorded
     if (!atomic_load_explicit(&g_pending, memory_order_relaxed) || vka_frame() == atomic_load(&g_pend_frame)) return;

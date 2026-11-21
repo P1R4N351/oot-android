@@ -271,7 +271,9 @@
     <string name="game_link_play">Link Play</string>
     <string name="game_looking_at_the_app_s">Controllo dell\'archiviazione dell\'app…</string>
     <string name="game_made_when_first_drawn_may">Creati al primo disegno: possibili scatti</string>
-    <string name="game_mode_performance_the_only_shader">Modalità: prestazioni (l\'unico set di shader che l\'LSFG di Eden usa)</string>
+    <string name="game_lsfg_quality">Qualità</string>
+    <string name="game_lsfg_shaders">Shader (Qualità: più dettagli nei fotogrammi generati, circa quattro volte il tempo GPU)</string>
+    <string name="game_lsfg_screen_limit">Lo schermo funziona al massimo a %1$d Hz (impostazioni display di Android): obiettivi più veloci e più fotogrammi per fotogramma di gioco non sono proposti</string>
     <string name="game_motion_clarity">Nitidezza del movimento</string>
     <string name="game_motion_estimation_resolution_lower_i">Risoluzione della stima del movimento (più bassa è più veloce)</string>
     <string name="game_motion_sensitivity">Sensibilità al movimento</string>

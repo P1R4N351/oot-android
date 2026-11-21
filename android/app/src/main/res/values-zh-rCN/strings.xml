@@ -271,7 +271,9 @@
     <string name="game_link_play">Link Play</string>
     <string name="game_looking_at_the_app_s">正在查看应用存储…</string>
     <string name="game_made_when_first_drawn_may">首次绘制时生成：可能卡顿</string>
-    <string name="game_mode_performance_the_only_shader">模式：性能（Eden 的 LSFG 使用的唯一着色器集）</string>
+    <string name="game_lsfg_quality">质量</string>
+    <string name="game_lsfg_shaders">着色器（质量：生成帧细节更多，GPU 时间约为四倍）</string>
+    <string name="game_lsfg_screen_limit">屏幕最高以 %1$d Hz 运行（Android 显示设置）：不提供更快的目标和每个游戏帧更多的帧</string>
     <string name="game_motion_clarity">动态清晰度</string>
     <string name="game_motion_estimation_resolution_lower_i">运动估计分辨率（越低越快）</string>
     <string name="game_motion_sensitivity">体感灵敏度</string>

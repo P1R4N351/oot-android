@@ -756,7 +756,7 @@ static void window_take(void) {   // g_pmu held
 }
 
 // ---------- The present queue ----------
-typedef struct { tex_t t; double period; int crop[4], has_crop; uint64_t ticket, fence; vka_img *src; double hold; } pq_item;   // src, hold: a generated frame (vka_framegen.c)
+typedef struct { tex_t t; double period; int crop[4], has_crop; uint64_t ticket, fence; vka_img *src; double hold; int fit_w, fit_h; } pq_item;   // src, hold: a generated frame (vka_framegen.c); fit_w, fit_h: the size it is placed by (its game frame's crop), 0 = its own
 static pq_item g_pq[PQ];
 static uint64_t g_pq_in, g_pq_read, g_pq_done, g_pq_fill;   // tickets: reserved, taken by the present thread, shown; filled (a ticket is reserved by the game's present, filled when the replay reaches it: vka_worker.c)
 
@@ -832,6 +832,34 @@ static VkFormat present_fmt(const pq_item *it, const vka_img *im) {
                                       (unsigned long long)it->t.serial, it->t.d.format, wf.vk, im->f.vk);
     return w;
 }
+// The picture's rectangle for a crop of cw x ch: on the window as the user sees it (ww x wh; fit keeps the shape, DM_VK_STRETCH fills, DM_VK_PICTURE_SIZE, the
+// picture's place, DM_VK_PICTURE_ASPECT), and from there into the swapchain's buffer when it is device-scaled (picture_buf). Present thread
+static void picture_win(int ww, int wh, int cw, int ch, int fr[4]) {
+    int fw = cw; { const char *pa = getenv("DM_VK_PICTURE_ASPECT"); int aw = 0, ah = 0; if (pa && sscanf(pa, "%d:%d", &aw, &ah) == 2 && aw > 0 && ah > 0) fw = (int)((long)ch * aw / ah); }
+    vka_fit_rect(ww, wh, fw, ch, stretch_wanted(), picture_size(), g_place_x, g_place_y, fr);
+}
+static void picture_buf(int ew, int eh, int cw, int ch, int fr[4]) {   // within 2 pixels of the crop's size it is the crop's size (a copy, no scaling)
+    double fx = (double)ew / g_win_ew, fy = (double)eh / g_win_eh;
+    int bx = (int)(fr[0] * fx + 0.5), by = (int)(fr[1] * fy + 0.5), bw = (int)(fr[2] * fx + 0.5), bh = (int)(fr[3] * fy + 0.5);
+    if (abs(bw - cw) <= 2) bw = cw;
+    if (abs(bh - ch) <= 2) bh = ch;
+    if (bw > ew) bw = ew;
+    if (bh > eh) bh = eh;
+    if (bx + bw > ew) bx = ew - bw;
+    if (by + bh > eh) by = eh - bh;
+    fr[0] = bx; fr[1] = by; fr[2] = bw; fr[3] = bh;
+}
+// The size in swapchain pixels a crop of cw x ch is shown at (present_one's rectangle), 0 x 0 when there is no swapchain. Frame generation sizes its chain by it
+// (vka_framegen.c). Present thread
+void vka_present_picture_size(int cw, int ch, int *pw, int *ph) {
+    *pw = *ph = 0;
+    if (!g_swap || !g_ext.width || !g_ext.height || cw <= 0 || ch <= 0) return;
+    int ew = (int)(rot_quarter(g_pre) ? g_ext.height : g_ext.width), eh = (int)(rot_quarter(g_pre) ? g_ext.width : g_ext.height), dev = atomic_load(&g_dev_on), fr[4];
+    if (dev && (g_win_ew <= 0 || g_win_eh <= 0)) return;
+    picture_win(dev ? g_win_ew : ew, dev ? g_win_eh : eh, cw, ch, fr);
+    if (dev) picture_buf(ew, eh, cw, ch, fr);
+    *pw = fr[2]; *ph = fr[3];
+}
 static int present_one(const pq_item *it) {
     if (!g_surf || vka_hung()) return 0;
     { static int rw = -1; int w = rot_wanted(); if (rw >= 0 && w != rw) { VLOG("DM_VK_PRETRANSFORM=%d: new swapchain", w); g_recreate = 1; } rw = w; }
@@ -867,10 +895,9 @@ static int present_one(const pq_item *it) {
     // sends the switches through DM_CTL and gives the launcher's touch mapping the same rectangle, PictureFit.rect)
     // DM_VK_PICTURE_ASPECT=<w>:<h> (live; the launcher's Aspect ratio 4:3 sets 4:3): the picture's shape on screen when it is fitted, in place of the crop's own (a native 4:3
     // mod lays its 4:3 picture out in the game's 16:9 frame: shown at 4:3 it fills a 4:3 screen and gets side bars on a 16:9 one). Stretch still fills the screen
-    int fw = cw; { const char *pa = getenv("DM_VK_PICTURE_ASPECT"); int aw = 0, ah = 0; if (pa && sscanf(pa, "%d:%d", &aw, &ah) == 2 && aw > 0 && ah > 0) fw = (int)((long)ch * aw / ah); }
     int dev = atomic_load(&g_dev_on), fr[4];
-    if (dev) vka_fit_rect(g_win_ew, g_win_eh, fw, ch, stretch_wanted(), picture_size(), g_place_x, g_place_y, fr);   // device scaling: placed on the whole window, then carried into the buffer
-    else vka_fit_rect(ew, eh, fw, ch, stretch_wanted(), picture_size(), g_place_x, g_place_y, fr);
+    // A generated frame takes its game frame's rectangle: placed by its own size (the picture's on screen, vka_framegen.c), the rounding of its shape could differ by a pixel
+    picture_win(dev ? g_win_ew : ew, dev ? g_win_eh : eh, it->fit_w > 0 ? it->fit_w : cw, it->fit_h > 0 ? it->fit_h : ch, fr);   // device scaling: placed on the whole window, then carried into the buffer
     {   // Device scaling: the buffer the picture would fill 1:1, asked for when it differs by more than 2 pixels (a new swapchain at the next present); off: back to the window's size
         int want = present_scale() == PS_DEVICE && im && !g_dev_refused, wwin = dev ? g_win_ew : ew, hwin = dev ? g_win_eh : eh;
         uint32_t bw = 0, bh = 0;
@@ -881,17 +908,7 @@ static int present_one(const pq_item *it) {
         uint32_t cur_w = dev ? (uint32_t)ew : 0, cur_h = dev ? (uint32_t)eh : 0;
         if ((bw ? (bw + 2 < cur_w || bw > cur_w + 2 || bh + 2 < cur_h || bh > cur_h + 2) : dev) && !g_recreate) { g_dev_want_w = bw; g_dev_want_h = bh; g_recreate = 1; }
     }
-    if (dev) {   // the whole window's rectangle in buffer pixels; within 2 pixels of the crop's size it is the crop's size (a copy, no scaling)
-        double fx = (double)ew / g_win_ew, fy = (double)eh / g_win_eh;
-        int bx = (int)(fr[0] * fx + 0.5), by = (int)(fr[1] * fy + 0.5), bw = (int)(fr[2] * fx + 0.5), bh = (int)(fr[3] * fy + 0.5);
-        if (abs(bw - cw) <= 2) bw = cw;
-        if (abs(bh - ch) <= 2) bh = ch;
-        if (bw > ew) bw = ew;
-        if (bh > eh) bh = eh;
-        if (bx + bw > ew) bx = ew - bw;
-        if (by + bh > eh) by = eh - bh;
-        fr[0] = bx; fr[1] = by; fr[2] = bw; fr[3] = bh;
-    }
+    if (dev) picture_buf(ew, eh, cw, ch, fr);   // the whole window's rectangle in buffer pixels
     int dx = fr[0], dy = fr[1], dw = fr[2], dh = fr[3];
     static VkFormat s_last_fmt; static VkFormatProperties s_last_fp;
     VkFormatProperties fp = {0};
@@ -1027,7 +1044,7 @@ static void *present_main(void *arg) {
         double game_period = it.period;
         g_fg_on = out_period > 0;
         if (out_period > 0) it.period = out_period;
-        for (int g = 0; g < ng; g++) { pq_item gi = it; gi.src = gen[g]; gi.has_crop = 0; gi.ticket = 0; gi.fence = 0; gi.hold = hold; vka_fps_note(present_one(&gi), 1); }
+        for (int g = 0; g < ng; g++) { pq_item gi = it; gi.src = gen[g]; gi.fit_w = it.has_crop && it.crop[2] > 0 && it.crop[3] > 0 ? it.crop[2] : (int)it.t.d.width; gi.fit_h = it.has_crop && it.crop[2] > 0 && it.crop[3] > 0 ? it.crop[3] : (int)it.t.d.height; gi.has_crop = 0; gi.ticket = 0; gi.fence = 0; gi.hold = hold; vka_fps_note(present_one(&gi), 1); }
         it.hold = ng ? hold : game_period;
         int shown = present_one(&it);
         if (shown) dm_guest_frame_tick();
@@ -1066,7 +1083,7 @@ void vka_present_fill(uint64_t tk, const tex_t *t, double period_s, const int cr
     // The last submission handed to the queue, not the last fence reserved: a submission another thread is still recording (its fence taken at the top of mtl_sub_commit) would
     // be queued after this copy, which then waits for it forever (a wait-before-signal on one queue). On the Adreno 840 phone that froze the queue while the first level loaded
     // (fence N+2 never reached at N, android-perf c1ff15fa, three runs), and the compositor waiting on the frame restarted the system server
-    it->ticket = tk; it->fence = vka_fence_queued(); it->src = NULL; it->hold = 0;
+    it->ticket = tk; it->fence = vka_fence_queued(); it->src = NULL; it->hold = 0; it->fit_w = it->fit_h = 0;
     uint64_t res = vka_fence_last();
     if (res > it->fence && !vka_worker_on()) { static _Atomic uint64_t n; uint64_t k = atomic_fetch_add(&n, 1) + 1;
         if (k <= 3 || !(k & (k - 1))) VLOG("present ticket %llu came while fence %llu was still being recorded (%llu queued): the present waits for %llu (%llu such presents)",
