@@ -43,7 +43,7 @@ There is no game-specific patch and no rewriter cut. Everything else it needed i
 
 ## Motion controls
 
-- The game reads motion through the SDK's sensor fusion (`hid::UpdateSensorFusion` → `GetNpadImuSamples`) and supports Handheld | JoyDual only, so the keyboard, a DualSense or a single Joy-Con is shown to it as a Joy-Con pair (The Npad IMU sample holds the acceleration first, A controller in a style the game does not support).
+- The game reads motion through the SDK's sensor fusion (`hid::UpdateSensorFusion` → `GetNpadImuSamples`) and supports Handheld | JoyDual only, so the keyboard, a DualSense or a single Joy-Con is shown to it as a Joy-Con pair (The Npad IMU sample holds the acceleration first; [A game that takes no full-key controller](../../../docs/reference/services.md#a-game-that-takes-no-full-key-controller), on Android since that entry; not run on Android).
 - Without a motion controller a point cannot be played. `Shake` does not serve; nor did any of ten scripted moves of bymaxmarc's [PR #2386](https://github.com/seedds/nxnative/pull/2386) (swings about ±x, ±y, ±z and a lift, in one 60 s and one 90 s run): the racket follows them, and the serve prompt stays.
 
 ## Miis
@@ -70,7 +70,7 @@ The work folder `04008E001F098000-work` beside the dump has `run/boot.sh <log> <
 - File calls on a mount in the SDK's own table
 - A read-only mount of the game's own save data
 - The virtual output device's properties, and the OutputStream open without flags and The output device notification under its SDK 21 and 22 name
-- A controller in a style the game does not support
+- [A game that takes no full-key controller](../../../docs/reference/services.md#a-game-that-takes-no-full-key-controller) (upstream's "A controller in a style the game does not support")
 - Switch 2 hid calls that open the hid service, The SDK's IMU handles are the console's six-axis handles, The Npad IMU sample holds the acceleration first, The SDK's sensor fusion needs sensor noise and a stored calibration
 - Home button protection on a Switch 2 controller
 - [The Switch 2's Mii model archive](../../../docs/reference/services.md#the-switch-2s-mii-model-archive) and [A Mii part the stand-in leaves out](../../../docs/reference/services.md#a-mii-part-the-stand-in-leaves-out)
