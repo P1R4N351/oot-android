@@ -108,7 +108,7 @@ def check_coordinate_guard(ops, expected):
     defs, blocks, predecessors, branches, pointers = {}, {}, {}, [], []
     current = None
     for op, args in ops:
-        if op in (43, 80, 124, 61, 104, 176, 155, 60): defs[args[1]] = (op, args)
+        if op in (43, 80, 124, 61, 104, 176, 155, 60, 128, 169): defs[args[1]] = (op, args)
         if op == 248:
             current = args[0]; blocks[current] = []; predecessors.setdefault(current, set())
         if current is not None: blocks[current].append((op, args))
@@ -121,7 +121,11 @@ def check_coordinate_guard(ops, expected):
     pointer_block, pointer = pointers[0]
     coord_id = pointer[3]
     op, coord = defs[coord_id]
-    if len(expected) == 1:  # Native texture-buffer indexing keeps a scalar coordinate.
+    if len(expected) == 1:  # Native texture-buffer indexing keeps a scalar coordinate, possibly biased: Bitcast(Select(c, Bitcast(x), IAdd(Bitcast(x), b)))
+        if op == 124:
+            op, sel = defs[coord[2]]
+            assert op == 169 and defs[sel[3]][0] == 124 and defs[sel[4]][0] == 128 and defs[sel[4]][1][2] == sel[3]
+            op, coord = defs[defs[sel[3]][1][2]]
         assert op == 43 and coord[2] == (expected[0] & 0xffffffff)
     else:
         assert op == 80
@@ -390,10 +394,28 @@ class Compiler(unittest.TestCase):
                         msl = work / (key + '.metal')
                         cross(spv, msl)
                         self.compile_metal(msl, work, key)
-                    else:  # U64, S64, descriptor-sized64, float and half2.
+                    elif size == 2 and not reduction:
+                        # U64 Suatom (this fixture's mode is Max) with its result discarded: the translator's Metal form, two 32-bit atomic_fetch_max on the
+                        # image's two words (an Rg32ui texel pointer, so not spirv-val'd for Vulkan, whose texel-pointer rule wants R32 or R64 formats)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        msl = work / (key + '.metal')
+                        source = cross(spv, msl)
+                        self.assertEqual(len(re.findall(r'\.atomic_fetch_max\(', source)), 2, source)
+                        self.compile_metal(msl, work, key)
+                    else:  # U64 Sured, S64, descriptor-sized64, float and half2.
                         self.assertNotEqual(result.returncode, 0, key)
                         self.assertIn('require a 32-bit integer source size', result.stderr)
                         self.assertFalse(spv.exists())
+            # U64 Suatom whose result is used: Metal's 64-bit texture atomics return nothing, so it is refused
+            key = 'suatom_size_2_returned'
+            code = work / (key + '.bin')
+            code.write_bytes(synthetic_shader(0, 0, discard=False, size=2))
+            jp = work / 'jobs.json'
+            jp.write_text(json.dumps([dict(key=key, stage='cs', code=str(code), img={'0': dict(type='2darray', fmt='R32Uint')}, local=[1, 1, 1], debug=True)]))
+            result = subprocess.run([os.environ['DMSH_TEST_XLATE'], str(jp), str(work)], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0, key)
+            self.assertIn('Metal 64-bit image atomics', result.stderr)
+            self.assertFalse((work / (key + '.spv')).exists())
 
     def test_real_translation_and_cross(self):
         self.assertTrue(os.access(SPIRV_CROSS, os.X_OK), f'{SPIRV_CROSS} required for compiler acceptance')

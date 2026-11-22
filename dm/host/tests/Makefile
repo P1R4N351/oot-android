@@ -130,6 +130,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_gmem_replay
 	TMPDIR="$(abspath $(B))" $(B)/t_android_layerreq
 	$(B)/t_server_environment
+run: $(B)/t_android_gmem_replay
 run: $(B)/t_nro
 run: $(B)/t_pack_modules
 run: $(B)/t_game_args
