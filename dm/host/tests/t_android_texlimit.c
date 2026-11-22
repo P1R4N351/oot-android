@@ -3,6 +3,7 @@
 // array-order, age-1 policy caused: Mario Kart World at a 1,536 MiB limit, Ocarina of Time at 512 MiB), a 12 GB device keeps an eighth of RAM while the system stalls on
 // memory and a 32nd while it does not, memory pressure (PSI) holds the cache and gives back what is not the working set, DM_VK_IMG_PSI=0 is the build before that rule, and
 // v0.3.1's limit is re-derived here (limit_031) so the churn it caused stays measurable without shipping it
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -94,6 +95,7 @@ static void sim_run(const sim *s, sim_out *o) {
 // each eviction costing `cost` ns of a frame's `budget` ns (0: no budget). Returns the frames that evicted; the most one frame evicted, the total evicted and the bytes left
 static int run_budget(int old, int fresh, uint64_t each, uint64_t limit, int frames, uint64_t budget, uint64_t cost, int *most, int *evicted, uint64_t *bytes_left) {
     int n = old + fresh + frames, nlive = old, more = 0, busy = 0; img *im = calloc((size_t)n, sizeof *im); img **c = malloc((size_t)n * sizeof *c);
+    if (old < 0 || fresh < 0 || frames < 1 || !im || !c) abort();   // (the callers give non-negative counts; the image table holds every image the run adds)
     uint64_t bytes = (uint64_t)old * each; const vktl_cfg dflt = vktl_cfg_default();
     for (int i = 0; i < old; i++) im[i] = (img){.last = 1, .live = 1};
     *most = 0; *evicted = 0;
@@ -171,7 +173,7 @@ int main(void) {
     vktl_cfg ok = vktl_cfg_default(); ok.ease = 2.0; CHECK(vktl_cfg_check(ok).ease == 2.0, "an ease mark under the hold mark is kept");
     vktl_cfg safe = vktl_cfg_check(flap);
     CHECK(safe.hold == VKTL_PSI_HOLD && safe.ease == VKTL_PSI_EASE, "a hold mark at or under the ease mark falls back to the defaults (%.1f, %.1f)", safe.hold, safe.ease);
-    vktl_cfg nan = vktl_cfg_default(); nan.shrink = 0.0 / 0.0; vktl_cfg nansafe = vktl_cfg_check(nan);
+    vktl_cfg nan = vktl_cfg_default(); nan.shrink = NAN; vktl_cfg nansafe = vktl_cfg_check(nan);
     CHECK(nansafe.shrink == VKTL_PSI_SHRINK, "and so does a mark that is not a positive number");
     vktl_cfg odd = vktl_cfg_default(); odd.psi = 2;   // (v0.3.1's policy is not a value the switch has any more: the test's limit_031 stands in for it)
     CHECK(vktl_cfg_check(odd).psi == 1, "DM_VK_IMG_PSI is 0 or 1: anything else is the default's");

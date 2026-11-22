@@ -173,15 +173,16 @@ static void pool_native_write(cv_pool *p, uint32_t i, const vpx_image_t *im, int
 // for a released buffer (the decoder ahead) and the packets refused for it. Ocarina of Time's AV1 opening (dav1d on the CPU, Galaxy S25) stuttered while the renderer held 60 fps
 static int cv_stat_on(void) { static int on = -1; if (on < 0) { const char *e = getenv("DM_CODEC_STATS"); on = e && *e && *e != '0'; } return on; }
 static int cv_fcmp(const void *a, const void *b) { float x = *(const float *)a, y = *(const float *)b; return (x > y) - (x < y); }
-static void cv_pct(float *v, uint32_t n, float *p50, float *p95, float *mx) {
+static void cv_pct(float *v, uint32_t n, uint32_t cap, float *p50, float *p95, float *mx) {   // v: the first n of cap samples
+    if (n > cap) n = cap;
     if (!n) { *p50 = *p95 = *mx = 0; return; }
     qsort(v, n, sizeof *v, cv_fcmp); *p50 = v[n / 2]; *p95 = v[n * 95 / 100 < n ? n * 95 / 100 : n - 1]; *mx = v[n - 1];
 }
 static void cv_stat_flush(cv_dec *d, uint64_t now, const char *why) {   // decoder lock held
     if (!d->st.ndec && !d->st.ngap && !d->st.nfill) { d->st.t0 = now; return; }
     float d50, d95, dmx, g50, g95, gmx; uint32_t late = 0;
-    cv_pct(d->st.dec_ms, d->st.ndec, &d50, &d95, &dmx);
-    cv_pct(d->st.gap_ms, d->st.ngap, &g50, &g95, &gmx);
+    cv_pct(d->st.dec_ms, d->st.ndec, CV_STAT_N, &d50, &d95, &dmx);
+    cv_pct(d->st.gap_ms, d->st.ngap, CV_STAT_N, &g50, &g95, &gmx);
     for (uint32_t k = 0; k < d->st.ngap; k++) if (d->st.gap_ms[k] > 1.5f * g50) late++;
     LOG("[codec] %s decoder %u, %.1f s%s: %u packets decoded in p50 %.1f / p95 %.1f / max %.1f ms (%s, %s); %u pictures filled, the game took them every p50 %.1f / p95 %.1f / "
         "max %.1f ms (%u gaps over 1.5x the median); the game found no picture %u times; pictures waiting for a buffer %.1f on average, %u at most; %u packets refused (DM_CODEC_STATS)",

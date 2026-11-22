@@ -55,14 +55,25 @@ static const uint32_t GS_CULL_STREAM[223] = {
     0x0000000e, 0x000200f9, 0x0000001d, 0x000200f8, 0x0000001d, 0x000100fd, 0x00010038};
 static int g_fail;
 #define CHECK(c, ...) do { if (!(c)) { g_fail++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
-static int have_val(void) { return system("spirv-val --version >/dev/null 2>&1") == 0; }
+static int have_val(void) { return system("spirv-val --version >/dev/null 2>&1") == 0; }   // NOLINT(bugprone-command-processor): a command line the test builds from its own paths
 static int validate(const uint32_t *w, size_t n, const char *tag) {
     char path[256]; snprintf(path, sizeof path, "/tmp/t_spvpatch_%d.spv", (int)getpid());
     FILE *f = fopen(path, "wb"); if (!f) return 0; fwrite(w, 4, n, f); fclose(f);
     char cmd[400]; snprintf(cmd, sizeof cmd, "spirv-val --target-env vulkan1.3 %s", path);
-    int r = system(cmd); remove(path);
+    int r = system(cmd); remove(path);   // NOLINT(bugprone-command-processor): a command line the test builds from its own paths
     if (r) printf("  spirv-val failed on %s\n", tag);
     return r == 0;
+}
+// A SPIR-V file's words, read whole: NULL when it cannot be read or holds no header (*n: the word count)
+static uint32_t *read_spv(FILE *f, size_t *n) {
+    *n = 0;
+    long sz = fseek(f, 0, SEEK_END) ? -1 : ftell(f);
+    if (sz < 20 || fseek(f, 0, SEEK_SET)) return NULL;
+    uint32_t *w = malloc((size_t)sz);
+    if (!w) return NULL;
+    if (fread(w, 1, (size_t)sz, f) != (size_t)sz) { free(w); return NULL; }
+    *n = (size_t)sz / 4;
+    return w;
 }
 static int count_op(const uint32_t *w, size_t n, uint32_t op) { int k = 0; for (size_t i = 5; i < n; i += w[i] >> 16) { if (!(w[i] >> 16)) break; k += (w[i] & 0xffff) == op; } return k; }
 // Texture pool reads (vka_spv_pool_fb), glslangValidator -V --target-env vulkan1.1 of two pixel shaders that read the pool (set 1 binding 0) at an index from a storage buffer:
@@ -268,13 +279,13 @@ int main(void) {
         while (d && (e = readdir(d))) {
             size_t l = strlen(e->d_name); if (l < 4 || strcmp(e->d_name + l - 4, ".spv")) continue;
             char p[1024]; snprintf(p, sizeof p, "%s/%s", dir, e->d_name);
-            FILE *f = fopen(p, "rb"); if (!f) continue; fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f);
-            uint32_t *w = malloc((size_t)sz); if (fread(w, 1, (size_t)sz, f) != (size_t)sz) { fclose(f); free(w); continue; } fclose(f);
+            FILE *f = fopen(p, "rb"); if (!f) continue;
+            size_t nw; uint32_t *w = read_spv(f, &nw); fclose(f); if (!w) continue;
             // every Location-decorated input: find them by a first rewrite of all 32 locations, narrowing on refusal
             uint32_t mask = 0;
-            for (size_t i = 5; i < (size_t)sz / 4; i += w[i] >> 16) { if (!(w[i] >> 16)) break; if ((w[i] & 0xffff) == 71 && (w[i] >> 16) >= 4 && w[i + 2] == 30 && w[i + 3] < 32) {
-                uint32_t id = w[i + 1]; for (size_t j = 5; j < (size_t)sz / 4; j += w[j] >> 16) { if (!(w[j] >> 16)) break; if ((w[j] & 0xffff) == 59 && w[j + 2] == id && w[j + 3] == 1) mask |= 1u << w[i + 3]; } } }
-            uint32_t *x = mask ? vka_spv_vin_retype(w, (size_t)sz / 4, mask, 0, &on, err, sizeof err) : NULL;
+            for (size_t i = 5; i < nw; i += w[i] >> 16) { if (!(w[i] >> 16)) break; if ((w[i] & 0xffff) == 71 && (w[i] >> 16) >= 4 && i + 3 < nw && w[i + 2] == 30 && w[i + 3] < 32) {
+                uint32_t id = w[i + 1]; for (size_t j = 5; j < nw; j += w[j] >> 16) { if (!(w[j] >> 16)) break; if ((w[j] & 0xffff) == 59 && j + 3 < nw && w[j + 2] == id && w[j + 3] == 1) mask |= 1u << w[i + 3]; } } }
+            uint32_t *x = mask ? vka_spv_vin_retype(w, nw, mask, 0, &on, err, sizeof err) : NULL;
             if (!x) { refused++; if (refused <= 4) printf("  %s: %s\n", e->d_name, mask ? err : "no input"); }
             else { done++; if (val) CHECK(validate(x, on, e->d_name), "%s valid", e->d_name); free(x); }
             free(w);
@@ -285,7 +296,9 @@ int main(void) {
     const char *gs = getenv("DM_VK_GS_SPV");
     if (gs) {
         FILE *f = fopen(gs, "rb"); CHECK(f, "%s not readable", gs);
-        if (f) { fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f); uint32_t *w = malloc((size_t)sz); size_t nw = fread(w, 1, (size_t)sz, f) / 4; fclose(f);
+        size_t nw = 0; uint32_t *w = f ? read_spv(f, &nw) : NULL; if (f) fclose(f);
+        CHECK(!f || w, "%s is not a SPIR-V module", gs);
+        if (w) {
             int ch = 0; size_t sn = 0; uint32_t *sg = vka_spv_subgroup_single(w, nw, &sn, &ch, err, sizeof err); if (sg) { free(w); w = sg; nw = sn; }
             int found = vka_spv_gs_claim(w, nw, 255, NULL, NULL, err, sizeof err);
             CHECK(found >= 0, "%s: memory writes counted (%s)", gs, err);
@@ -308,7 +321,7 @@ int main(void) {
         char path[1024]; const char *c = strchr(p, ':'); if (!c || (size_t)(c - p) >= sizeof path) break;
         memcpy(path, p, (size_t)(c - p)); path[c - p] = 0; char *e; unsigned b = (unsigned)strtoul(c + 1, &e, 10); p = *e == ',' ? e + 1 : e;
         FILE *f = fopen(path, "rb"); CHECK(f, "%s not readable", path); if (!f) continue;
-        fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f); uint32_t *w = malloc((size_t)sz); size_t nw = fread(w, 1, (size_t)sz, f) / 4; fclose(f);
+        size_t nw; uint32_t *w = read_spv(f, &nw); fclose(f); CHECK(w, "%s is not a SPIR-V module", path); if (!w) continue;
         int reads = count_op(w, nw, 98), writes = count_op(w, nw, 99);
         for (int k = 0; k < 2; k++) {
             uint32_t *x = vka_spv_img_retype(w, nw, b & ~63u, k ? 0 : 1ull << (b & 63), k ? 1ull << (b & 63) : 0, &on, err, sizeof err);
@@ -332,7 +345,7 @@ int main(void) {
         char path[1024]; const char *c = strchr(p, ':'); if (!c || (size_t)(c - p) >= sizeof path) break;
         memcpy(path, p, (size_t)(c - p)); path[c - p] = 0; char *e; unsigned b = (unsigned)strtoul(c + 1, &e, 10); p = *e == ',' ? e + 1 : e;
         FILE *f = fopen(path, "rb"); CHECK(f, "%s not readable", path); if (!f) continue;
-        fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f); uint32_t *w = malloc((size_t)sz); size_t nw = fread(w, 1, (size_t)sz, f) / 4; fclose(f);
+        size_t nw; uint32_t *w = read_spv(f, &nw); fclose(f); CHECK(w, "%s is not a SPIR-V module", path); if (!w) continue;
         int reads = 0; for (int op = 87; op <= 96; op++) if (op != 89 && op != 90 && op != 93 && op != 94) reads += count_op(w, nw, op);
         for (int k = 0; k < 2; k++) {
             uint32_t *x = vka_spv_img_retype(w, nw, b & ~63u, k ? 0 : 1ull << (b & 63), k ? 1ull << (b & 63) : 0, &on, err, sizeof err);

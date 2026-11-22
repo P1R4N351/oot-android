@@ -130,7 +130,7 @@ static int rcfg_write(unsigned ow, unsigned oh, unsigned rw, unsigned rh) {
     }
     int nh = 0; for (unsigned i = 0; i < r->n; i++) nh += where[i] == 1;
     if (nh != g_where_nh) {
-        uint64_t lo, hi; alias_range(&lo, &hi); g_where_nh = nh;
+        uint64_t lo = 0, hi = 0; alias_range(&lo, &hi); g_where_nh = nh;
         LOG("[res] configurations: %u in the guest heap, %u in the alias region %#llx-%#llx (configuration 0 at %#llx)", nh, r->n - nh, (unsigned long long)lo, (unsigned long long)hi,
             (unsigned long long)cfg[0]);
     }

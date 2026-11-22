@@ -40,7 +40,7 @@ static ssize_t fake_pwrite(int fd, const void *buf, size_t n, off_t off) {
 }
 static int fails, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { fails++; printf("  ✗ "); } else printf("  ✓ "); printf(__VA_ARGS__); printf("\n"); } while (0)
-static void put(const char *p, const char *s) { FILE *f = fopen(p, "w"); fputs(s, f); fclose(f); }
+static void put(const char *p, const char *s) { FILE *f = fopen(p, "w"); if (!f) { fails++; printf("  ✗ cannot write %s\n", p); return; } fputs(s, f); fclose(f); }
 static int same(const char *p, const char *s) {
     char b[64] = {0}; FILE *f = fopen(p, "r"); if (!f) return 0; size_t k = fread(b, 1, sizeof b - 1, f); fclose(f);
     return k == strlen(s) && !memcmp(b, s, k);
@@ -51,7 +51,7 @@ static Result write_save(const char *path, const char *s) {           // open ->
     r = h_fs_WriteFile(h, 0, s, strlen(s), NULL); h_fs_CloseFile(h); return r;
 }
 static int mnt_find(const char *name) { for (int i = 0; i < g_nmnt; i++) if (!strcmp(g_mnt[i].name, name)) return 1; return 0; }
-static int read_fs(const char *path, char *out, size_t n) { uint64_t h; size_t got = 0; if (h_fs_OpenFile(&h, path, MODE_READ)) return 0; Result r = h_fs_ReadFile(&got, h, 0, out, n - 1); h_fs_CloseFile(h); out[got] = 0; return !r; }
+static int read_fs(const char *path, char *out, size_t n) { uint64_t h = 0; size_t got = 0; if (h_fs_OpenFile(&h, path, MODE_READ)) return 0; Result r = h_fs_ReadFile(&got, h, 0, out, n - 1); h_fs_CloseFile(h); out[got] = 0; return !r; }
 
 // ---------- NUP container (nup_image.h, android/NUP.md) ----------
 // A .nup written here from SPEC.md's layout, independently of dm/tools/nup_pack.py: four packages (base, two updates, an add-on), raw, empty and
@@ -97,7 +97,7 @@ static size_t nup_fixture(uint8_t *o) {   // returns the file's size; o has room
     #undef W64
     return fsize;
 }
-static void nup_write(const char *p, const uint8_t *b, size_t n) { FILE *f = fopen(p, "wb"); fwrite(b, 1, n, f); fclose(f); }
+static void nup_write(const char *p, const void *b, size_t n) { FILE *f = fopen(p, "wb"); if (!f) { fails++; printf("  ✗ cannot write %s\n", p); return; } fwrite(b, 1, n, f); fclose(f); }
 static void nup_tests(const char *root) {
     printf("NUP container\n");
     static uint8_t b[8192]; static char want[102001], got[102001];
@@ -144,7 +144,7 @@ static void nup_tests(const char *root) {
     // not in the cache's budget, kept after close
     g_nmnt = 0; setenv("DM_NUP_DISK_MB", "0.05", 1); setenv("TMPDIR", root, 1);
     snprintf(spec, sizeof spec, "%s:update/65536/romfs", np); setenv("DM_ROMFS", spec, 1);
-    {   uint64_t h; size_t r1 = 0, r2 = 0; memset(got, 0, sizeof got);
+    {   uint64_t h = 0; size_t r1 = 0, r2 = 0; memset(got, 0, sizeof got);
         CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK && h_fs_OpenFile(&h, "rom:/data/z", MODE_READ) == RES_OK, "a large zstd file opens");
         CHECK(h_fs_ReadFile(&r1, h, 0, got, 50000) == RES_OK && h_fs_ReadFile(&r2, h, 50000, got + 50000, 60000) == RES_OK && r1 == 50000 && r2 == 52000 && !memcmp(got, want, 102000),
               "a large zstd file reads its bytes from the temporary file (%zu + %zu)", r1, r2);
@@ -171,7 +171,7 @@ static void nup_tests(const char *root) {
         CHECK(h_fs_MountAoc("aocx", 2, NULL, 0) == RES_TARGET_NOT_FOUND && !mnt_find("aocx"), "mounting it answers target not found, no FATAL, no mount");
         snprintf(ln, sizeof ln, "%s/3.nup", aocd); unlink(ln); CHECK(!symlink("/nonexistent/Game.nup", ln), "link 3.nup to nothing");
         CHECK(!dm_aoc_usable(3) && h_fs_MountAoc("aocy", 3, NULL, 0) == RES_TARGET_NOT_FOUND, "a link to nothing is not usable, and not found");
-        snprintf(ln, sizeof ln, "%s/4.img", aocd); { FILE *f = fopen(ln, "wb"); fwrite("DMROMFS1", 1, 8, f); fclose(f); }
+        snprintf(ln, sizeof ln, "%s/4.img", aocd); nup_write(ln, "DMROMFS1", 8);
         CHECK(!dm_aoc_usable(4) && h_fs_MountAoc("aocz", 4, NULL, 0) == RES_TARGET_NOT_FOUND, "a cut-off image is not usable, and its mount is not found");
         CHECK(h_fs_MountAoc("aocn", 1, NULL, 0) == RES_OK && read_fs("aocn:/d.txt", got, sizeof got) && !strcmp(got, "dlc"), "the readable add-on still reads");
         for (int i = 2; i <= 4; i++) { snprintf(ln, sizeof ln, "%s/%d.%s", aocd, i, i == 4 ? "img" : "nup"); unlink(ln); }
@@ -179,6 +179,7 @@ static void nup_tests(const char *root) {
     }
     // fd:<n>/<name> in place of the path (a .nup picked with Android's file picker: the launcher's descriptor, nup_image.h nup_fd_spec)
     {   int fd = open(np, O_RDONLY); CHECK(fd >= 0, "open the .nup for its descriptor");
+        if (fd >= 0) {
         snprintf(spec, sizeof spec, "fd:%d/Game Name.nup:update/65536/romfs", fd); setenv("DM_ROMFS", spec, 1); g_nmnt = 0;
         CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK && read_fs("rom:/data/a", got, sizeof got) && !strcmp(got, "HELLO"), "fd:<n>/<name>.nup:update/65536/romfs mounts that update");
         CHECK(read_fs("rom:/data/z", got, sizeof got) && !memcmp(got, want, 102000), "a zstd file reads through the descriptor");
@@ -193,7 +194,7 @@ static void nup_tests(const char *root) {
         close(fd);
         snprintf(spec, sizeof spec, "fd:%d/Game Name.nup:base", fd); CHECK(!img_open(spec), "a descriptor that is not open is refused");
         g_nmnt = 0;
-    }
+    } }
     snprintf(spec, sizeof spec, "%s:addon/040074a01bf13001", np); { romfs_img *m = img_open(spec); CHECK(m && m->n == 2, "addon/<title ID> selects the add-on"); romfs_image_close(m); }
     snprintf(spec, sizeof spec, "%s:update/1", np); CHECK(!img_open(spec), "an update that is not there is refused");
     snprintf(spec, sizeof spec, "%s:patch", np); CHECK(!img_open(spec), "an unknown selector is refused");
@@ -214,15 +215,15 @@ int main(void) {
     mkdir(rom, 0755); mkdir(overlay, 0755); mkdir(rdata, 0755); mkdir(odata, 0755);
     snprintf(fn, sizeof fn, "%s/same", rdata); put(fn, "base"); snprintf(fn, sizeof fn, "%s/same", odata); put(fn, "overlay"); snprintf(fn, sizeof fn, "%s/base", rdata); put(fn, "only-base"); snprintf(fn, sizeof fn, "%s/over", odata); put(fn, "only-overlay");
     {   // *.zs game files for the zstd head check below (written before the mount, which lists the folders once)
-        FILE *f; snprintf(fn, sizeof fn, "%s/good.zs", rdata); f = fopen(fn, "wb"); fwrite("\x28\xb5\x2f\xfd" "rest", 1, 8, f); fclose(f);
-        snprintf(fn, sizeof fn, "%s/skip.zs", rdata); f = fopen(fn, "wb"); fwrite("\x53\x2a\x4d\x18" "rest", 1, 8, f); fclose(f);
-        snprintf(fn, sizeof fn, "%s/zero.zs", rdata); f = fopen(fn, "wb"); fwrite("\0\0\0\0\0\0\0\0", 1, 8, f); fclose(f);
-        snprintf(fn, sizeof fn, "%s/sub.zs", rdata); f = fopen(fn, "wb"); fwrite("\0\0\0\0\0\0\0\0", 1, 8, f); fclose(f);
+        snprintf(fn, sizeof fn, "%s/good.zs", rdata); nup_write(fn, "\x28\xb5\x2f\xfd" "rest", 8);
+        snprintf(fn, sizeof fn, "%s/skip.zs", rdata); nup_write(fn, "\x53\x2a\x4d\x18" "rest", 8);
+        snprintf(fn, sizeof fn, "%s/zero.zs", rdata); nup_write(fn, "\0\0\0\0\0\0\0\0", 8);
+        snprintf(fn, sizeof fn, "%s/sub.zs", rdata); nup_write(fn, "\0\0\0\0\0\0\0\0", 8);
         snprintf(fn, sizeof fn, "%s/tiny.zs", rdata); put(fn, "ab");
     }
     setenv("DM_ROMFS", rom, 1); setenv("DM_ROMFS_OVERLAY", overlay, 1); CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK, "mount RomFS with two layers (base + overlay)");
     CHECK(read_fs("rom:/data/same", got, sizeof got) && !strcmp(got, "overlay"), "the overlay file wins"); CHECK(read_fs("rom:/data/base", got, sizeof got) && !strcmp(got, "only-base"), "falls back to the base when the overlay lacks the file");
-    uint64_t rh; CHECK(h_fs_OpenFile(&rh, "rom:/data/same", MODE_WRITE) == RES_FAIL, "the two-layer mount refuses writes");
+    uint64_t rh = 0; CHECK(h_fs_OpenFile(&rh, "rom:/data/same", MODE_WRITE) == RES_FAIL, "the two-layer mount refuses writes");
     CHECK(read_fs("rom:\\data\\over", got, sizeof got) && !strcmp(got, "only-overlay") && read_fs("rom:\\data\\base", got, sizeof got) && !strcmp(got, "only-base"), "backslashes separate as slashes do, in both layers");
     CHECK(h_fs_OpenFile(&rh, "rom:/data/base", MODE_READ) == RES_OK && rh && !(rh & 15), "a folder file's handle is 16-byte aligned, as a Horizon FileAccessor pointer is (%#llx)", (unsigned long long)rh); h_fs_CloseFile(rh);
     {   // a damaged *.zs in a RomFS folder (its first bytes zeros: a copy that stopped or was cut) is answered as a damaged image entry is: "not found", or the substitute

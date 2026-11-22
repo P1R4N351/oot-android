@@ -24,7 +24,7 @@ static int validate(const uint32_t *w, size_t n, const char *tag) {
     char path[256]; snprintf(path, sizeof path, "/tmp/t_memu_%d.spv", (int)getpid());
     FILE *f = fopen(path, "wb"); if (!f) return 0; fwrite(w, 4, n, f); fclose(f);
     char cmd[400]; snprintf(cmd, sizeof cmd, "spirv-val --target-env vulkan1.3 %s", path);
-    int r = system(cmd);
+    int r = system(cmd);   // NOLINT(bugprone-command-processor): a command line the test builds from its own paths
     if (r) { char keep[300]; snprintf(keep, sizeof keep, "/tmp/t_memu_fail_%s.spv", tag); rename(path, keep); printf("  spirv-val failed on %s (kept as %s)\n", tag, keep); }
     else remove(path);
     return r == 0;
@@ -95,7 +95,8 @@ static void t_order(void) {
         CHECK(vka_memu_order_find(&o, c) == -1 && vka_memu_order_take(&o, b) == 1 && vka_memu_order_take(&o, a) == 2, "c's entry is gone, b and a's later meeting stay");
         CHECK(vka_memu_order_cut(&o, bar, 1) == 0 && o.n == 3, "nothing past it: no entry dropped");
         vka_memu_order_reset(&o); for (int i = 0; i < 5; i++) vka_memu_order_add(&o, a);
-        CHECK(vka_memu_order_take(&o, a) == 0 && vka_memu_order_take(&o, a) == 1 && vka_memu_order_cut(&o, bar, 0) == 3 && o.n == 2 && o.next == 2, "the first barrier not taken: the entries before it stay");
+        int take1 = vka_memu_order_take(&o, a), take2 = vka_memu_order_take(&o, a);   // (each call takes one)
+        CHECK(take1 == 0 && take2 == 1 && vka_memu_order_cut(&o, bar, 0) == 3 && o.n == 2 && o.next == 2, "the first barrier not taken: the entries before it stay");
     }
     // full
     vka_memu_order_reset(&o); for (int i = 0; i < VKA_MEMU_ORDER_MAX; i++) vka_memu_order_add(&o, a);
@@ -162,7 +163,7 @@ static void t_cond(void) {
 }
 
 int main(void) {
-    g_val = system("spirv-val --version >/dev/null 2>&1") == 0;
+    g_val = system("spirv-val --version >/dev/null 2>&1") == 0;   // NOLINT(bugprone-command-processor): a command line the test builds from its own paths
     t_order();
     t_feeds();
     t_cond();

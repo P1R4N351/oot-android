@@ -114,7 +114,7 @@ static void ui_case(int which) {
     memset(r, 0, sizeof r); r[21] = (uintptr_t)di;
     memcpy(&r[32], again, 16); memcpy(&r[40], again + 4, 16);
     callbacks[OBS_MKW_WIDE](r, 3 << 5);
-    assert(!memcmp(&r[32], again, 16) && !memcmp(&r[40], again + 4, 16));
+    assert(!memcmp(&r[32], again, 16) && !memcmp(&r[40], again + 4, 16));  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
 }
 
 int main(void) {

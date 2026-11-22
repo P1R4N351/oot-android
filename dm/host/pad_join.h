@@ -27,7 +27,7 @@ enum { CTRL_ARG_SIZE = 0x430 };
 static void ctrl_arg_parse(ctrl_arg *a, const uint8_t *b) {   // b: the game's argument (CTRL_ARG_SIZE bytes), or NULL for SetDefault's values
     memset(a, 0, sizeof *a);
     if (!b) { a->max = 4; a->take_over = a->left_justify = a->permit_dual = 1; return; }
-    a->min = (int8_t)b[0]; a->max = (int8_t)b[1];
+    a->min = b[0] < 0x80 ? b[0] : b[0] - 256; a->max = b[1] < 0x80 ? b[1] : b[1] - 256;   // signed bytes
     a->take_over = b[2] != 0; a->left_justify = b[3] != 0; a->permit_dual = b[4] != 0; a->single = b[5] != 0; a->color_on = b[6] != 0;
     memcpy(a->color, b + 7, sizeof a->color);
     a->text_on = b[0x27] != 0;

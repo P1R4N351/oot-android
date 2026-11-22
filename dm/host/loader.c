@@ -914,6 +914,7 @@ static size_t module_span(module_t *m, const char *dir) {   // what map_image ma
 static void arena_reserve(module_t *mods, int n, const char **mdir) {
     const char *e = getenv("DM_MODULE_ARENA"); if (e && !strcmp(e, "0")) return;
     size_t total = 0; for (int i = 0; i < n; i++) total += module_span(&mods[i], mdir[i]);
+    if (!total) return;   // no module: nothing to reserve
     uint8_t *a = mmap(NULL, total, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
     if (a == MAP_FAILED) { LOG("[RED] module arena of %#zx bytes not reserved: modules mapped apart", total); return; }
     g_arena = g_arena_cur = a; g_arena_end = a + total;

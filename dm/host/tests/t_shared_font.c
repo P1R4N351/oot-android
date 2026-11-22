@@ -182,7 +182,7 @@ int main(void) {
     memset(type_f, 0, sizeof type_f); memset(type_done, 0, sizeof type_done);
     if (!strstr(SYSTEM_FONT, "nonexistent") && access(SYSTEM_FONT, R_OK)) CHECK(font_get(0).p == NULL && font_get(3).p == NULL && h_pl_Size(1) == 0, "no font found: null, size 0");
 #undef IN
-    char rm[600]; snprintf(rm, sizeof rm, "rm -rf '%s'", dir); if (system(rm)) {}
+    char rm[600]; snprintf(rm, sizeof rm, "rm -rf '%s'", dir); if (system(rm)) {}   // NOLINT(bugprone-command-processor): a command line the test builds from its own paths
     // A font engine with too little work memory for the stand-in font (Mario Tennis Fever's second engine: 50 KB) runs on host memory, at least 512 KB; the game still gets
     // its own buffer back from GetPointerToWorkBuffer (it frees that one). An engine with enough keeps the game's buffer
     void (*init)(void *, void *, unsigned) = forced(e, bytes / sizeof *e, "_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj");

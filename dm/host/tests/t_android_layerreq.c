@@ -54,7 +54,8 @@ static void test_empty(void) {
 static vka_keyset g_ks;   // (256 KB: not on the stack)
 static void test_keyset(void) {
     memset(&g_ks, 0, sizeof g_ks);
-    CHECK(vka_keyset_add(&g_ks, 5) == 1 && vka_keyset_add(&g_ks, 5) == 0 && vka_keyset_has(&g_ks, 5) && !vka_keyset_has(&g_ks, 6), "add / has");
+    int add1 = vka_keyset_add(&g_ks, 5), add2 = vka_keyset_add(&g_ks, 5);   // (each call adds: two results)
+    CHECK(add1 == 1 && add2 == 0 && vka_keyset_has(&g_ks, 5) && !vka_keyset_has(&g_ks, 6), "add / has");
     CHECK(vka_keyset_add(&g_ks, 0) == 0 && !vka_keyset_has(&g_ks, 0), "key 0 is never kept");
     for (uint64_t k = 100; g_ks.n < VKA_KEYSET_CAP; k++) vka_keyset_add(&g_ks, k * 0x10001ull);
     CHECK(vka_keyset_add(&g_ks, 0xfeedull) == -1 && !vka_keyset_has(&g_ks, 0xfeedull) && vka_keyset_has(&g_ks, 5), "full: refused, the old keys kept");
@@ -94,10 +95,17 @@ static void test_lifetime(void) {
     CHECK(!g_dropped[3], "dropped with a lookup still holding it"); vka_ly_put(&l, d); CHECK(g_dropped[3] == 1 && !g_dropped[4], "two lookups");
 }
 
-static long fsize(const char *p) { FILE *f = fopen(p, "rb"); if (!f) return -1; fseek(f, 0, SEEK_END); long n = ftell(f); fclose(f); return n; }
-static char *slurp(const char *p) {
-    FILE *f = fopen(p, "rb"); if (!f) return NULL; fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
-    char *b = calloc(1, (size_t)n + 1); if (fread(b, 1, (size_t)n, f) != (size_t)n) { free(b); b = NULL; } fclose(f); return b;
+static long fsize(const char *p) { FILE *f = fopen(p, "rb"); if (!f) return -1; long n = fseek(f, 0, SEEK_END) ? -1 : ftell(f); fclose(f); return n; }
+static char *slurp(const char *p) {   // the file's bytes and a NUL; NULL when it cannot be read
+    FILE *f = fopen(p, "rb"); if (!f) return NULL;
+    long n = fseek(f, 0, SEEK_END) ? -1 : ftell(f);
+    char *b = n >= 0 && !fseek(f, 0, SEEK_SET) ? calloc(1, (size_t)n + 1) : NULL;
+    if (b && fread(b, 1, (size_t)n, f) != (size_t)n) { free(b); b = NULL; }
+    fclose(f); return b;
+}
+static void put_text(const char *p, const char *mode, const char *s) {   // a file the test writes: a failure to open it is a failure of the test
+    FILE *o = fopen(p, mode); CHECK(o, "cannot open %s", p); if (!o) return;
+    fputs(s, o); fclose(o);
 }
 
 // What vka_shader.c does at a program whose shaders the (empty) library lacks: every stage is asked for, the program's (vertex, pixel) pairs with them
@@ -153,7 +161,7 @@ static void test_requests(void) {
     CHECK(q.written == 5, "%llu stages written", q.written);
     // A later run (a new key set): an earlier run's request is on disk, so it is not written again, and its program adds no pairs
     static vka_keyset done2; static vka_lrq q2 = VKA_LRQ_INIT;
-    snprintf(f, sizeof f, "%s/req/%016llx.ctl", lr, (unsigned long long)p3[0]); FILE *o = fopen(f, "wb"); fputs("x", o); fclose(o);   // (marked: a 1-byte .ctl)
+    snprintf(f, sizeof f, "%s/req/%016llx.ctl", lr, (unsigned long long)p3[0]); put_text(f, "wb", "x");   // (marked: a 1-byte .ctl)
     CHECK(ask(&q2, lr, &done2, p3, s3, 1) == 1, "queued again in a new run");
     vka_lrq_drain(&q2);
     CHECK(fsize(f) == 1 && q2.written == 0, "an earlier run's request rewritten (%ld bytes, %llu written)", fsize(f), q2.written);
@@ -167,7 +175,7 @@ static void test_requests(void) {
     snprintf(f, sizeof f, "%s/req/%016llx.ctl", lr, (unsigned long long)p4[0]); CHECK(fsize(f) == 0xd8, "the retried request written");
     // The folder cannot be made (a file in its place): nothing written, no crash
     char cmd[800];
-    static vka_keyset done4; static vka_lrq q4 = VKA_LRQ_INIT; char bad[700]; snprintf(bad, sizeof bad, "%s/afile", root); o = fopen(bad, "wb"); fclose(o);
+    static vka_keyset done4; static vka_lrq q4 = VKA_LRQ_INIT; char bad[700]; snprintf(bad, sizeof bad, "%s/afile", root); put_text(bad, "wb", "");
     CHECK(ask(&q4, bad, &done4, p4, s4, 1) == 1, "queued for a folder that cannot be made");
     vka_lrq_drain(&q4);
     CHECK(q4.written == 0, "written under a file: %llu", q4.written);
@@ -181,7 +189,7 @@ static void test_requests(void) {
     char lr6[700]; snprintf(lr6, sizeof lr6, "%s/pack/layer6", root);
     const uint64_t p6[1] = {0x6666000000000006ull}; const uint64_t p7[1] = {0x7777000000000007ull};
     CHECK(ask(&q6, lr6, &done6, p6, s4, 1) == 1, "queued (layer6)"); vka_lrq_drain(&q6);
-    snprintf(cmd, sizeof cmd, "rm -rf '%s'", lr6); if (system(cmd)) {}
+    snprintf(cmd, sizeof cmd, "rm -rf '%s'", lr6); if (system(cmd)) {}   // NOLINT(bugprone-command-processor): a command line the test builds from its own paths
     CHECK(ask(&q6, lr6, &done6, p7, s4, 1) == 1, "queued after the folder went"); vka_lrq_drain(&q6);
     snprintf(f, sizeof f, "%s/req/%016llx.ctl", lr6, (unsigned long long)p7[0]);
     CHECK(fsize(f) == 0xd8 && g_nunw == 0 && q6.written == 2, "the folder made again (%ld bytes, %d unwritten, %llu written)", fsize(f), g_nunw, q6.written);
@@ -189,23 +197,27 @@ static void test_requests(void) {
     // earlier stop cut short is ended before the next pair
     static vka_lrq q7 = VKA_LRQ_INIT; q7.unwritten = unwritten;
     vka_lreq *r = calloc(1, sizeof *r); vka_lreq_pair(r, p6[0], p7[0]); CHECK(!vka_lreq_pair(r, p6[0], p7[0]) && r->np == 1, "a pair twice in one request");
-    CHECK(vka_lrq_push(&q7, lr6, r), "a pairs-only request queued"); vka_lrq_drain(&q7);
+    int queued = vka_lrq_push(&q7, lr6, r); CHECK(queued, "a pairs-only request queued"); if (!queued) free(r);   // (refused: the caller keeps it)
+    vka_lrq_drain(&q7);
     snprintf(f, sizeof f, "%s/req/pairs.tsv", lr6); char *pt = slurp(f);
     CHECK(pt && !strcmp(pt, "6666000000000006\t7777000000000007\n"), "pairs-only request: %s", pt ? pt : "(none)"); free(pt);
-    r = calloc(1, sizeof *r); vka_lreq_pair(r, p6[0], p7[0]); vka_lrq_push(&q7, lr6, r); vka_lrq_drain(&q7);
+    r = calloc(1, sizeof *r); vka_lreq_pair(r, p6[0], p7[0]); if (!vka_lrq_push(&q7, lr6, r)) free(r);
+    vka_lrq_drain(&q7);
     pt = slurp(f); CHECK(pt && strlen(pt) == 34, "a pair appended twice in a run: %s", pt ? pt : "(none)"); free(pt);
-    o = fopen(f, "ab"); fputs("6666000000000006\t88", o); fclose(o);   // (a later run starts on a file whose last line was cut)
+    put_text(f, "ab", "6666000000000006\t88");   // (a later run starts on a file whose last line was cut)
     static vka_lrq q8 = VKA_LRQ_INIT;
-    r = calloc(1, sizeof *r); vka_lreq_pair(r, p6[0], p7[0]); vka_lreq_pair(r, p7[0], p6[0]); vka_lrq_push(&q8, lr6, r); vka_lrq_drain(&q8);
+    r = calloc(1, sizeof *r); vka_lreq_pair(r, p6[0], p7[0]); vka_lreq_pair(r, p7[0], p6[0]); if (!vka_lrq_push(&q8, lr6, r)) free(r);
+    vka_lrq_drain(&q8);
     pt = slurp(f);
     CHECK(pt && !strcmp(pt, "6666000000000006\t7777000000000007\n6666000000000006\t88\n7777000000000007\t6666000000000006\n"), "a later run: %s", pt ? pt : "(none)"); free(pt);
     // A pair that cannot be appended is handed back
     static vka_keyset pairs9; static vka_lrq q9 = VKA_LRQ_INIT; q9.unwritten = unwritten; g_unmark_pairs = &pairs9; g_nunw = 0;
     vka_keyset_add(&pairs9, vka_lreq_pair_id(p6[0], p7[0]));
-    r = calloc(1, sizeof *r); vka_lreq_pair(r, p6[0], p7[0]); vka_lrq_push(&q9, bad, r); vka_lrq_drain(&q9);
+    r = calloc(1, sizeof *r); vka_lreq_pair(r, p6[0], p7[0]); if (!vka_lrq_push(&q9, bad, r)) free(r);
+    vka_lrq_drain(&q9);
     CHECK(g_nunw == 1 && !vka_keyset_has(&pairs9, vka_lreq_pair_id(p6[0], p7[0])), "an unwritten pair handed back (%d)", g_nunw);
     CHECK(vka_lreq_pair_id(1, 2) != vka_lreq_pair_id(2, 1) && vka_lreq_pair_id(0, 0), "pair ids");
-    snprintf(cmd, sizeof cmd, "rm -rf '%s'", root); if (system(cmd)) {}
+    snprintf(cmd, sizeof cmd, "rm -rf '%s'", root); if (system(cmd)) {}   // NOLINT(bugprone-command-processor): a command line the test builds from its own paths
 }
 
 int main(void) {

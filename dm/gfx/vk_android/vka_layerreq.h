@@ -132,7 +132,7 @@ static inline void vka_lrq_read_pairs(vka_lrq *q, const char *path) {
     FILE *f = fopen(path, "rb"); if (!f) return;
     char ln[128]; int last = '\n';
     while (fgets(ln, sizeof ln, f)) {
-        size_t l = strlen(ln); if (l) last = ln[l - 1];
+        size_t l = strlen(ln); if (l) last = (unsigned char)ln[l - 1];
         unsigned long long vs, ps;
         if (l >= 33 && ln[16] == '\t' && sscanf(ln, "%16llx\t%16llx", &vs, &ps) == 2 && ln[l - 1] == '\n') vka_keyset_add(&q->pseen, vka_lreq_pair_id(vs, ps));
     }

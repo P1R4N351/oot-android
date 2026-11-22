@@ -133,7 +133,7 @@ static void ui_check(double A, int on) {
             assert(r[0] != (uintptr_t)di);
             const float *s = (const float *)(uintptr_t)(r[0] + DI_MTX);
             for (int k = 0; k < 16; k++) assert(fabsf(s[k] - proj[k]) < 1e-6f * (fabsf(proj[k]) + 1));
-            assert(!memcmp(di + DI_MTX, m, 64));   // the draw info keeps the scaled one
+            assert(!memcmp(di + DI_MTX, m, 64));   // the draw info keeps the scaled one  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
         }
         // another projection in the draw info (a capture's own ortho, nro0+0xaf6440): a full-canvas pane is left alone
         float cap[16] = {2.0f / 1920, 0, 0, -1, 0, -2.0f / 1080, 0, 1, 0, 0, -0.002f, 0, 0, 0, 0, 1};

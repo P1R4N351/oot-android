@@ -35,7 +35,7 @@ static double m11(const unsigned char *p) { return 1.0 / rdf((uintptr_t)p + P_TA
 
 static void check(int which) {
     static const char *off[] = {NULL, "", "0", "0:9", "16:0", "abc", "16:9", "1778:1000", "4:3x", "nan", "-4:3", "100:1", "1:100", "32:18"};   // cases 0..13: no change
-    _Alignas(16) unsigned char p[0x100], before[0x100];
+    _Alignas(16) unsigned char p[0x100] = {0}, before[0x100];   // (make writes only the fields it sets)
     uint64_t a = (uintptr_t)p;
     g_nmod = 1;
     strcpy(g_mod[0].name, "main");
@@ -127,11 +127,11 @@ static void ui_check(int which) {   // 0..3: no change (unset, 16:9, another bui
         memset(r, 0, sizeof r);
         r[0] = cv; r[2] = (uintptr_t)rows;
         callbacks[OBS_OOT_WIDE](r, 1 << 5);
-        int whole = k >= 0 && ((which == 7 ? 0 : which == 8 ? 2 : which == 9 ? 0xd : 0xd) >> k & 1);   // the keep mask
+        int whole = k >= 0 && ((which == 7 ? 0 : which == 8 ? 2 : 0xd) >> k & 1);   // the keep mask (0xd for 9 and the others)
         if (!on || whole) { assert(r[2] == (uintptr_t)rows); continue; }
         assert(r[2] != (uintptr_t)rows && !(r[2] & 0));
         const float *o = (const float *)(uintptr_t)r[2];
-        assert(!memcmp(rows, keep_rows, sizeof rows));   // the game's own rows are never written
+        assert(!memcmp(rows, keep_rows, sizeof rows));   // the game's own rows are never written  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
         if (A > K169) { for (int j = 0; j < 4; j++) { assert(fabs(o[j] - rows[j] * K169 / A) < 1e-6); assert(o[4 + j] == rows[4 + j]); } }
         else { for (int j = 0; j < 4; j++) { assert(o[j] == rows[j]); assert(fabs(o[4 + j] - rows[4 + j] * A / K169) < 1e-6); } }
     }
@@ -150,14 +150,14 @@ static void ui_check(int which) {   // 0..3: no change (unset, 16:9, another bui
     memcpy(full, frame, sizeof frame);
     memset(r, 0, sizeof r); r[29] = (uintptr_t)vp + 40;
     callbacks[OBS_OOT_WIDE](r, 2 << 5 | 29);
-    if (!on) assert(!memcmp(frame, full, sizeof frame));
+    if (!on) assert(!memcmp(frame, full, sizeof frame));  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
     else if (A > K169) { float in = (float)(1920 * (1 - K169 / A) / 2); assert(fabs(vp[2] - in) < 0.01 && fabs(vp[4] - (1920 - in)) < 0.01 && vp[3] == 0 && vp[5] == 1080); }
     else { float in = (float)(1080 * (1 - A / K169) / 2); assert(fabs(vp[3] - in) < 0.01 && fabs(vp[5] - (1080 - in)) < 0.01 && vp[2] == 0 && vp[4] == 1920); }
     for (int i = 0; i < 24; i++) if (i < 4 || i > 7) assert(frame[i] == full[i]);   // nothing else is written
     // a viewport with no extent is left alone
     vp[2] = vp[4] = vp[3] = vp[5] = 5; memcpy(full, frame, sizeof frame);
     callbacks[OBS_OOT_WIDE](r, 2 << 5 | 29);
-    assert(!memcmp(frame, full, sizeof frame));
+    assert(!memcmp(frame, full, sizeof frame));  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
     // Save picture: x, y, w, h = 0, 0, 543, 306 in x1..x4
     memset(r, 0, sizeof r); r[3] = 543; r[4] = 306;
     callbacks[OBS_OOT_WIDE](r, 3 << 5);

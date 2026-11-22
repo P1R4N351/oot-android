@@ -65,7 +65,7 @@ static void check(int which) {   // 0 unset, 1 "", 2 "0", 3 junk, 4 "5" (below 1
     splits[3] = 150; gate(); assert(is(2, 10, 20, 150));   // already inside the range
     // not the game's splits: decreasing, NaN, negative, absurd; a null or unaligned pointer, a count past the maximum
     float bad[][4] = {{2, 32, 16, 3000}, {2, NAN, 64, 3000}, {-1, 32, 64, 3000}, {2, 32, 64, 1e9f}};
-    for (int k = 0; k < 4; k++) { memcpy(splits, bad[k], sizeof bad[k]); gate(); assert(!memcmp(splits, bad[k], sizeof bad[k]) || (k == 1 && isnan(splits[1]))); }
+    for (int k = 0; k < 4; k++) { memcpy(splits, bad[k], sizeof bad[k]); gate(); assert(!memcmp(splits, bad[k], sizeof bad[k]) || (k == 1 && isnan(splits[1]))); }  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
     copy();
     uint64_t z = 0; memcpy(ds + DS_SPLITS, &z, 8); gate();
     uint64_t r[31] = {0}; r[0] = (uintptr_t)ds + 4; callbacks[OBS_OOT_SHADOW](r, 0); r[0] = 0; callbacks[OBS_OOT_SHADOW](r, 0);

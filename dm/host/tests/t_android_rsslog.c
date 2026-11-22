@@ -33,7 +33,7 @@ int main(void) {
     uint64_t sw = 0; for (int i = 0; i < VKRS_N; i++) sw += s.swap[i];
     CHECK(sw == 350, "SwapPss is not swap: %llu", (unsigned long long)sw);
     vkrs_t t; vkrs_init(&t); vkrs_text(&t, glo, ghi, smaps, sizeof smaps - 1);
-    CHECK(!memcmp(&s, &t, sizeof s), "deterministic");
+    CHECK(!memcmp(&s, &t, sizeof s), "deterministic");  // NOLINT(bugprone-suspicious-memory-comparison): both zeroed by vkrs_init and filled from one input, padding included: byte identity is the determinism checked
     vkrs_t e; vkrs_init(&e); vkrs_text(&e, glo, ghi, "Rss:   5 kB\nVmFlags: rd\n", 22);
     CHECK(e.rss[VKRS_ANON] == 0 && e.maps[VKRS_ANON] == 0, "fields before any map header are dropped");
     // meminfo and the rollup

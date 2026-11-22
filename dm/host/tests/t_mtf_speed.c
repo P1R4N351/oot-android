@@ -66,12 +66,17 @@ static void pick_cases(void) {
     memset(&s, 0, sizeof s);
     frames(&s, SKIP_GRACE + 1, 25 * MS, 3 * MS, 7, 1, NULL, NULL);
     g_now += 60 * MS;   // well behind, but not a load (the gap stays under SKIP_LOAD_NS)
-    assert(skip_pick(&s, g_now, 7, 1) == 1 || skip_pick(&s, g_now += 3 * MS, 7, 1) == 1);   // one of the next two frames is skipped
+    int skipped = skip_pick(&s, g_now, 7, 1) == 1;
+    if (!skipped) { g_now += 3 * MS; skipped = skip_pick(&s, g_now, 7, 1) == 1; }
+    assert(skipped);   // one of the next two frames is skipped
     while (s.run) skip_pick(&s, g_now += 25 * MS, 7, 1);   // to a shown frame
-    assert(skip_pick(&s, g_now += 25 * MS, 8, 1) == 0);    // new jobs: drawn
+    g_now += 25 * MS; int drawn = skip_pick(&s, g_now, 8, 1);
+    assert(drawn == 0);    // new jobs: drawn
     assert(s.sig == 8);
-    assert(skip_pick(&s, g_now += 25 * MS, 8, 1) == 1);    // the same jobs again, still behind: skipped
-    assert(skip_pick(&s, g_now += 3 * MS, 9, 1) == 0 && s.run == 0);
+    g_now += 25 * MS; int again = skip_pick(&s, g_now, 8, 1);
+    assert(again == 1);    // the same jobs again, still behind: skipped
+    g_now += 3 * MS; int newer = skip_pick(&s, g_now, 9, 1);
+    assert(newer == 0 && s.run == 0);
     // a slow frame (a load) starts the clock and the grace again
     assert(frames(&s, 200, 25 * MS, 3 * MS, 9, 1, NULL, NULL) > 0);
     g_now += SKIP_LOAD_NS + MS;

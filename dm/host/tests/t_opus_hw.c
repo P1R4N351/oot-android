@@ -59,7 +59,7 @@ int main(void) {
     CHECK(resets == 1 && last_reset == state, "older interface: Reset resets the software decoder's state (not its work buffer)");
     uint8_t probe[0x200]; memset(probe, 0x5a, sizeof probe);
     CHECK(!memcmp(work, probe, sizeof work), "older interface: Reset leaves the game's work buffer (libopus state) alone");
-    CHECK(((soft_state *)state)->size == ws && h_codec_HwOpusRate(game_dec) == 48000 && h_codec_HwOpusCh(game_dec) == 2, "older interface: the state survives Reset");
+    CHECK(state && ((soft_state *)state)->size == ws && h_codec_HwOpusRate(game_dec) == 48000 && h_codec_HwOpusCh(game_dec) == 2, "older interface: the state survives Reset");
     int16_t pcm[960 * 2]; size_t used = 0; int samples = 0; uint8_t pkt[16] = {0};
     CHECK(h_codec_HwOpusDecode(game_dec, &used, &samples, pcm, sizeof pcm, pkt, sizeof pkt) == 0 && samples == 960 && pcm[0] == 1000, "older interface: decodes after Reset");
     h_codec_HwOpusFini(game_dec);

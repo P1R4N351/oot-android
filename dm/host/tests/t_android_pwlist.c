@@ -53,7 +53,7 @@ static void test_file(void) {
     static uint8_t buf[1 << 16]; vka_gkey k = key_tri(); uint32_t kl = (uint32_t)offsetof(vka_gkey, va);
     pwrec r[4] = {{.kind = VKA_PW_GFX, .klen = kl, .key = {1, 2}}, {.kind = VKA_PW_CS, .key = {3}}, {.kind = VKA_PW_MESH, .klen = kl, .key = {4, 5, 6}}, {.kind = 9, .klen = kl, .key = {7}}};
     vka_gkey ks[4] = {k, k, k, k};
-    size_t len = build(buf, r, ks, 4), o; uint32_t n;
+    size_t len = build(buf, r, ks, 4), o = 0; uint32_t n = 0;
     CHECK(vka_pw_header(buf, len, &o, &n) == VKA_PW_OK && o == sizeof(pwhdr2) && n == 4, "header");
     pwrec x; const uint8_t *kb; int ok, got = 0, oks = 0, kinds = 0;
     while (got < (int)n && vka_pw_next(buf, len, &o, &x, &kb, &ok)) { got++; oks += ok; if (ok) kinds |= 1 << x.kind; }

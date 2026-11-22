@@ -676,7 +676,7 @@ uint32_t *vka_memu_fs_flat(const uint32_t *w, size_t nw, size_t *out_nw, char *e
         if (op == OpExtension && !strcmp((const char *)(w + i + 1), "SPV_EXT_mesh_shader")) { i += len; continue; }
         if (op == OpDecorate && len >= 3 && w[i + 2] == DecPerPrimitive) {
             uint32_t t = w[i + 1];
-            if (!flat[t]) { o[n++] = 3u << 16 | OpDecorate; o[n++] = t; o[n++] = DecFlat; flat[t] = 1; }   // (n stays within nw + 64: each such line is replaced by one no longer)
+            if (t < bound && !flat[t]) { o[n++] = 3u << 16 | OpDecorate; o[n++] = t; o[n++] = DecFlat; flat[t] = 1; }   // (n stays within nw + 64: each such line is replaced by one no longer)
             i += len; continue;
         }
         memcpy(o + n, w + i, len * 4); n += len; i += len;

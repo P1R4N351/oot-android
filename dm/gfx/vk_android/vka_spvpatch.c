@@ -1122,7 +1122,7 @@ int vka_spv_fout_comps(const uint32_t *w, size_t nw, uint8_t comp[8]) {
         if (op != OpVariable && op != OpDecorate && op != OpName && op != OpEntryPoint && op != OpLoad && op != OpConstant && op > 17) {   // (not the literals of debug, mode and constant instructions)
             int chain = (op == OpAccessChain || op == OpInBoundsAccessChain) && len >= 5;
             for (uint32_t k = 1; k < len; k++) {
-                uint32_t id = w[i + k]; if (id >= bound || !var[id]) continue;
+                uint32_t id = w[i + k]; if (id >= bound || !var[id] || loc[id] >= 8) continue;   // (a Location decoration after the variable may move it out of the 8 outputs)
                 uint32_t l = loc[id], all = (1u << ncomp_of[l]) - 1;
                 if (chain && k == 3) { uint32_t x = w[i + 4]; comp[l] |= (uint8_t)(x < bound && isc[x] && cval[x] < ncomp_of[l] ? 1u << cval[x] : all); }
                 else comp[l] |= (uint8_t)all;

@@ -49,7 +49,8 @@ int main(void) {
     // the whole-storage set: added once, found, grows past its first table
     vksoft_set s = {0};
     CHECK(!vksoft_has(&s, 0x1000), "empty");
-    CHECK(vksoft_add(&s, 0x1000) == 1 && vksoft_add(&s, 0x1000) == 0 && vksoft_has(&s, 0x1000), "added once");
+    int add1 = vksoft_add(&s, 0x1000), add2 = vksoft_add(&s, 0x1000);
+    CHECK(add1 == 1 && add2 == 0 && vksoft_has(&s, 0x1000), "added once");
     CHECK(vksoft_add(&s, 0) == 0 && !vksoft_has(&s, 0), "0 is never a key");
     for (uint64_t k = 1; k <= 5000; k++) vksoft_add(&s, 0x40000000ull + k * 0x10000);
     int all = 1; for (uint64_t k = 1; k <= 5000; k++) all &= vksoft_has(&s, 0x40000000ull + k * 0x10000);

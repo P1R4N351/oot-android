@@ -72,7 +72,7 @@ static inline int vka_pw_header(const uint8_t *d, size_t len, size_t *first, uin
 // The next record at *o of a list of len bytes: 1 with *r and *kb (*ok: it passed vka_pw_rec_ok), 0 at the end or at a record whose size runs past the file (the rest is
 // not trustworthy and not read)
 static inline int vka_pw_next(const uint8_t *d, size_t len, size_t *o, pwrec *r, const uint8_t **kb, int *ok) {
-    if (*o + sizeof(pwrec) > len) return 0;
+    if (!d || *o + sizeof(pwrec) > len) return 0;
     memcpy(r, d + *o, sizeof *r);
     if (r->klen > sizeof(vka_gkey) || *o + vka_pw_size(r) > len) return 0;
     *kb = d + *o + sizeof *r; *ok = vka_pw_rec_ok(r, *kb); *o += vka_pw_size(r);

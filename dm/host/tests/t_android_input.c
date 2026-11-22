@@ -71,7 +71,10 @@ static void t_touch(void) {
     CHECK((all & 0xffff) == (0xffff & ~(DM_BTN_LS | DM_BTN_RS)), "every button but the stick clicks: %#llx", (unsigned long long)all);
     CHECK(stick(&t, 0) >= 0 && stick(&t, 1) >= 0, "two sticks");
     // press A, hold the left stick to the right, touch the picture with a third finger
-    const nxhost_touch_control *A = &t.c[ctl(&t, DM_BTN_A)], *L = &t.c[stick(&t, 0)];
+    int ia = ctl(&t, DM_BTN_A), il = stick(&t, 0);
+    CHECK(ia >= 0 && il >= 0, "an A button and a left stick");
+    if (ia < 0 || il < 0) return;
+    const nxhost_touch_control *A = &t.c[ia], *L = &t.c[il];
     CHECK(nxin_touch_event(&t, AM_DOWN, 7, A->x, A->y) == 1, "A down drives the pad");
     float a = t.sw / t.sh;
     CHECK(nxin_touch_event(&t, AM_POINTER_DOWN, 3, L->x + L->r * 0.3f / a, L->y) == 1, "stick grabbed");
@@ -94,6 +97,8 @@ static void t_touch(void) {
     CHECK(b == 0 && lx == 0 && ly == 0 && nxin_touch_fingers(&t, f, 16) == 0 && t.np == 0, "cancel lets everything go");
     // the D-pad by direction, with a dead spot in its centre
     int di = -1; for (int i = 0; i < t.n; i++) if (t.c[i].kind == NXT_DPAD) di = i;
+    CHECK(di >= 0, "a D-pad");
+    if (di < 0) return;
     const nxhost_touch_control *D = &t.c[di];
     nxin_touch_event(&t, AM_DOWN, 1, D->x, D->y); nxin_touch_pad(&t, &b, &lx, &ly, &rx, &ry); CHECK(b == 0, "D-pad centre is nothing");
     nxin_touch_event(&t, AM_MOVE, 1, D->x + D->r * 0.7f / a, D->y + D->r * 0.7f); nxin_touch_pad(&t, &b, &lx, &ly, &rx, &ry);
@@ -104,7 +109,7 @@ static void t_touch(void) {
     t.gx = 0.125f; t.gw = 0.75f;
     nxin_touch_event(&t, AM_DOWN, 2, 0.5f, 0.3f); n = nxin_touch_fingers(&t, f, 16);
     CHECK(n == 1 && fabsf(f[0].x - 0.5f) < 1e-5f, "picture coordinates: %.3f", n ? f[0].x : -1);
-    nxin_touch_event(&t, AM_MOVE, 2, 0.05f, 0.3f); nxin_touch_fingers(&t, f, 16); CHECK(f[0].x == 0, "a finger that slides off stays on the edge");
+    nxin_touch_event(&t, AM_MOVE, 2, 0.05f, 0.3f); n = nxin_touch_fingers(&t, f, 16); CHECK(n == 1 && f[0].x == 0, "a finger that slides off stays on the edge");
     nxin_touch_event(&t, AM_UP, 2, 0, 0);
     CHECK(nxin_touch_event(&t, AM_DOWN, 4, 0.06f, 0.35f) == 0 && nxin_touch_fingers(&t, f, 16) == 0, "a touch in the bar is dropped");
     nxin_touch_event(&t, AM_UP, 4, 0, 0);

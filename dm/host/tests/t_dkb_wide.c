@@ -106,7 +106,7 @@ static void ui_check(int which) {   // 0..2 no change (unset, 16:9, another buil
     double A = which == 4 ? 1.0 : which == 5 ? 4.0 / 3 : 21.0 / 9;
     int on = which >= 3;
     hud_gate((uintptr_t)d);
-    if (!on) { assert(!memcmp(d, keep, sizeof d)); return; }
+    if (!on) { assert(!memcmp(d, keep, sizeof d)); return; }  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
     float q = (float)(A > K169 ? K169 / A : A / K169);
     for (int j = 0; j < 16; j++) {
         int xrow = j < 4, yrow = j >= 4 && j < 8;
@@ -114,23 +114,23 @@ static void ui_check(int which) {   // 0..2 no change (unset, 16:9, another buil
         assert(fabs(m[j] - want) < 1e-6);
     }
     assert(fabs(m[5] / m[0] - A) < 1e-4);   // the layer's shape is now the picture's: 16:9 content in the middle 16:9
-    assert(!memcmp(d, keep, 16) && !memcmp(d + 20, keep + 20, 12 * 4));   // the head and the rows past the second are untouched
+    assert(!memcmp(d, keep, 16) && !memcmp(d + 20, keep + 20, 12 * 4));   // the head and the rows past the second are untouched  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
     // the scaled projection no longer has the 16:9 shape: a second setup of the same draw info (or the gate again) does not scale it twice
     float once[0x20]; memcpy(once, d, sizeof d);
     for (int i = 0; i < 100; i++) hud_gate((uintptr_t)d);
-    assert(!memcmp(once, d, sizeof d));
+    assert(!memcmp(once, d, sizeof d));  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
     // an orthographic projection (a capture's 2/1920 x 2/1080), a perspective of another shape, null and unaligned pointers: untouched
     memset(d, 0, sizeof d); m[0] = 2.0f / 1920.0f; m[3] = -1.0f; m[5] = 2.0f / 1080.0f; m[7] = -1.0f; m[10] = -1.0f; m[15] = 1.0f; memcpy(once, d, sizeof d);
-    hud_gate((uintptr_t)d); assert(!memcmp(once, d, sizeof d));
+    hud_gate((uintptr_t)d); assert(!memcmp(once, d, sizeof d));  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
     memcpy(d, keep, sizeof d); m[0] = m[5]; memcpy(once, d, sizeof d);   // a square layout
-    hud_gate((uintptr_t)d); assert(!memcmp(once, d, sizeof d));
+    hud_gate((uintptr_t)d); assert(!memcmp(once, d, sizeof d));  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
     hud_gate(0);
     hud_gate((uintptr_t)d + 1);
     // an unknown kind and a negative parameter do nothing
     uint64_t r[31] = {0}; r[0] = (uintptr_t)d; r[19] = (uintptr_t)d;
     memcpy(d, keep, sizeof d); memcpy(once, d, sizeof d);
     callbacks[OBS_DKB_WIDE](r, 5 << 5); callbacks[OBS_DKB_WIDE](r, -1); callbacks[OBS_DKB_WIDE](r, 29);
-    assert(!memcmp(once, d, sizeof d));
+    assert(!memcmp(once, d, sizeof d));  // NOLINT(bugprone-suspicious-memory-comparison): byte identity is the point (the bytes are untouched); a value comparison would miss -0 and NaN
 }
 
 // ---- The layouts' panes (kinds 2 and 3) ----

@@ -111,7 +111,7 @@ int vka_shlib_extract(vka_shlib *out, const vka_shlib *L, const dmsh_vk_entry *e
         o += ((uint64_t)m->stored + 15) & ~15ull;
     }
     if (!vka_shlib_check(out, b, blo + (size_t)blob, NULL, NULL, NULL, NULL, err, errn)) { free(b); memset(out, 0, sizeof *out); return 0; }
-    out->mapped = 2; out->by_abi = L->by_abi; out->differs = L->differs;
+    out->base = b; out->mapped = 2; out->by_abi = L->by_abi; out->differs = L->differs;   // (vka_shlib_check set base to b: out owns it, vka_shlib_close frees it)
     return 1;
 }
 void vka_shlib_close(vka_shlib *L) {

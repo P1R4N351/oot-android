@@ -45,7 +45,8 @@ int main(void) {
     run e = {0}; e.f = 0; vkskip_step(&e.s, 1, 0, e.dev, 0, 5); e.f = 1;
     int w = 0; for (int i = 0; i < 2 && !w; i++) { w = win(&e, 9000, 1000, 0, 0, 0, 5); CHECK(!(w && e.f < VKS_FIRST), "no warning before frame %d (at %llu)", VKS_FIRST, (unsigned long long)e.f); }
     CHECK(!w && e.s.strikes == 0, "the first windows count nothing");
-    CHECK(win(&e, 9000, 1000, 0, 0, 0, 5) == 0 && win(&e, 9000, 1000, 0, 0, 0, 5) == 1, "then two windows warn");
+    int w1 = win(&e, 9000, 1000, 0, 0, 0, 5), w2 = win(&e, 9000, 1000, 0, 0, 0, 5);   // (each call runs a window)
+    CHECK(w1 == 0 && w2 == 1, "then two windows warn");
 
     // a loading screen (little work) says nothing and breaks the row
     run l = {0}; l.f = 1500; vkskip_step(&l.s, l.f, 0, l.dev, 0, 5);
@@ -65,7 +66,8 @@ int main(void) {
     for (int i = 0; i < 4; i++) CHECK(win(&c, 6000, 0, 0, 0, 4000, 5) == 0, "40 percent of draws waiting for pipelines never warns");
     CHECK(!c.s.fired, "no warning on a cold start");
     run rp = {0}; rp.f = 1500; vkskip_step(&rp.s, rp.f, 0, rp.dev, 0, 5);
-    CHECK(win(&rp, 6000, 0, 0, 4000, 0, 5) == 0 && win(&rp, 6000, 0, 0, 4000, 0, 5) == 1, "refused pipelines warn");
+    int r1 = win(&rp, 6000, 0, 0, 4000, 0, 5), r2 = win(&rp, 6000, 0, 0, 4000, 0, 5);
+    CHECK(r1 == 0 && r2 == 1, "refused pipelines warn");
 
     // off
     run z = {0}; z.f = 1500; CHECK(vkskip_step(&z.s, z.f, 0, z.dev, 0, 0) == 0 && z.s.f0 == 0, "0 = off");

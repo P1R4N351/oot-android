@@ -13,9 +13,10 @@ int main(void) {
     CHECK(vkps_put(&t, 5, va, 10, &old) == 0 && t.writes == 1, "the same view again: not written");
     CHECK(vkps_put(&t, 5, vb, 10, &old) == 1 && old == va && t.changes == 1, "another view of the same image: written, a change");
     CHECK(vkps_put(&t, 5, vb, 11, &old) == 1 && old == vb && t.changes == 2, "the same handle of a new image (a handle reused after its image went): written");
-    CHECK(vkps_put(&t, 5, NULL, 0, &old) == 0 && t.e[5].v == vb, "no view: nothing written, the slot keeps what it holds");
+    CHECK(vkps_put(&t, 5, NULL, 0, &old) == 0 && t.e && t.e[5].v == vb, "no view: nothing written, the slot keeps what it holds");
     CHECK(vkps_put(&t, 3000000, va, 1, &old) == 1 && t.n > 3000000 && t.e[5].v == vb && t.e[5].serial == 11, "a high ID: the table grows, earlier slots kept");
-    CHECK(vkps_put(&t, 4096, va, 1, NULL) == 1 && vkps_put(&t, 4096, va, 1, NULL) == 0, "without old");
+    int put1 = vkps_put(&t, 4096, va, 1, NULL), put2 = vkps_put(&t, 4096, va, 1, NULL);
+    CHECK(put1 == 1 && put2 == 0, "without old");
     vkps_free(&t);
     if (g_fail) { printf("t_android_poolslot: %d FAILED\n", g_fail); return 1; }
     printf("PASS: pool table slots (vka_poolslot.h): written only when their view changes, changes counted\n");
