@@ -668,10 +668,15 @@ PACX4, PACX4_ROOT = b'PACx403L', b'PACx402L'
 def pacx4_unchunk(d, at, chunks, n, where):
     """The bytes of a PACx 403 part: its chunks, (stored length, length) each, back to back in d from at; a chunk whose two lengths are equal is stored as it is, the others are LZ4 blocks"""
     import lz4.block
+    if sum(u for _, u in chunks) != n: red(f'{where}: its chunks give {sum(u for _, u in chunks):#x} bytes, its length is {n:#x}')
     out = bytearray()
     for c, u in chunks:
         raw = span(d, at, c, where)
-        out += raw if c == u else lz4.block.decompress(raw, uncompressed_size=u)
+        if c == u: out += raw
+        else:
+            if c <= 0 or u < 0 or u > 256 * c: red(f'{where}: invalid LZ4 chunk {c:#x} -> {u:#x}')
+            try: out += lz4.block.decompress(raw, uncompressed_size=u)
+            except lz4.block.LZ4BlockError as e: red(f'{where}: invalid LZ4 block: {e}')
         at += c
     if len(out) != n: red(f'{where}: its chunks give {len(out):#x} bytes, its length is {n:#x}')
     return bytes(out)
@@ -684,23 +689,28 @@ def pacx4_parts(d, label):
     Each block is a PACx 402 archive with its resources as they are (NeedleShader.pac: NeedleShader.pac.000 / .001, 30 MB each, 3,626 Needle payloads). Only an archive whose root
     names a shader type is opened: decompressed whole, the game's archives give 15.6 GB, and NeedleShader.pac is the only one with a Needle container or a control section in it.
     → (name, bytes) of the root and of each block"""
-    roff, rstored, rlen = struct.unpack_from('<III', span(d, 0x10, 12, f'{label}: PACx 403 header'))
-    deps, ctab = struct.unpack_from('<II', d, 0x20)
-    n = struct.unpack_from('<I', span(d, 0x30 + deps, 4, f'{label}: PACx 403 root chunk table'))[0]
+    limit = max(16 << 20, 256 * len(d))
+    roff, rstored, rlen, _, deps, ctab = struct.unpack_from('<6I', span(d, 0x10, 0x20, f'{label}: PACx 403 header'))
+    n = field(d, '<I', 0x30 + deps, f'{label}: PACx 403 root chunk table')[0]
     if not n or 4 + 8 * n > ctab: red(f'{label}: PACx 403 root chunk count {n} in a table of {ctab:#x} bytes')
+    span(d, 0x30 + deps, ctab, f'{label}: PACx 403 root chunk table')
     chunks = [struct.unpack_from('<II', d, 0x34 + deps + 8 * i) for i in range(n)]
     if sum(c for c, _ in chunks) != rstored: red(f'{label}: the PACx 403 root chunks do not add up to its stored length {rstored:#x}')
+    if rlen > limit: red(f'{label}: PACx 403 root length {rlen:#x} exceeds limit')
     root = pacx4_unchunk(d, roff, chunks, rlen, f'{label}: PACx 403 root')
     if root[:8] != PACX4_ROOT: red(f'{label}: the PACx 403 root is not a PACx 402 archive')
     if b'Shader' not in root: return []   # the type tree names no shader type (VertexShader, PixelShader, ComputeShader in NeedleShader.pac)
-    trees, info = struct.unpack_from('<II', root, 0x10)
+    trees, info = field(root, '<II', 0x10, f'{label}: PACx 402 root header')
     out = [('root', root)]
     if not info: return out
     nb, tab = struct.unpack_from('<QQ', span(root, 0x30 + trees, 16, f'{label}: PACx 403 block table'))
+    if 0x10 + 0x20 * nb > info: red(f'{label}: PACx 403 block count {nb} exceeds table of {info:#x} bytes')
     blocks = [struct.unpack_from('<QIIIIQ', span(root, tab + 0x20 * i, 0x20, f'{label}: PACx 403 block {i}')) for i in range(nb)]
     if 0x10 + sum(0x20 + 8 * b[4] for b in blocks) != info: red(f'{label}: the PACx 403 block table is not {info:#x} bytes')
+    if rlen + sum(b[2] for b in blocks) > limit: red(f'{label}: PACx 403 blocks expand beyond limit')
     for i, (name, stored, ln, off, nch, cptr) in enumerate(blocks):
-        nm = root[name:root.find(b'\0', name)].decode('utf-8', 'replace') if 0 <= name < len(root) else str(i)
+        end_nm = root.find(b'\0', name, min(len(root), name + 256)) if 0 <= name < len(root) else -1
+        nm = root[name:end_nm].decode('utf-8', 'replace') if end_nm >= 0 else str(i)
         cks = [struct.unpack_from('<II', span(root, cptr + 8 * k, 8, f'{label}/{nm}: chunk {k}')) for k in range(nch)]
         if sum(c for c, _ in cks) != stored: red(f'{label}/{nm}: the chunks do not add up to the block\'s stored length {stored:#x}')
         out.append((nm, pacx4_unchunk(d, off, cks, ln, f'{label}/{nm}')))
@@ -2994,7 +3004,9 @@ def scan_blob(d, label, out, depth=0, left=None):
         return
     if d[:4] == b'NARC':   # Camelot's containers (cra.py): each member packed by its first byte, so its size says nothing about the budget above
         import cra
-        for i, m in enumerate(cra.narc_members(d, label)): scan_blob(cra.undo(m), f'{label}/{i}', out, depth + 1)
+        try:
+            for i, m in enumerate(cra.narc_members(d, label)): scan_blob(cra.undo(m), f'{label}/{i}', out, depth + 1)
+        except (cra.Error, struct.error) as e: red(str(e))
         return
     if d[:4] == b'BAHS': out.extend(bahs_shaders(d, label)); return
     if d[:4] == b'NDSR': out.extend(ndsr_shaders(d, label)); return
@@ -3342,11 +3354,11 @@ def scan_file_in(args):
         return rel, uniq_keys(found), var_pairs(found), trees
     # a file read whole: one of LARGE_FILE bytes or more is read by one worker at a time (LARGE_LOCK). Orbitals Deluxe Edition has a 6.4 GB IoStore container and
     # 0.1 to 0.9 GB videos; with every worker holding one, its full scan ran a 32 GB PC out of memory. Their shader markers occur in them by chance, so they are read
-    large = head[:4] != ZSTD_MAGIC and LARGE_LOCK is not None and os.path.getsize(path) >= LARGE_FILE
-    if large: LARGE_LOCK.acquire()
+    lock = LARGE_LOCK if head[:4] != ZSTD_MAGIC and LARGE_LOCK is not None and os.path.getsize(path) >= LARGE_FILE else None
+    if lock is not None: lock.acquire()
     try: return scan_whole(path, rel, head, found, trees)
     finally:
-        if large: LARGE_LOCK.release()
+        if lock is not None: lock.release()
 
 def scan_whole(path, rel, head, found, trees):   # scan_file_in for a file no archive reader took: read whole, decoded by its first bytes, then scanned
     if head[:4] == ZSTD_MAGIC: d = unzs(path)   # by the magic: Paper Mario: The Thousand-Year Door names its zstd files .zst (8,726, its shaders among them)
@@ -3672,7 +3684,7 @@ def main():
             failed = os.path.join(rd, 'targeted.failed') if rd else None
             if failed and os.path.isfile(failed) and open(failed).read().strip() == dg: why = 'an earlier run on these inputs found the targeted scan\'s tables differ from the profile\'s'
             else:
-                print(f'targeted split: {len(want):,} of {len(files):,} RomFS files hold the shaders of the profile\'s shader_map.tsv (main build {", ".join(build_id(m) for m in main_v)}); only these are scanned', flush=True)
+                print(f'targeted split: {len(want):,} of {len(files):,} RomFS files hold the shaders of the profile\'s shader_map.tsv (main build {", ".join(build_id(m) or "not an NSO" for m in main_v)}); only these are scanned', flush=True)
                 stage(f'reading the {len(want):,} files that hold shaders')
                 try:
                     out = split_tables(list(results), big, todo, dumps, J, common, zdicts, ScanCache(os.path.join(rd, 'targeted'), dg) if rd else None, targeted=True)
@@ -3846,7 +3858,7 @@ def split_tables(results, big, files, dumps, J, common, zdicts, cache, targeted=
         have = {k for _, uniq, _, _ in results for k in uniq}
         dumps = [d for d in dumps if skey(d[2], d[3]) not in have]
         results.append(('nvn_shdump', last_entries(dumps), var_pairs(dumps), {}))
-    bad = [extra[1] for *_, extra in results if isinstance(extra, tuple) for _ in range(extra[2] if len(extra) > 2 else 1)]
+    bad = [extra[1] for *_, extra in results if isinstance(extra, tuple) and len(extra) > 1 for _ in range(extra[2] if len(extra) > 2 else 1)]
     scanned = {r for _, r, *_ in big + files}
     holding = list(dict.fromkeys(rel for rel, uniq, pr, _ in results if (uniq or pr) and rel in scanned))   # the files any shader was found in (DM_SPLIT_FILES), in scan order
     per_src = collections.Counter(); pairs = set()

@@ -300,39 +300,54 @@ def head(f, entry):   # the first block of a file, unscrambled: its magic, to le
 
 def narc_members(d, where='NARC'):
     if d[:4] != b'NARC': raise Error(f'{where}: not a NARC')
+    if len(d) < 0x10: raise Error(f'{where}: truncated NARC header')
     o, n = struct.unpack_from('<HH', d, 0xc); secs = {}
     for _ in range(n):
-        if o + 8 > len(d): raise Error(f'{where}: a section past the end')
-        s = struct.unpack_from('<I', d, o + 4)[0]; secs[d[o:o + 4]] = o; o += s
+        if o < 0 or o + 8 > len(d): raise Error(f'{where}: a section past the end')
+        s = struct.unpack_from('<I', d, o + 4)[0]
+        if s < 8 or o + s > len(d): raise Error(f'{where}: invalid section size')
+        secs[d[o:o + 4]] = o; o += s
     if b'BTAF' not in secs or b'GMIF' not in secs: raise Error(f'{where}: no BTAF or GMIF')
     fat = secs[b'BTAF']; data = secs[b'GMIF'] + 8
+    if fat + 12 > len(d): raise Error(f'{where}: truncated BTAF')
+    count = struct.unpack_from('<I', d, fat + 8)[0]
+    if fat + 12 + 8 * count > len(d): raise Error(f'{where}: BTAF past the end')
     out = []
-    for i in range(struct.unpack_from('<I', d, fat + 8)[0]):
+    for i in range(count):
         a, b = struct.unpack_from('<II', d, fat + 12 + 8 * i)
-        if not data + a <= data + b <= len(d): raise Error(f'{where}: member {i} past the end')
+        if not a <= b <= len(d) - data: raise Error(f'{where}: member {i} past the end')
         out.append(d[data + a:data + b])
     return out
 
 
 def lz_undo(d, at):   # kinds 0x50 and 0x60 (nro0+0x1237f04): flag bytes, each negated and read from its high bit (1 a match, 0 a literal); a flag byte 0 is 8 literals; a distance 0 ends
-    out = bytearray(); n = len(d)
+    out = bytearray(); n = len(d); cap = max(64 << 20, 1024 * n)
     while at < n:
         f = d[at]; at += 1
         if not f:
+            if len(out) + 8 > cap: raise Error('LZ output exceeds cap')
+            if at + 8 > n: out += d[at:n]; break
             out += d[at:at + 8]; at += 8; continue
         f = -f & 0xff
         for bit in range(7, -1, -1):
             if not f >> bit & 1:
+                if at >= n: raise Error('truncated LZ literal')
                 out.append(d[at]); at += 1; continue
+            if at + 2 > n: raise Error('truncated LZ match')
             lo, hi = d[at], d[at + 1]
             dist = lo >> 4 | hi << 4
             if not dist: return bytes(out)
             ln = lo & 0xf
             if ln > 1: at += 2
-            elif ln == 1: ln = d[at + 2] + 0x11 + (d[at + 3] << 8) + 0xff; at += 4
-            else: ln = d[at + 2] + 0x10; at += 3
+            elif ln == 1:
+                if at + 4 > n: raise Error('truncated LZ match')
+                ln = d[at + 2] + 0x11 + (d[at + 3] << 8) + 0xff; at += 4
+            else:
+                if at + 3 > n: raise Error('truncated LZ match')
+                ln = d[at + 2] + 0x10; at += 3
             s = len(out) - dist
             if s < 0: raise Error('an LZ distance before the start')
+            if len(out) + ln > cap: raise Error('LZ output exceeds cap')
             for k in range(ln): out.append(out[s + k])
     return bytes(out)
 
@@ -343,20 +358,28 @@ def zstd_mod():
     return zstd
 
 
-def undo(d):
+def undo(d, depth=0):
     """A member, unpacked by the kind in its first byte, as the game does (nro0+0x1237c80). Anything else is the member itself"""
     if not d: return d
+    if depth > 16: raise Error('nested MMMM chunks')
     k = d[0]
     if k == 0x4d and d[:4] == b'MMMM':   # chunks of any kind: u32 total, u32 count, u32 length of each, 16-aligned
+        if len(d) < 12: raise Error('truncated MMMM header')
         total, n = struct.unpack_from('<II', d, 4)
+        if 12 + 4 * n > len(d): raise Error('MMMM table past the end')
         at = (12 + 4 * n + 15) & ~15
         out = []
         for i in range(n):
             s = struct.unpack_from('<I', d, 12 + 4 * i)[0]
-            out.append(undo(d[at:at + s])); at += (s + 15) & ~15
+            if at + s > len(d): raise Error(f'MMMM chunk {i} past the end')
+            out.append(undo(d[at:at + s], depth + 1)); at += (s + 15) & ~15
         return b''.join(out)
-    if k == 0x94 and len(d) >= 8: return lz4.block.decompress(d[8:], uncompressed_size=struct.unpack_from('<I', d, 4)[0])
-    if k == 0x5a and d[:4] == b'Z\0\0\0': return zstd_mod().decompress(d[8:])
+    if k == 0x94 and len(d) >= 8:
+        try: return lz4.block.decompress(d[8:], uncompressed_size=struct.unpack_from('<I', d, 4)[0])
+        except Exception as e: raise Error(f'invalid LZ4 member: {e}') from e
+    if k == 0x5a and d[:4] == b'Z\0\0\0':
+        try: return zstd_mod().decompress(d[8:])
+        except Exception as e: raise Error(f'invalid zstd member: {e}') from e
     if k == 0x50 and len(d) >= 8: return lz_undo(d, 8)
     if k == 0x60 and len(d) >= 4: return lz_undo(d, 4)
     if k in (0x70, 0x80) and len(d) >= 0x10: return d[0x10:]
