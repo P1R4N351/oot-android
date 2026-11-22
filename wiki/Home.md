@@ -28,7 +28,7 @@ New? Follow the [Quick start](Quick-Start). New words are explained in the [Glos
 
 ## Good to know
 
-> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](https://github.com/P1R4N351/oot-android#support)); they do not go to Banana Native.
+> **Fork note.** This page comes from Banana Native (moceure). Banana Native itself takes no donations. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](https://github.com/P1R4N351/oot-android#support)); they do not go to Banana Native.
 
 - The only official place for upstream Banana Native is [git.eden-emu.dev/moceure/BananaNative](https://git.eden-emu.dev/moceure/BananaNative). Download the OoT Native APK only from this repository's [releases](https://github.com/P1R4N351/oot-android/releases). The project has no Discord, subreddit, social media account or website, and nobody connected to it will ask you for money, keys or game files.
 - The project takes only a dump folder (or a `.nup` file of one) that you made from your own console. It contains no Nintendo code, firmware or keys. Please don't ask for games, keys or dumps.

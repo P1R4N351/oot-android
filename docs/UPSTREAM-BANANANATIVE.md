@@ -72,7 +72,7 @@ only rewrite code when its key changes (a few minutes). A computer is recommende
 - Open an [issue](https://github.com/moceure/BananaNative/issues/new/choose) with the form; questions go to
   [Discussions](https://github.com/moceure/BananaNative/discussions). More: [Troubleshooting](guides/troubleshooting.md).
 
-> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](../README.md#support)); they do not go to Banana Native.
+> **Fork note.** This page comes from Banana Native (moceure). Banana Native itself takes no donations. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](../README.md#support)); they do not go to Banana Native.
 
 > [!IMPORTANT]
 > The official places for Banana Native are this GitHub repository and its mirror on

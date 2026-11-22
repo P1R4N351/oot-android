@@ -51,5 +51,10 @@ class Support(unittest.TestCase):
         self.assertEqual(written, {funded[0]}, 'README.md and FUNDING.yml name different Bitcoin addresses')
 
 
+    def test_bitcoin_address_is_the_published_one(self):
+        self.assertIn('bc1q4a3lqcg87rvw7vxulausdqhhuwkwwa6w6v4mxx', self.readme, 'README.md does not carry the published Bitcoin address')
+        self.assertIn('bitcoin:bc1q4a3lqcg87rvw7vxulausdqhhuwkwwa6w6v4mxx', self.funding, '.github/FUNDING.yml does not carry the published Bitcoin address')
+
+
 if __name__ == '__main__':
     unittest.main()

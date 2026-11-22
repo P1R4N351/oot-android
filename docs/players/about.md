@@ -21,14 +21,12 @@ written with an AI coding assistant (Claude) and tested by hand. OoT Native rele
 - **Not affiliated with or endorsed by Nintendo.** Nintendo Switch, Switch 2 and the game names are trademarks of
   their owners and are used here only to say which software runs.
 
-> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](../../README.md#support)); they do not go to Banana Native.
+> **Fork note.** This page comes from Banana Native (moceure). Banana Native itself takes no donations. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](../../README.md#support)); they do not go to Banana Native.
 
 - **Project rules.** No support for a title before its official release date, and no monetization of any kind (no
   donations, no paid or early builds), ever.
 
 ## The only official place
-
-> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](../../README.md#support)); they do not go to Banana Native.
 
 **[git.eden-emu.dev/moceure/BananaNative](https://git.eden-emu.dev/moceure/BananaNative) is the official place for Banana Native** (the GitHub repository is not available at the moment). The
 project has no Discord server, subreddit, Telegram group, X / social media account or website, and nobody speaks for it

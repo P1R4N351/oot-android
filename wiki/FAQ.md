@@ -24,7 +24,7 @@ Short answers, with links to the page that has the detail.
 
 **Where are my saves, and are they safe when I uninstall?** [Saves and storage](Saves-and-Storage). Back up first.
 
-> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](https://github.com/P1R4N351/oot-android#support)); they do not go to Banana Native.
+> **Fork note.** This page comes from Banana Native (moceure). Banana Native itself takes no donations. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](https://github.com/P1R4N351/oot-android#support)); they do not go to Banana Native.
 
 **Where do I download the app?** Only from this repository's [releases](https://github.com/P1R4N351/oot-android/releases). The project has no Discord, subreddit or social media, and nobody will ask for money, keys or game files.
 
