@@ -51,4 +51,6 @@ The project's release notes are on the releases page. A short list is in the rep
 
 ## Safety
 
-Download the APK only from the official releases page. Nobody connected to the project will ask for money, keys or game files.
+> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](https://github.com/P1R4N351/oot-android#support)); they do not go to Banana Native.
+
+Download the APK only from this repository's [releases page](https://github.com/P1R4N351/oot-android/releases). Nobody connected to the project will ask for money, keys or game files.

@@ -1,4 +1,4 @@
-**Banana Native**
+**OoT Native** · [Support](https://github.com/P1R4N351/oot-android#support)
 
 [Home](Home)
 

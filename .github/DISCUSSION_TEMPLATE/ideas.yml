@@ -2,13 +2,13 @@ body:
   - type: markdown
     attributes:
       value: |
-        Ideas and game requests are welcome. Supported games are listed on the [main page](https://github.com/moceure/BananaNative).
-        **No game files, keys, firmware or links to them**: don't share them, offer them or ask where to get them. Banana Native works with your own dump of a game you own. Posts that break this are edited or removed ([rules](https://github.com/moceure/BananaNative/discussions/23)).
+        Ideas and game requests are welcome. The game this port runs, and the version, are on the [main page](https://github.com/P1R4N351/oot-android).
+        **No game files, keys, firmware or links to them**: don't share them, offer them or ask where to get them. OoT Native works with your own dump of a game you own. Posts that break this are edited or removed ([rules](https://github.com/P1R4N351/oot-android#legal)).
   - type: textarea
     id: body
     attributes:
       label: Your idea
-      description: "What you'd like, and why. For a game request, its name and title ID (no files)."
+      description: "What you'd like, and why. For a feature, what it should do in Ocarina of Time (no files)."
     validations:
       required: true
   - type: checkboxes

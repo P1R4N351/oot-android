@@ -1,13 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  # Hosted on git.eden-emu.dev while GitHub is unavailable. The GitHub links below go back in when the project returns there
-  # (Forgejo has no Discussions; Questions and ideas have their own form there).
   - name: Install and use
-    url: https://git.eden-emu.dev/moceure/BananaNative
-    about: What you need, the games and versions that run, and how to add a game. Questions and ideas have their own form above.
-  # - name: Questions, ideas and phone reports that work
-  #   url: https://github.com/moceure/BananaNative/discussions
-  #   about: Ask, suggest a game or a feature, or tell which phone and driver it runs on. Issues are for problems, with the form.
-  # - name: Install and use
-  #   url: https://github.com/moceure/BananaNative#readme
-  #   about: What you need, the games and versions that run, and how to add a game.
+    url: https://github.com/P1R4N351/oot-android#readme
+    about: What you need, the game version that runs, and how to prepare it. Questions and ideas have their own form above.
+  - name: Download OoT Native
+    url: https://github.com/P1R4N351/oot-android/releases
+    about: The APKs are published only on this repository's Releases page.
+  - name: "Runtime bug that also happens on upstream Banana Native: report it upstream"
+    url: https://git.eden-emu.dev/moceure/BananaNative/issues
+    about: If the same problem happens in Banana Native itself, with a game it supports, report it to Banana Native.

@@ -76,10 +76,12 @@ Please **never** include game binaries, keys, firmware, extracted assets, raw sh
 
 ## Support
 
-If this work is useful to you, donations are gratefully accepted:
+If this work is useful to you, donations are gratefully accepted. They are voluntary, unlock nothing, and go to this port's maintainers (PiSCES), not to the upstream Banana Native project.
 
 - Bitcoin: `bc1q4a3lqcg87rvw7vxulausdqhhuwkwwa6w6v4mxx`
 - VitaDB profile: [PiSCES](https://www.rinnegatamante.eu/vitadb/#/user/PiSCES)
+
+Download builds only from this repository's [Releases](https://github.com/P1R4N351/oot-android/releases). Nobody will ever ask you for keys, game files or account details.
 
 ---
 

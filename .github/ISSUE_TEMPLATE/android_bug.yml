@@ -1,5 +1,5 @@
 name: Android bug report
-description: Banana Native on Android crashes, hangs, draws wrong, runs slowly or will not prepare a game
+description: OoT Native on Android crashes, hangs, draws wrong, runs slowly or will not prepare Ocarina of Time
 labels: [android]
 body:
   - type: markdown
@@ -19,14 +19,14 @@ body:
     attributes:
       label: Phone
       description: Maker and model.
-      placeholder: "Samsung Galaxy S25 Ultra"
+      placeholder: "AYN Thor"
     validations:
       required: true
   - type: input
     id: chip
     attributes:
       label: Chip and RAM
-      placeholder: "Snapdragon 8 Elite Gen 5, 16 GB"
+      placeholder: "QCS8550 (Adreno 740), 16 GB"
     validations:
       required: true
   - type: input
@@ -55,16 +55,16 @@ body:
     id: game
     attributes:
       label: Game title ID and version
-      description: As the game's card shows them. The README's Games table lists the versions that run.
-      placeholder: "040074A01BF12000, update 458752"
+      description: As the game's card shows them. The README names the version that runs.
+      placeholder: "0400486024DEC000, update 131072"
     validations:
       required: true
   - type: input
     id: release
     attributes:
-      label: Banana Native release
+      label: OoT Native release
       description: Settings › About shows the build tag.
-      placeholder: "v0.1.0"
+      placeholder: "v0.2.0-beta.2"
     validations:
       required: true
   - type: dropdown

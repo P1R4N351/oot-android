@@ -25,7 +25,7 @@ A flattened folder, with `exefs/` and `romfs/` directly in `base/` and `updates/
 
 ## Get the app
 
-1. Open the project's [releases page](https://git.eden-emu.dev/moceure/BananaNative/releases) on the official site and download the newest APK. Download only from there.
+1. Open this repository's [releases page](https://github.com/P1R4N351/oot-android/releases) and download the newest APK. Download only from there.
 2. Install it. Android may ask you to allow installing from your browser or file manager; that is a normal Android prompt.
 3. Open **Banana Native**.
 

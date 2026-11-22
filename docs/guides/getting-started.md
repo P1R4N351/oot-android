@@ -31,7 +31,7 @@ This guide sets up a game with the phone alone. A Windows PC or a Mac prepares a
 ## Steps
 
 1. **Copy your dump** to the phone, for example to `Switch2/DonkeyKongBananza`.
-2. **Install the app.** Download the APK from [Releases](https://git.eden-emu.dev/moceure/BananaNative/releases) and
+2. **Install the app.** Download the APK from [Releases](https://github.com/P1R4N351/oot-android/releases) and
    install it. Open **Banana Native**.
 3. **Allow file access.** The **Allow file access** card has an **Allow** button: it opens Android's settings, where
    you turn on **All files access** for Banana Native, then come back. (You can also skip it: a `.nup` file is then

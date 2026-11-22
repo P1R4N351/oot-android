@@ -72,6 +72,8 @@ only rewrite code when its key changes (a few minutes). A computer is recommende
 - Open an [issue](https://github.com/moceure/BananaNative/issues/new/choose) with the form; questions go to
   [Discussions](https://github.com/moceure/BananaNative/discussions). More: [Troubleshooting](guides/troubleshooting.md).
 
+> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](../README.md#support)); they do not go to Banana Native.
+
 > [!IMPORTANT]
 > The official places for Banana Native are this GitHub repository and its mirror on
 > [git.eden-emu.dev](https://git.eden-emu.dev/moceure/BananaNative): download the APK only from their releases. Nobody

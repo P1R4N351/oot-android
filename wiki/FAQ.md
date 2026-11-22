@@ -24,7 +24,9 @@ Short answers, with links to the page that has the detail.
 
 **Where are my saves, and are they safe when I uninstall?** [Saves and storage](Saves-and-Storage). Back up first.
 
-**Where do I download the app?** Only from the [official releases](https://git.eden-emu.dev/moceure/BananaNative/releases). The project has no Discord, subreddit or social media, and nobody will ask for money, keys or game files.
+> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](https://github.com/P1R4N351/oot-android#support)); they do not go to Banana Native.
+
+**Where do I download the app?** Only from this repository's [releases](https://github.com/P1R4N351/oot-android/releases). The project has no Discord, subreddit or social media, and nobody will ask for money, keys or game files.
 
 **Is there a Linux version?** An experimental aarch64 Linux host is in the repository's `linux/` folder (community change #335 by titooo7, tested by the author on an AYN Odin 2 Pro). It is not part of the APK and not run by the maintainers.
 

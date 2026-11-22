@@ -6,8 +6,8 @@ Unofficial and experimental, tested on one phone. Not affiliated with Nintendo, 
 [nx2android](https://github.com/shirai91/nx2android): please don't send them bug reports about this. Banana Native is
 its own codebase, ported from [nxnative](https://github.com/seedds/nxnative), and not a fork of nx2android; a few shader
 translator fixes are adapted from nx2android (MIT), credited in [NOTICE](../../android/NOTICE.md). Most of the code was
-written with an AI coding assistant (Claude) and tested by hand. Releases are only published on the project's page on
-[git.eden-emu.dev](https://git.eden-emu.dev/moceure/BananaNative/releases).
+written with an AI coding assistant (Claude) and tested by hand. OoT Native releases are only published on this repository's
+[Releases](https://github.com/P1R4N351/oot-android/releases).
 
 ## What it contains, and what it needs
 
@@ -20,14 +20,19 @@ written with an AI coding assistant (Claude) and tested by hand. Releases are on
   to obtain games and does not help with it.
 - **Not affiliated with or endorsed by Nintendo.** Nintendo Switch, Switch 2 and the game names are trademarks of
   their owners and are used here only to say which software runs.
+
+> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](../../README.md#support)); they do not go to Banana Native.
+
 - **Project rules.** No support for a title before its official release date, and no monetization of any kind (no
   donations, no paid or early builds), ever.
 
 ## The only official place
 
+> **Fork note.** This page comes from Banana Native (moceure). Its no-donations rule is Banana Native's own policy. This repository is OoT Native, an independent port maintained by PiSCES, which accepts voluntary donations ([Support](../../README.md#support)); they do not go to Banana Native.
+
 **[git.eden-emu.dev/moceure/BananaNative](https://git.eden-emu.dev/moceure/BananaNative) is the official place for Banana Native** (the GitHub repository is not available at the moment). The
 project has no Discord server, subreddit, Telegram group, X / social media account or website, and nobody speaks for it
-anywhere else. Download the APK only from [Releases](https://git.eden-emu.dev/moceure/BananaNative/releases): a copy from
+anywhere else. Download the OoT Native APK only from this repository's [Releases](https://github.com/P1R4N351/oot-android/releases): a copy from
 anywhere else may be modified or malicious. Nobody connected to the project will ask you for money, keys, game files or
 account details. To reach the developer, use [issues](https://git.eden-emu.dev/moceure/BananaNative/issues).
 
