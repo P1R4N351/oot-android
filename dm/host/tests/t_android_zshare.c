@@ -58,7 +58,9 @@ int main(void) {
           (unsigned long long)t.made, (unsigned long long)t.owned);
     CHECK(vkz_add(&t, &r8, VKZ_KEY + 1, 999, 1) < 0 && vkz_ref(&t, &r8, VKZ_KEY + 1) < 0, "a key longer than VKZ_KEY is refused");
     // many keys: the table grows
-    for (uint32_t i = 0; i < 1000; i++) { key k = {0x400, 9, 64 + i, 64, 1, 0x17}; uint64_t hh; (void)bind(&t, &k, 4 * MIB, &nh, &hh); }   // (new or shared: the stats below count them)
+    int made = 0;
+    for (uint32_t i = 0; i < 1000; i++) { key k = {0x400, 9, 64 + i, 64, 1, 0x17}; uint64_t hh; made += bind(&t, &k, 4 * MIB, &nh, &hh); }
+    CHECK(made == 1000, "1000 new keys: %d new allocations", made);
     vkz_stats(&t, &im, &al, NULL, NULL);
     CHECK(al == 1003 && im == 1003, "1000 more keys: %llu allocations", (unsigned long long)al);
     free(t.e);

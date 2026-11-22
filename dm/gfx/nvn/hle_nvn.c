@@ -1289,7 +1289,7 @@ static uint8_t *hostseg_take(const cmd_t *o, size_t n) {
         if (g_nhostseg == g_caphostseg) { int cap = g_caphostseg ? g_caphostseg * 2 : 64; hostseg_t *grown = realloc(g_hostseg, sizeof *g_hostseg * (size_t)cap);
             if (!grown) die("host segment table allocation failed");
             g_hostseg = grown; g_caphostseg = cap; }
-        g_hostseg[g_nhostseg++] = (hostseg_t){ m, n, f, 1, lo, hi }; g_hostseg_bytes += n;
+        g_hostseg[g_nhostseg++] = (hostseg_t){ m, n, f, 1, lo, hi }; g_hostseg_bytes += n;   // NOLINT(clang-analyzer-security.ArrayBound): g_nhostseg counts the table's entries (0 or more) and is below g_caphostseg (grown above)
     }
     unsigned t = ++total; int ns = g_nhostseg; uint64_t bytes = g_hostseg_bytes;
     pthread_mutex_unlock(&g_hostseg_mu);
@@ -2669,8 +2669,8 @@ static uint8_t *vpool_reserve(pool_t *o) {   // → the reserved range, or NULL
     v->pool = o; v->base = a; v->len = len; v->size = o->size;
     pthread_mutex_lock(&g_vp_mu);
     if (g_nvp == g_cvp && !(g_vp = realloc(g_vp, (g_cvp = g_cvp ? 2 * g_cvp : 64) * sizeof *g_vp))) die("sparse pool table allocation failed");
-    int at = g_nvp; while (at > 0 && g_vp[at - 1]->base > v->base) at--;   // (kept sorted by base: vpool_at's binary search)   // NOLINT(clang-analyzer-security.ArrayBound): g_nvp counts g_vp's entries (0 or more) and at - 1 is read only for at > 0
-    memmove(&g_vp[at + 1], &g_vp[at], (size_t)(g_nvp - at) * sizeof *g_vp); g_vp[at] = v; g_nvp++; o->vp = v;
+    int at = g_nvp; while (at > 0 && g_vp[at - 1]->base > v->base) at--;   // (kept sorted by base: vpool_at's binary search)
+    memmove(&g_vp[at + 1], &g_vp[at], (size_t)(g_nvp - at) * sizeof *g_vp); g_vp[at] = v; g_nvp++; o->vp = v;   // NOLINT(clang-analyzer-security.ArrayBound): 0 <= at <= g_nvp < g_cvp (g_nvp counts g_vp's entries; the table was grown above)
     o->vmode = o->size > DM_GAME_APP_POOL ? 2 : 0;
     pthread_mutex_unlock(&g_vp_mu);
     if (o->vmode == 2) LOG("[nvn] virtual pool %p (%#llx bytes, flags %#x): sparse, own address range %p+%#llx, physical pages are remapped into it", (const void *)o, (unsigned long long)o->size, o->flags, a, (unsigned long long)len);

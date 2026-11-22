@@ -765,6 +765,7 @@ static void emit_main_and_body(gr_ctx_t *c) {
         uint32_t op = c->w[p] & 0xffffu, len = c->w[p] >> 16;
         if (op == OP_CALL) {
             int fi = find_func_index(c, c->w[p + 3]);
+            if (fi < 0) { emit_arr(c, &c->w[p], len); continue; }   // (not reached: the classification refuses a main that calls an unknown function)
             if (first) {
                 uint32_t ss = new_id(c), sj = new_id(c);
                 uint32_t lu = as_u32(c, c->w[p + 4]), hu = as_u32(c, c->w[p + 5]);

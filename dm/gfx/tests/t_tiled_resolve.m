@@ -27,6 +27,7 @@ static void completed(id<MTLCommandBuffer> cb) {
 }
 static void run_case(id<MTLLibrary> lib, int tiled, int views, int samples) {
     tex_t src = texture(samples, views ? 2 : 1), dst = texture(1, views ? 3 : 1);
+    // NOLINTBEGIN(clang-analyzer-osx.cocoa.RetainCount): serial_put retains s/d via CFBridgingRetain
     id<MTLTexture> s = [g_dev newTextureWithDescriptor:tex_desc(&src, 0)];
     id<MTLTexture> d = [g_dev newTextureWithDescriptor:tex_desc(&dst, 0)];
     CHECK(s && d, "resolve textures allocated"); if (!s || !d) return;
@@ -35,7 +36,9 @@ static void run_case(id<MTLLibrary> lib, int tiled, int views, int samples) {
     pd.vertexFunction = [lib newFunctionWithName:@"v"]; pd.fragmentFunction = [lib newFunctionWithName:@"f"];
     pd.rasterSampleCount = samples; pd.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
     NSError *err = nil; id<MTLRenderPipelineState> ps = [g_dev newRenderPipelineStateWithDescriptor:pd error:&err];
-    CHECK(ps != nil, "sample-colour fixture pipeline builds"); if (!ps) { fprintf(stderr, "%s\n", err.localizedDescription.UTF8String); return; }
+    CHECK(ps != nil, "sample-colour fixture pipeline builds");
+    if (!ps) { fprintf(stderr, "%s\n", err.localizedDescription.UTF8String); mtl_tex_release(&src); mtl_tex_release(&dst); return; }
+    // NOLINTEND(clang-analyzer-osx.cocoa.RetainCount)
     id<MTLCommandQueue> q = [g_dev newCommandQueue]; id<MTLCommandBuffer> cb = [q commandBuffer];
     for (unsigned layer = 0; layer < s.arrayLength; layer++) {
         MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -65,10 +68,9 @@ static void run_case(id<MTLLibrary> lib, int tiled, int views, int samples) {
     NVNcommandHandle handle = h_nvnCommandBufferEndRecording((NVNcommandBuffer *)&cmd);
     // The API objects can change after recording. The record owns their descriptors.
     memset(&rs, 0, sizeof rs); memset(&rd, 0, sizeof rd); sv.min_layer = dv.min_layer = 0;
-    uint8_t *record = nvn_rec_linear(handle, NULL);
-    state_reset(); memset(&R, 0, sizeof R); mtl_sub_begin(); mtl_exec(record);
+    state_reset(); memset(&R, 0, sizeof R); mtl_sub_begin(); mtl_exec((const uint8_t *)handle);
     CHECK(mtl_wait(mtl_sub_commit(), 5000000000ull), "resolve submission completed");
-    CHECK(!mtl_last_commit_error(), "resolve has no Metal error"); free(record);
+    CHECK(!mtl_last_commit_error(), "resolve has no Metal error");
     id<MTLBuffer> out = [g_dev newBufferWithLength:256*d.arrayLength options:MTLResourceStorageModeShared];
     CHECK(out != nil, "readback buffer allocated"); if (!out) abort();
     cb = [q commandBuffer]; id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];

@@ -100,7 +100,7 @@ static int cfg_where(uint64_t p, size_t n) {
 
 // Every configuration checked first, then all written: 0 when none was written
 static int rcfg_write(unsigned ow, unsigned oh, unsigned rw, unsigned rh) {
-    const rcfg_row_t *r = g_row; uint64_t cfg[RCFG_MAX]; int where[RCFG_MAX];
+    const rcfg_row_t *r = g_row; uint64_t cfg[RCFG_MAX] = {0}; int where[RCFG_MAX];
     unsigned span = (r->out_off > r->ren_off ? r->out_off : r->ren_off) + 8;
     for (unsigned i = 0; i < r->n; i++) {
         uint64_t p = 0;

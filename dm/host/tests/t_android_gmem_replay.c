@@ -243,7 +243,7 @@ static int count_op(const uint32_t *w, size_t n, uint32_t op) {
 }
 
 static int have_val(void) {
-    return system("spirv-val --version >/dev/null 2>&1") == 0;
+    return system("spirv-val --version >/dev/null 2>&1") == 0;   // NOLINT(bugprone-command-processor): a command line the test builds from its own paths
 }
 
 static int validate_spv(const uint32_t *w, size_t n, const char *tag) {
@@ -255,7 +255,7 @@ static int validate_spv(const uint32_t *w, size_t n, const char *tag) {
     fclose(f);
     char cmd[400];
     snprintf(cmd, sizeof cmd, "spirv-val --target-env vulkan1.3 %s", path);
-    int r = system(cmd);
+    int r = system(cmd);   // NOLINT(bugprone-command-processor): a command line the test builds from its own paths
     remove(path);
     if (r) printf("  spirv-val failed on %s\n", tag);
     return r == 0;
