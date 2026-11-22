@@ -28,7 +28,7 @@ TURNIP = {**QCOM, 'driver': 'turnip Mesa driver 26.0.0', 'driver_kind': 'custom 
 PANVK = {**QCOM, 'gpu': 'Mali-G710 MC7, Vulkan 1.3', 'driver': 'Mesa 25.1 PanVK', 'driver_kind': 'custom (DM_VK_DRIVER PanVK_v1.1)'}
 
 
-def log(source, rule: str | None = 'gpu-hang', doc='docs/reference/rendering.md#x', header=None, symptoms=(), poster='alice', link='https://example.test/i/1#c2'):
+def log(source, rule: 'str | None' = 'gpu-hang', doc='docs/reference/rendering.md#x', header=None, symptoms=(), poster='alice', link='https://example.test/i/1#c2'):
     return {'file': '/tmp/x/issue-a.log', 'source': source, 'poster': poster, 'link': link, 'digest': {
         'header': header if header is not None else QCOM, 'stage': {'number': 8, 'name': 'frame loop'}, 'perf': {'fps_game': {'median': 30.1}},
         'symptoms': [{'heading': hd, 'doc': dc} for hd, dc in symptoms],

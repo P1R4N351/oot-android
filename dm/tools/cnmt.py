@@ -21,10 +21,10 @@ class Error(ValueError): pass
 class Record:
     def __init__(self, id, version, type):
         self.id, self.version, self.type = id, version, type
-        self.application_id: int | None = None
-        self.patch_id: int | None = None
-        self.data_patch_id: int | None = None
-        self.data_id: int | None = None
+        self.application_id: 'int | None' = None
+        self.patch_id: 'int | None' = None
+        self.data_patch_id: 'int | None' = None
+        self.data_id: 'int | None' = None
         self.required_version = 0   # RequiredApplicationVersion: the game version an add-on or a data patch needs (0: none)
         self.contents = []          # (ContentType, IdOffset, size)
 
