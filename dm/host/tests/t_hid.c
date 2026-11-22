@@ -126,7 +126,7 @@ static void t_npads(void) {
     CHECK(buttons_of(0, STYLE_FULLKEY) == DM_BTN_Y && lx_of(0) == 0, "player 1 does not see player 2");
     CHECK(buttons_of(1, STYLE_HANDHELD) == 0, "player 2 is not a handheld controller");
     CHECK(h_hid_Led(&(uint32_t){0}) == 0x1 && h_hid_Led(&(uint32_t){1}) == 0x3 && h_hid_Led(&(uint32_t){7}) == 0x6, "player LED patterns");
-    int32_t info[2]; int8_t arg[8] = {1, 4};
+    int32_t info[2]; int8_t arg[CTRL_ARG_SIZE] = {1, 4};   // (the applet reads the whole argument: pad_join.h)
     CHECK(h_hid_ShowCtrl(info, arg) == RES_OK && info[0] == 2 && info[1] == 0, "the controller applet reports two players, player 1 selected");
     CHECK(applet_opens == 1 && applet_depth == 0 && applet_closes_at_depth0 == 1, "the controller applet opens and closes once around its answer (focus 2, then 1)");
     arg[1] = 1; h_hid_ShowCtrl(info, arg);
@@ -238,7 +238,7 @@ static void t_fill(void) {
     pad_slot_free(&fs, &c);
     CHECK(pad_slot_take(&fs, &d, "Pro Controller") == 2, "another controller passes player 2, kept for the one that went");
     dm_pad_players(pad_slot_mask(&fs));   // a front end that did not fill at once
-    int32_t info[2]; int8_t arg[8] = {2, 2};
+    int32_t info[2]; int8_t arg[CTRL_ARG_SIZE] = {2, 2};
     CHECK(h_hid_ShowCtrl(info, arg) == RES_OK && info[0] == 2 && fill_calls == 2 && pad_slot_of(&fs, &d) == 1, "the controller applet assigns the unused controller first: two players, OK");
     ids((const uint32_t[]){0, NPAD_HANDHELD}, 2);
     CHECK(dm_pad_usable() == 0xff, "a one-player game: nothing to move (further controllers feed player 1)");
