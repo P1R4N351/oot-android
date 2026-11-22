@@ -3,7 +3,7 @@
 
 Reads the Android games (profiles with a `status` row in readiness.tsv), their
 name and settings keys (game.tsv) and the player status table of
-.github/README.md. Deterministic, no network.
+docs/UPSTREAM-BANANANATIVE.md. Deterministic, no network.
 
     python3 scripts/wiki_games_table.py            print the table
     python3 scripts/wiki_games_table.py --write    replace the block between the
@@ -41,9 +41,9 @@ def tsv_rows(path):
 
 
 def readme_status():
-    """Title ID -> (status, note) from the player table in .github/README.md."""
+    """Title ID -> (status, note) from the player table in docs/UPSTREAM-BANANANATIVE.md."""
     out = {}
-    for line in (ROOT / ".github" / "README.md").read_text(encoding="utf-8").splitlines():
+    for line in (ROOT / "docs" / "UPSTREAM-BANANANATIVE.md").read_text(encoding="utf-8").splitlines():
         m = re.match(r"\| (.+?) \(`([0-9A-F]{16})`\) \| (.+?) \| (Supported|Experimental) \| (.*) \|$", line)
         if m:
             out[m.group(2)] = (m.group(4), m.group(5), m.group(3))
