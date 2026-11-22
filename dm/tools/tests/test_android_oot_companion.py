@@ -8,7 +8,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 JAVA = REPO / "android/app/src/main/java/dev/nxnative/android"
-SRCS = [JAVA / "CompanionState.java", JAVA / "OotCompanionModel.java"]
+SRCS = [JAVA / "CompanionState.java", JAVA / "OotCompanionModel.java", JAVA / "Words.java"]   # Words: the model's labels
 TEST = REPO / "android/app/src/jvmtest/java/dev/nxnative/android/OotCompanionJvmTest.java"
 
 

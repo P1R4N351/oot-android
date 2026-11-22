@@ -552,13 +552,13 @@ final class SidePanel extends FrameLayout {
 
         if ("0400486024DEC000".equals(game()) && act instanceof GameActivity) {
             GameActivity ga = (GameActivity) act;
-            head("Companion HUD");
+            head(Tx.s(R.string.game_companion_hud));
             android.widget.CheckBox drawer = new android.widget.CheckBox(act);
-            drawer.setText("Companion HUD drawer (Zero-Pause Radar, Gear & Ocarina)");
+            drawer.setText(Tx.s(R.string.game_companion_hud_drawer));
             drawer.setChecked(ga.companionDrawerOpen());
             drawer.setOnCheckedChangeListener((b, on) -> ga.companionDrawer(on));
             box.addView(drawer);
-            note("Automatically shown on external/Display 4 screens when present");
+            note(Tx.s(R.string.game_companion_hud_auto));
         }
 
         head(Tx.s(R.string.settings_overlay));

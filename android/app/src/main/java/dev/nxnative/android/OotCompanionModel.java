@@ -26,21 +26,67 @@ final class OotCompanionModel {
     static final float[] ZOOM_RADII_M = {40.0f, 80.0f, 160.0f};
     static final String[] TAB_LABELS = {"RADAR", "GEAR", "ALTAR", "OCARINA"};
 
-    static final String[] AMMO_LABELS = {"Sticks", "Nuts", "Seeds", "Arrows", "Bombs", "Chus"};
-    static final String[] DUNGEON_NAMES = {
-        "Bottom of Well", "Forest Temple", "Fire Temple", "Water Temple",
-        "Shadow Temple", "Spirit Temple", "Gerudo Fortress", "Training Ground"
-    };
-    static final String[] STONE_NAMES = {"Kokiri Emerald", "Goron Ruby", "Zora Sapphire"};
-    static final String[] MEDALLION_NAMES = {"Light", "Forest", "Fire", "Water", "Shadow", "Spirit"};
+    private static String[] of(String... s) { return s; }
+
+    static String[] ammoLabels() {   // the labels in the app's language (Words: English in the JVM tests)
+        return of(
+            Words.s("oot_ammo_sticks", "Sticks"),
+            Words.s("oot_ammo_nuts", "Nuts"),
+            Words.s("oot_ammo_seeds", "Seeds"),
+            Words.s("oot_ammo_arrows", "Arrows"),
+            Words.s("oot_ammo_bombs", "Bombs"),
+            Words.s("oot_ammo_chus", "Chus")
+        );
+    }
+    static String[] dungeonNames() {   // the labels in the app's language (Words: English in the JVM tests)
+        return of(
+            Words.s("oot_dungeon_well", "Bottom of Well"),
+            Words.s("oot_dungeon_forest", "Forest Temple"),
+            Words.s("oot_dungeon_fire", "Fire Temple"),
+            Words.s("oot_dungeon_water", "Water Temple"),
+            Words.s("oot_dungeon_shadow", "Shadow Temple"),
+            Words.s("oot_dungeon_spirit", "Spirit Temple"),
+            Words.s("oot_dungeon_gerudo_fortress", "Gerudo Fortress"),
+            Words.s("oot_dungeon_training_ground", "Training Ground")
+        );
+    }
+    static String[] stoneNames() {   // the labels in the app's language (Words: English in the JVM tests)
+        return of(
+            Words.s("oot_stone_kokiri", "Kokiri Emerald"),
+            Words.s("oot_stone_goron", "Goron Ruby"),
+            Words.s("oot_stone_zora", "Zora Sapphire")
+        );
+    }
+    static String[] medallionNames() {   // the labels in the app's language (Words: English in the JVM tests)
+        return of(
+            Words.s("oot_medallion_light", "Light"),
+            Words.s("oot_medallion_forest", "Forest"),
+            Words.s("oot_medallion_fire", "Fire"),
+            Words.s("oot_medallion_water", "Water"),
+            Words.s("oot_medallion_shadow", "Shadow"),
+            Words.s("oot_medallion_spirit", "Spirit")
+        );
+    }
     static final int[] MEDALLION_COLORS = {
         0xFFEAB308, 0xFF22C55E, 0xFFEF4444, 0xFF38BDF8, 0xFFA855F7, 0xFFF97316
     };
-    static final String[] BOTTLE_NAMES = {
-        "---", "Empty", "Red Pot.", "Grn Pot.", "Blu Pot.",
-        "Fairy", "Milk", "Blu Fire", "Fish", "Bugs",
-        "Poe", "Big Poe", "Letter"
-    };
+    static String[] bottleNames() {   // the labels in the app's language (Words: English in the JVM tests)
+        return of(
+            "---",
+            Words.s("oot_bottle_empty", "Empty"),
+            Words.s("oot_bottle_red_potion", "Red Pot."),
+            Words.s("oot_bottle_green_potion", "Grn Pot."),
+            Words.s("oot_bottle_blue_potion", "Blu Pot."),
+            Words.s("oot_bottle_fairy", "Fairy"),
+            Words.s("oot_bottle_milk", "Milk"),
+            Words.s("oot_bottle_blue_fire", "Blu Fire"),
+            Words.s("oot_bottle_fish", "Fish"),
+            Words.s("oot_bottle_bugs", "Bugs"),
+            Words.s("oot_bottle_poe", "Poe"),
+            Words.s("oot_bottle_big_poe", "Big Poe"),
+            Words.s("oot_bottle_letter", "Letter")
+        );
+    }
     static final int[] BOTTLE_COLORS = {
         0xFF3A4A44, 0xFF94A3B8, 0xFFEF4444, 0xFF22C55E, 0xFF3B82F6,
         0xFFF472B6, 0xFFF8FAFC, 0xFF38BDF8, 0xFF60A5FA, 0xFFA3E635,
@@ -49,11 +95,22 @@ final class OotCompanionModel {
 
     static final int NOTE_D4 = 0, NOTE_F4 = 1, NOTE_A4 = 2, NOTE_B4 = 3, NOTE_D5 = 4;
     static final String[] NOTE_PITCH_NAMES = {"D4", "F4", "A4", "B4", "D5"};
-    static final String[] SONG_NAMES = {
-        "Zelda's Lullaby", "Epona's Song", "Saria's Song", "Sun's Song",
-        "Song of Time", "Song of Storms", "Minuet of Forest", "Bolero of Fire",
-        "Serenade of Water", "Nocturne of Shadow", "Requiem of Spirit", "Prelude of Light"
-    };
+    static String[] songNames() {   // the labels in the app's language (Words: English in the JVM tests)
+        return of(
+            Words.s("oot_song_zelda", "Zelda's Lullaby"),
+            Words.s("oot_song_epona", "Epona's Song"),
+            Words.s("oot_song_saria", "Saria's Song"),
+            Words.s("oot_song_sun", "Sun's Song"),
+            Words.s("oot_song_time", "Song of Time"),
+            Words.s("oot_song_storms", "Song of Storms"),
+            Words.s("oot_song_minuet", "Minuet of Forest"),
+            Words.s("oot_song_bolero", "Bolero of Fire"),
+            Words.s("oot_song_serenade", "Serenade of Water"),
+            Words.s("oot_song_nocturne", "Nocturne of Shadow"),
+            Words.s("oot_song_requiem", "Requiem of Spirit"),
+            Words.s("oot_song_prelude", "Prelude of Light")
+        );
+    }
     static final int[][] SONG_NOTES = {
         {NOTE_B4, NOTE_D5, NOTE_A4, NOTE_B4, NOTE_D5, NOTE_A4},
         {NOTE_D5, NOTE_B4, NOTE_A4, NOTE_D5, NOTE_B4, NOTE_A4},
@@ -266,7 +323,8 @@ final class OotCompanionModel {
     }
 
     static String bottleLabel(int kind) {
-        return (kind >= 0 && kind < BOTTLE_NAMES.length) ? BOTTLE_NAMES[kind] : "---";
+        String[] names = bottleNames();
+        return (kind >= 0 && kind < names.length) ? names[kind] : "---";
     }
 
     static String cleanItemName(String raw, String fallback) {

@@ -227,9 +227,9 @@ final class OotCompanionView extends View {
     private void drawRadarControls(Canvas c, float x, float y, float w, float dp) {
         String[] labels = {
             ((int) model.radiusMeters()) + "m",
-            model.isHeadingUp() ? "H-Up" : "N-Up",
-            "+ Pin",
-            "Clear"
+            model.isHeadingUp() ? Tx.s(R.string.oot_radar_heading_up) : Tx.s(R.string.oot_radar_north_up),
+            Tx.s(R.string.oot_radar_pin_add),
+            Tx.s(R.string.oot_radar_pin_clear)
         };
         int[] acts = {ACT_ZOOM, ACT_HEADING, ACT_PIN_ADD, ACT_PIN_CLEAR};
         int[] cols = {BG_CARD, BG_CARD, EMERALD_DIM, BG_CARD};
@@ -270,12 +270,12 @@ final class OotCompanionView extends View {
 
     private void drawGearTab(Canvas c, float x, float y, float w, float h, float dp) {
         float rowH = 38f * dp;
-        String[] gLabels = {"Sword", "Shield", "Tunic", "Boots"};
+        String[] gLabels = {Tx.s(R.string.oot_gear_sword), Tx.s(R.string.oot_gear_shield), Tx.s(R.string.oot_gear_tunic), Tx.s(R.string.oot_gear_boots)};
         String[] gVals = {
             OotCompanionModel.cleanItemName(model.equipWeapon, "---"),
             OotCompanionModel.cleanItemName(model.equipShield, "---"),
-            OotCompanionModel.cleanItemName(model.equipArmor, "Kokiri"),
-            OotCompanionModel.cleanItemName(model.equipBoot, "Kokiri")
+            OotCompanionModel.cleanItemName(model.equipArmor, Tx.s(R.string.oot_gear_kokiri)),
+            OotCompanionModel.cleanItemName(model.equipBoot, Tx.s(R.string.oot_gear_kokiri))
         };
         float gw = (w - 3f * 6f * dp) / 4f;
         for (int i = 0; i < 4; i++) {
@@ -294,21 +294,23 @@ final class OotCompanionView extends View {
         float supY = botY + rowH + 12f * dp;
         float sw = (w - 2f * 8f * dp) / 3f;
         float sh = Math.min(34f * dp, Math.max(24f * dp, (y + h - supY - 24f * dp) / 2f));
+        String[] ammoLabels = OotCompanionModel.ammoLabels();
         for (int i = 0; i < 6; i++) {
             float lx = x + (i % 3) * (sw + 8f * dp);
             float ly = supY + (i / 3) * (sh + 6f * dp);
             int cur = model.ammo[i], cap = Math.max(cur, model.ammoCap[i]);
-            drawGauge(c, lx, ly, sw, sh, OotCompanionModel.AMMO_LABELS[i], cur, cap, dp);
+            drawGauge(c, lx, ly, sw, sh, ammoLabels[i], cur, cap, dp);
         }
     }
 
     private void drawAltarTab(Canvas c, float x, float y, float w, float h, float dp) {
         float sw = (w - 2f * 6f * dp) / 3f;
         float sh = 34f * dp;
+        String[] stones = OotCompanionModel.stoneNames(), medallions = OotCompanionModel.medallionNames(), dungeons = OotCompanionModel.dungeonNames();
         for (int i = 0; i < 3; i++) {
             boolean own = model.hasStone(i);
             float l = x + i * (sw + 6f * dp);
-            drawPill(c, l, y, l + sw, y + sh, OotCompanionModel.STONE_NAMES[i],
+            drawPill(c, l, y, l + sw, y + sh, stones[i],
                     own ? EMERALD_DIM : BG_CARD, own ? TXT_HI : TXT_DIM, dp);
         }
         float my = y + sh + 8f * dp;
@@ -319,7 +321,7 @@ final class OotCompanionView extends View {
             float t = my + (i / 3) * (30f * dp);
             int bg = own ? ((OotCompanionModel.MEDALLION_COLORS[i] & 0x00FFFFFF) | 0x44000000) : BG_CARD;
             int fg = own ? OotCompanionModel.MEDALLION_COLORS[i] : TXT_DIM;
-            drawPill(c, l, t, l + mw, t + 25f * dp, OotCompanionModel.MEDALLION_NAMES[i], bg, fg, dp);
+            drawPill(c, l, t, l + mw, t + 25f * dp, medallions[i], bg, fg, dp);
         }
         float ky = my + 66f * dp;
         float kw = (w - 6f * dp) / 2f;
@@ -328,7 +330,7 @@ final class OotCompanionView extends View {
             float t = ky + (i / 2) * 20f * dp;
             textP.setColor(model.dungeonIdx == i ? BRASS : TXT_DIM);
             textP.setTextSize(11f * dp);
-            c.drawText(OotCompanionModel.DUNGEON_NAMES[i] + ": " + model.smallKeys[i], l + 4f * dp, t + 14f * dp, textP);
+            c.drawText(dungeons[i] + ": " + model.smallKeys[i], l + 4f * dp, t + 14f * dp, textP);
         }
         int nextTier = OotCompanionModel.nextSkulltulaMilestone(model.tokens);
         drawGauge(c, x, y + h - 24f * dp, w, 24f * dp, "Gold Skulltulas", model.tokens, nextTier, dp);
@@ -377,7 +379,7 @@ final class OotCompanionView extends View {
         }
         textP.setColor(owned ? TXT_HI : TXT_DIM);
         textP.setTextSize(10f * dp);
-        c.drawText(OotCompanionModel.SONG_NAMES[idx], x + 6f * dp, y + 13f * dp, textP);
+        c.drawText(OotCompanionModel.songNames()[idx], x + 6f * dp, y + 13f * dp, textP);
         int[] notes = OotCompanionModel.SONG_NOTES[idx];
         float staffY = y + h * 0.56f;
         float stepX = Math.min(16f * dp, (w - 14f * dp) / Math.max(1, notes.length));
