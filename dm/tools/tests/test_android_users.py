@@ -51,9 +51,11 @@ class UsersSaves(unittest.TestCase):
 class UsersScreen(unittest.TestCase):
     def test_profile_pictures(self):   # the picker offers as many round pictures as Users counts, each an emoji on a colour
         ui = (SRC.parent / 'UsersUi.java').read_text(encoding='utf-8')
-        n = int(re.search(r'AVATARS = (\d+)', SRC.read_text(encoding='utf-8')).group(1))
-        emoji = re.search(r'EMOJI = \{(.*?)\};', ui, re.S).group(1).count('"') // 2
-        color = re.search(r'COLOR = \{(.*?)\};', ui, re.S).group(1).count('0xFF')
+        mn, me, mc = re.search(r'AVATARS = (\d+)', SRC.read_text(encoding='utf-8')), re.search(r'EMOJI = \{(.*?)\};', ui, re.S), re.search(r'COLOR = \{(.*?)\};', ui, re.S)
+        assert mn is not None and me is not None and mc is not None, 'Users.AVATARS, UsersUi.EMOJI and UsersUi.COLOR'
+        n = int(mn.group(1))
+        emoji = me.group(1).count('"') // 2
+        color = mc.group(1).count('0xFF')
         self.assertEqual((emoji, color), (n, n))
 
 

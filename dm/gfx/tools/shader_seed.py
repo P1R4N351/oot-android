@@ -38,7 +38,7 @@ def read_first(path, limit=None):
     """[(key, stage)] of a starter list, in order, each key once"""
     out, seen = [], set()
     try: lines = Path(path).read_text(encoding='utf-8').splitlines()
-    except OSError as e: raise Bad(f'--first {path}: {e}')
+    except OSError as e: raise Bad(f'--first {path}: {e}') from e
     for ln in lines:
         c = ln.split('\t')
         if not ln.strip() or ln.startswith('#'): continue
@@ -105,7 +105,7 @@ def scan_files(files, zdicts, want, romfs_l, main_l, jobs):
 
 def record(key, entry):
     """(control, code) as the host writes a request, or why the record is no request of that key: None when it is not the key's"""
-    st, ctl, code = entry[1], bytes(entry[2]), bytes(entry[3])
+    ctl, code = bytes(entry[2]), bytes(entry[3])
     cut = ctl[:CTL_LEN]
     if S.skey(cut, code) != key: return None
     if not S.glslc_stage(cut, code): return None
@@ -191,7 +191,7 @@ def seed(game, root, first, rom, main=None, limit=None, dry=False, jobs=2, out=p
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
     ap.add_argument('--game', required=True); ap.add_argument('--root', required=True); ap.add_argument('--first', required=True)
     ap.add_argument('--romfs', required=True); ap.add_argument('--main')
     ap.add_argument('--limit', type=int); ap.add_argument('--dry-run', action='store_true')
@@ -203,7 +203,7 @@ def main(argv=None):
         if a.jobs < 1: raise Bad('--jobs must be at least 1')
         if not Path(a.first).is_file(): raise Bad(f'--first {a.first}: no such file')
         try: game = L.G.load(a.game)
-        except (SystemExit, Exception) as e: raise Bad(f'--game {a.game}: {e}')
+        except (SystemExit, Exception) as e: raise Bad(f'--game {a.game}: {e}') from e
         if not os.path.isfile(game.table('shader_map.tsv')): raise Bad(f'the profile of {a.game} has no shader_map.tsv')
         read_first(a.first, a.limit)
     except Bad as e:

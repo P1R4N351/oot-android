@@ -3,7 +3,7 @@
 # apply() puts the environment's programs first on PATH and points DOTNET_ROOT at its .NET runtime, so the packer's subprocesses (the rewriter, shader_split.py,
 # vk_android_build.py with the translator and spirv-val) find them without the environment being activated; pack_gui.py calls it at start.
 # Usage: <env python> scripts/bananative_env.py [--quiet]   check the tools of the environment this Python belongs to; exit 1 when one is missing or does not run
-import os, shutil, subprocess, sys
+import os, shutil, sys
 from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 WINDOWS = os.name == 'nt'
@@ -44,7 +44,7 @@ def check():
     except ImportError: out.append(('zbic', False, 'missing (python -m pip install zbic==1.0.1.post1)'))
     try:
         try: from compression import zstd  # noqa: F401
-        except ImportError: from backports import zstd  # noqa: F401
+        except ImportError: from backports import zstd  # noqa: F401  # pyright: ignore[reportMissingImports]  (Python before 3.14)
         out.append(('zstd', True, ''))
     except ImportError: out.append(('zstd', False, 'needs Python 3.14 or backports.zstd'))
     try:

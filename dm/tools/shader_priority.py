@@ -181,7 +181,7 @@ def write(game, order, top, out):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
     ap.add_argument('game')
     ap.add_argument('--top', type=int, default=20000)
     ap.add_argument('--no-sibling', action='store_true')

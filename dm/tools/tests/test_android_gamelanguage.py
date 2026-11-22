@@ -48,8 +48,10 @@ class GameLanguage(unittest.TestCase):
 
     def test_codes_are_the_hosts(self):   # the picker offers only codes the host's settings table has (hle_sdk16.c k_lang_code, zh-CN / zh-TW as zh-Hans / zh-Hant)
         src = SRC.read_text(encoding='utf-8')
-        codes = re.findall(r'"([^"]+)"', re.search(r'CODES = \{([^}]*)\}', src).group(1))
-        table = re.findall(r'"([^"]+)"', re.search(r'k_lang_code\[\] = \{([^}]*)\}', (REPO / 'dm/host/hle_sdk16.c').read_text(encoding='utf-8')).group(1))
+        mc, mt = re.search(r'CODES = \{([^}]*)\}', src), re.search(r'k_lang_code\[\] = \{([^}]*)\}', (REPO / 'dm/host/hle_sdk16.c').read_text(encoding='utf-8'))
+        assert mc is not None and mt is not None, 'GameLanguage.CODES and hle_sdk16.c k_lang_code'
+        codes = re.findall(r'"([^"]+)"', mc.group(1))
+        table = re.findall(r'"([^"]+)"', mt.group(1))
         self.assertEqual(sorted(set(codes) - set(table)), [])
         self.assertEqual(len(codes), 18)
 

@@ -71,7 +71,7 @@ class OotLauncherArtTests(unittest.TestCase):
             self.assertNotIn(banned, btext, 'ic_banner.xml')
         mroot = ET.fromstring(MANIFEST.read_text(encoding='utf-8'))
         app = mroot.find('application')
-        self.assertIsNotNone(app)
+        self.assertIsNotNone(app); assert app is not None
         self.assertEqual(app.attrib.get(ANDROID_NS + 'banner'), '@drawable/ic_banner')
         pkgs = [
             p.attrib.get(ANDROID_NS + 'name')

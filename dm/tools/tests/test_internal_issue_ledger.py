@@ -10,7 +10,9 @@ KEYS = ('Reporter', 'Seen', 'State', 'Cause', 'Evidence', 'Replied', 'Fix', 'Nex
 
 
 def load():
-    spec = importlib.util.spec_from_file_location('issue_ledger', TOOL); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+    spec = importlib.util.spec_from_file_location('issue_ledger', TOOL)
+    assert spec is not None and spec.loader is not None
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
 @unittest.skipUnless(TOOL.exists(), 'no internal/ folder (public repository)')

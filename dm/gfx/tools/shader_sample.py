@@ -571,7 +571,7 @@ def rom_sources(game, keys):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
     ap.add_argument('--game', required=True); ap.add_argument('--pack', required=True); ap.add_argument('--old', required=True)
     ap.add_argument('--same-abis', default=''); ap.add_argument('--abi', required=True); ap.add_argument('--inputs', required=True); ap.add_argument('--work', required=True)
     ap.add_argument('--romfs', required=True); ap.add_argument('--main')

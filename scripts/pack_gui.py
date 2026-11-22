@@ -4,7 +4,7 @@
 # the arguments the window shows, so the command line and the window make the same pack.
 # Start it with scripts/bananative.command (macOS) or scripts/bananative.bat (Windows), which find or make the environment it needs (android/environment.yml).
 # Usage: <env python> scripts/pack_gui.py [<game folder | .nup file>]   (exit 1 when Tk is missing)
-import os, queue, re, signal, subprocess, sys, threading, time
+import os, queue, re, signal, subprocess, sys, threading, time, typing
 from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'scripts')); sys.path.insert(0, str(REPO / 'dm/games')); sys.path.insert(0, str(REPO / 'dm/gfx/tools'))
@@ -121,6 +121,7 @@ class App:
         cmd = [sys.executable, '-u', str(PACKER), self.game.get(), '-J', str(self.J.get())]
         if self.has_zstd: cmd += ['--shader-python', sys.executable]   # else the packer looks for python3.14 / python3 with zstd on PATH
         if self.version.get() != 'newest': cmd += ['--version', '0' if self.version.get() == 'base' else self.version.get()]
+        assert self.info is not None, 'Start is enabled only once the game is read (update_go)'
         if self.out.get().strip() and Path(self.out.get()) != self.info[4]: cmd += ['--out', self.out.get().strip()]
         if self.no_shaders.get(): cmd.append('--no-shaders')
         return cmd
@@ -130,7 +131,8 @@ class App:
         cmd = self.command()
         self.clear(); self.say('$ ' + ' '.join(cmd), 'me'); self.no_job = False
         # stop() ends the packer with its subprocesses: on macOS they share its session; on Windows the packer puts them in a kill-on-close job (pack_android.py)
-        group = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW} if WINDOWS else {'start_new_session': True}
+        group: dict[str, typing.Any] = {'start_new_session': True}
+        if sys.platform == 'win32': group = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}   # WINDOWS
         self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1, cwd=str(REPO),
                                      env=dict(os.environ, PYTHONUNBUFFERED='1', PYTHONUTF8='1'), **group)
         self.t0 = time.monotonic(); self.set_stage('Starting'); self.bar.configure(mode='indeterminate'); self.bar.start(15)
@@ -157,9 +159,10 @@ class App:
         self.root.destroy()
 
     def show_pack(self):
+        assert self.info is not None, 'Show is enabled only after a pack'
         out = Path(self.out.get().strip() or self.info[4])
         d = out if out.is_dir() else out.parent
-        if WINDOWS: os.startfile(d)
+        if sys.platform == 'win32': os.startfile(d)   # WINDOWS
         else: subprocess.run(['open', str(d)])
 
     # the log and the progress bar

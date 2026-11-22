@@ -147,7 +147,7 @@ def scan(path):
         end = balanced(src, start)
         body = src[start:end]
         # literals inside a nested lambda block belong to calls of their own, found separately; here only literals outside braces
-        depth, cur = 0, []
+        depth = 0
         for i, ch in enumerate(body):
             if ch == '{':
                 depth += 1

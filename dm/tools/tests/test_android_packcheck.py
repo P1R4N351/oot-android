@@ -30,6 +30,12 @@ try:
     from compression import zstd as pyzstd
 except ImportError:
     pyzstd = None
+
+
+def Z():
+    """compression.zstd (the tests that need it are skipped without it)"""
+    assert pyzstd is not None, 'no zstd module'
+    return pyzstd
 MIB = 1 << 20
 
 
@@ -115,11 +121,12 @@ class Jvm(unittest.TestCase):
             elif k == 2: data += rnd.randbytes(rnd.randint(1, 400))
             else: data += b'the quick brown fox %d ' % rnd.randint(0, 50) * rnd.randint(1, 40)
         data = bytes(data[:3_000_000])
-        P = pyzstd.CompressionParameter
-        for name, opts in {'l1': {P.compression_level: 1}, 'l3': {P.compression_level: 3}, 'l19': {P.compression_level: 19}, 'l3-wlog10': {P.compression_level: 3, P.window_log: 10},
-                           'l19-wlog10': {P.compression_level: 19, P.window_log: 10}, 'l1-wlog14-nocheck': {P.compression_level: 1, P.window_log: 14, P.checksum_flag: 0}}.items():
-            (f / f'{name}.zst').write_bytes(pyzstd.compress(data, options=opts)); (f / f'{name}.raw').write_bytes(data)
-        (f / 'small.zst').write_bytes(pyzstd.compress(b'tiny single segment frame ' * 5)); (f / 'small.raw').write_bytes(b'tiny single segment frame ' * 5)
+        P = Z().CompressionParameter
+        levels: dict[str, dict[int, int]] = {'l1': {P.compression_level: 1}, 'l3': {P.compression_level: 3}, 'l19': {P.compression_level: 19}, 'l3-wlog10': {P.compression_level: 3, P.window_log: 10},
+                           'l19-wlog10': {P.compression_level: 19, P.window_log: 10}, 'l1-wlog14-nocheck': {P.compression_level: 1, P.window_log: 14, P.checksum_flag: 0}}
+        for name, opts in levels.items():
+            (f / f'{name}.zst').write_bytes(Z().compress(data, options=opts)); (f / f'{name}.raw').write_bytes(data)
+        (f / 'small.zst').write_bytes(Z().compress(b'tiny single segment frame ' * 5)); (f / 'small.raw').write_bytes(b'tiny single segment frame ' * 5)
         self.java('frames', f, xmx='64m')
 
 

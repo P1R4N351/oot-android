@@ -10,6 +10,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import typing
 import unittest
 from unittest import mock
 
@@ -179,11 +180,11 @@ class Read(Fixture):
                 if peek >= io.DEFAULT_BUFFER_SIZE:   # buffered: the reader asks for its whole buffer
                     with romfs.open(p, 'rb') as f: self.assertEqual(f.read(4), BIG[:4])
                 with romfs.open(p, 'rb', buffering=0) as f:
-                    self.assertEqual(f.read(4), BIG[:4]); self.assertLessEqual(len(f.head), 4)
+                    self.assertEqual(f.read(4), BIG[:4]); self.assertLessEqual(len(typing.cast(typing.Any, f).head), 4)   # f: nup's raw zstd reader
                     f.seek(100); self.assertEqual(f.read(8), BIG[100:108])   # past the prefix kept: decoded again further, still not whole
                 self.assertEqual(load.call_count, 0)
                 with romfs.open(p, 'rb', buffering=0) as f:   # read on to the end: the whole file is loaded once and the prefix dropped
-                    self.assertEqual(f.read(4), BIG[:4]); self.assertEqual(f.read(), BIG[4:]); self.assertIsNone(f.head)
+                    self.assertEqual(f.read(4), BIG[:4]); self.assertEqual(f.read(), BIG[4:]); self.assertIsNone(typing.cast(typing.Any, f).head)
                 self.assertEqual(load.call_count, 1)
                 with romfs.open(p, 'rb', buffering=0) as f:   # chunks that run past PEEK: the same bytes as one read
                     got = b''

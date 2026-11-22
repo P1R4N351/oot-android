@@ -90,7 +90,6 @@ class Wiring(unittest.TestCase):
         self.assertTrue((REPO / 'dm/gfx/vk_android/vka_known_transitions.tsv').is_file())
 
     def test_the_chain_is_untouched(self):
-        import hashlib
         r = subprocess.run(['python3', str(REPO / 'dm/gfx/tools/vk_android_build.py'), '--digest'], capture_output=True, text=True)
         self.assertEqual(r.stdout.strip(), '19662e4c4a25')
 
@@ -113,7 +112,9 @@ class Wiring(unittest.TestCase):
             self.assertIn(f"{name} = '{val}'", p)
         q = SRC.read_text(encoding='utf-8')
         self.assertIn('RESUME = "resume.json", STOPPED = "stopped.json", PROGRESS = "progress.json"', q)
-        marker = re.search(r'BUILDING = "([^"]+)"', text('android/app/src/main/java/dev/nxnative/android/LayerPending.java')).group(1)
+        mm = re.search(r'BUILDING = "([^"]+)"', text('android/app/src/main/java/dev/nxnative/android/LayerPending.java'))
+        assert mm is not None, 'LayerPending.BUILDING'
+        marker = mm.group(1)
         self.assertIn(f'MARKER = "{marker}"', q)
 
 

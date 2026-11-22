@@ -65,14 +65,16 @@ class Nsp:
         need(0 <= off and 0 <= n and off + n <= self.size, f'{self.path.name}: a read outside the file')
         out = []
         while n > 0:
-            b = os.pread(self.fd, min(n, 1 << 30), off) if hasattr(os, 'pread') else self._seek_read(off, min(n, 1 << 30))
+            fd = self.fd; assert fd is not None, f'{self.path.name}: read after close'
+            b = os.pread(fd, min(n, 1 << 30), off) if hasattr(os, 'pread') else self._seek_read(off, min(n, 1 << 30))
             need(b, f'{self.path.name}: the file is shorter than its headers say')
             out.append(b); off += len(b); n -= len(b)
         return b''.join(out)
 
     def _seek_read(self, off, n):   # no os.pread (Windows): one reader at a time
-        os.lseek(self.fd, off, os.SEEK_SET)
-        return os.read(self.fd, n)
+        fd = self.fd; assert fd is not None, f'{self.path.name}: read after close'
+        os.lseek(fd, off, os.SEEK_SET)
+        return os.read(fd, n)
 
     def copy_to(self, off, n, out):
         for at in range(off, off + n, CHUNK): out.write(self.read(at, min(CHUNK, off + n - at)))
@@ -177,7 +179,8 @@ class Nsp:
         for mname in sorted(metas):
             claimed.add(mname)
             if verify: need(digest(mname)[:16].hex() == mname[:32], f'{mname}: its content does not match its name')
-            ctype, tid, secs = self._nca(*self.entries[mname], mname)
+            moff, msz = self.entries[mname]
+            ctype, tid, secs = self._nca(moff, msz, mname)
             need(ctype == 1 and secs and secs[0][0] == 1, f'{mname}: not a metadata NCA')
             cn = self._pfs(secs[0][1], secs[0][2], mname)
             need(len(cn) == 1 and next(iter(cn)).endswith('.cnmt'), f'{mname}: expected one .cnmt')
@@ -199,13 +202,14 @@ class Nsp:
                 claimed.add(nname)
                 if verify:
                     need(digest(nname) == chash and digest(nname)[:16] == cid, f'{nname}: its content does not match its name and record')
-                nctype, ntid, nsecs = self._nca(*self.entries[nname], nname)
+                noff, nsz = self.entries[nname]
+                nctype, ntid, nsecs = self._nca(noff, nsz, nname)
                 need(ntid == tid, f'{nname}: program ID {ntid:016X}, the record\'s is {tid:016X}')
                 def add(prefix, tree):
                     for p, v in tree.items():
                         key = f'{prefix}/{p}'
-                        need(key not in files, f'{key} twice')
-                        files[key] = v
+                        need(key not in files, f'{key} twice')  # noqa: B023  (add runs within this record only)
+                        files[key] = v  # noqa: B023  (add runs within this record only)
                 if rec.type == APPLICATION and ctyp == 1:   # Program: ExeFS (PFS0) and RomFS
                     need(nctype == 0, f'{nname}: record says Program, the NCA says type {nctype}')
                     pfs = [s for s in nsecs if s[0] == 1]; rom = [s for s in nsecs if s[0] == 0]

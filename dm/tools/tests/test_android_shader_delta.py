@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import typing
 import unittest
 from pathlib import Path
 
@@ -25,6 +26,12 @@ try: from compression import zstd
 except ImportError:
     try: from backports import zstd   # pyright: ignore[reportMissingImports]
     except ImportError: zstd = None
+
+
+def Z():
+    """The zstd module (the tests that need one are skipped without it)"""
+    assert zstd is not None, 'no zstd module'
+    return zstd
 
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android/ShaderLibs.java'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/ShaderLibsJvmTest.java'
@@ -43,7 +50,7 @@ def entry(key, stage=4, nmods=1, nb=1, c1=b'', m0=0, b0=0, c1_off=0):
 def bind(n): return struct.pack('<BBHBBHhHBBhHHI', 1, 6, 4 * 64 + n, 0, 0, 1, n, 0, 0, 0, -1, 0xFFFF, 0, 0)
 
 
-def borrowed(*names):
+def borrowed(*names) -> list[typing.Any]:   # the functions, untyped (exec'd from their sources)
     """Functions of dmsh_build.py by name (vk_android_build.py takes them the same way: borrow)"""
     src = (REPO / 'dm/gfx/tools/dmsh_build.py').read_text()
     ns = {'os': os, 'collections': collections}
@@ -70,7 +77,7 @@ def write_lib(path, version, game=GAME, abi='', shaders=(), codec=1, inputs='5dd
     for key, ms, c1 in sorted(shaders):
         c1o = put(c1) if c1 else 0; m0, b0 = nm, nb
         for v, s in enumerate(ms):
-            st = zstd.compress(s) if codec == 1 else s
+            st = Z().compress(s) if codec == 1 else s
             mods += delta.MOD.pack(put(st), len(s), len(st), v, codec, 0); nm += 1
         binds += bind(0); nb += 1
         entries += entry(key, nmods=len(ms), c1=c1, m0=m0, b0=b0, c1_off=c1o)
@@ -109,8 +116,8 @@ class EntryHash(unittest.TestCase):
         L = delta.Library(str(self.tmp / 'A.lib')); good = L.hash_of(0, zstd)[1]
         off, size, stored, *_ = delta.MOD.unpack_from(L.m, L.mo); L.close()
         outcomes = set()
+        d = bytearray((self.tmp / 'A.lib').read_bytes())
         for at in range(stored):
-            d = bytearray((self.tmp / 'A.lib').read_bytes()) if at == 0 else d
             d0 = bytes(d); d[L.blob_off + off + at] ^= 0x5a; (self.tmp / 'B.lib').write_bytes(bytes(d)); d = bytearray(d0)
             L2 = delta.Library(str(self.tmp / 'B.lib'))
             try: outcomes.add('other hash' if L2.hash_of(0, zstd)[1] != good else 'SAME')
@@ -230,9 +237,11 @@ class KeyList(unittest.TestCase):
         cand = delta.reuse_candidates(self.man, keys, set())
         self.assertEqual(cand, [self.A, self.B], 'C did not build on the Mac: translated, never taken')
         got = {k: delta.find_entry(self.man, k, [old], zstd)[0] for k in cand}
-        self.assertEqual(got[self.A].version, '111111111111')
+        ga = got[self.A]; assert ga is not None
+        self.assertEqual(ga.version, '111111111111')
         self.assertIsNone(got[self.B], 'B changed in this version: translated')
         L, ent, errs = delta.find_entry(self.man, self.A, [old], zstd)
+        assert ent is not None, errs
         self.assertEqual((ent[0], errs), (self.A, []))
         self.assertEqual(delta.reuse_candidates(self.man, keys, {self.A}), [self.B], 'a key with a result already (an earlier run) is not taken again')
         old.close()
@@ -242,14 +251,17 @@ class KeyList(unittest.TestCase):
         new_old = self.lib('v2.lib', '111111111112', [(self.A, [spirv(9, 9)], b''), (self.B, self.mod[self.B], b'')])
         old_old = self.lib('v1.lib', '111111111111', [(self.A, self.mod[self.A], b''), (self.B, self.mod[self.B], b'')])
         libs = [new_old, old_old]
-        self.assertEqual(delta.find_entry(self.man, self.A, libs, zstd)[0].version, '111111111111', 'A changed in the newer one: the older one\'s is as the manifest has it')
-        self.assertEqual(delta.find_entry(self.man, self.B, libs, zstd)[0].version, '111111111112', 'newest first')
+        la, lb = delta.find_entry(self.man, self.A, libs, zstd)[0], delta.find_entry(self.man, self.B, libs, zstd)[0]
+        assert la is not None and lb is not None
+        self.assertEqual(la.version, '111111111111', 'A changed in the newer one: the older one\'s is as the manifest has it')
+        self.assertEqual(lb.version, '111111111112', 'newest first')
         for L in libs: L.close()
         d = bytearray((self.tmp / 'v2.lib').read_bytes()); L = delta.Library(str(self.tmp / 'v2.lib'))
         _, _, _, _, mods = L.entry(L.index[self.B]); off = delta.MOD.unpack_from(L.m, L.mo + delta.MOD.size * 1)[0]; L.close()
         d[L.blob_off + off:L.blob_off + off + 8] = b'\xff' * 8; (self.tmp / 'v2.lib').write_bytes(bytes(d))
         libs = [delta.Library(str(self.tmp / 'v2.lib')), delta.Library(str(self.tmp / 'v1.lib'))]
         L, _, errs = delta.find_entry(self.man, self.B, libs, zstd)
+        assert L is not None, errs
         self.assertEqual(L.version, '111111111111', 'the damaged newest entry passed over')
         for L in libs: L.close()
 
@@ -316,7 +328,10 @@ class Abi(unittest.TestCase):
         """dm/gfx/vk_android/vka_abi_compat.h: the older ABIs the replay and the launcher also play were checked against this tree's ABI (VKA_ABI_COMPAT_FOR), none of
         them is this ABI, and the file is not one the digest reads (a row moves no version)"""
         h = (REPO / 'dm/gfx/vk_android/vka_abi_compat.h').read_text()
-        define = lambda n: re.search(rf'#define\s+{n}\s+"([^"]*)"', h).group(1)
+        def define(n):
+            m = re.search(rf'#define\s+{n}\s+"([^"]*)"', h)
+            assert m is not None, f'vka_abi_compat.h defines no {n}'
+            return m.group(1)
         self.assertEqual(define('VKA_ABI_COMPAT_FOR'), delta.abi_digest(),
                          'DMSH_VK_ABI moved: check vka_abi_compat.h\'s rows against the ABI headers\' diff, then raise VKA_ABI_COMPAT_FOR (docs/reference/shaders.md)')
         rows = re.findall(r'\{"([0-9a-f]{12})",', h)
@@ -566,12 +581,12 @@ class Launcher(unittest.TestCase):
                                           'vs_0.bin\t0\tvs\t00000000000000bb\tx\nps_0.bin\t0\tps\t00000000000000aa\tx\n')
         self.assertIsNone(pack_android.selected_keys(d), 'no shader_seen.tsv: the whole map')
         (d / 'shader_seen.tsv').write_text('key\tstage\n00000000000000bb\tvertex\n00000000000000dd\tpixel\n')
-        self.assertEqual(','.join(pack_android.selected_keys(d)), self.java('selection', d))
+        self.assertEqual(','.join(pack_android.selected_keys(d) or ['(no selected set)']), self.java('selection', d))
         seen = sorted(p.parent for p in (REPO / 'dm/games').glob('*/shader_seen.tsv') if (p.parent / 'shader_map.tsv').is_file())
         self.assertTrue(seen, 'Pokopia (0400A3A01EE4C000) has a selected set')
         for p in seen:
             with self.subTest(profile=p.name):
-                self.assertEqual(','.join(pack_android.selected_keys(p)), self.java('selection', p))
+                self.assertEqual(','.join(pack_android.selected_keys(p) or ['(no selected set)']), self.java('selection', p))
 
     def test_windows_wrapper_reads_a_keys_file(self):
         """vk_android_win.py "@<file>": the keys of the file, one a line (pack_android.py passes a selected set so on Windows); other arguments as they are"""
@@ -639,8 +654,10 @@ class Launcher(unittest.TestCase):
         self.assertTrue(int(lo2) < int(lo) and int(hi2) < int(hi) and int(lo2) >= 5)
         self.assertRegex(text, r'^about \d+-\d+ minutes$')
         # A whole Prepare: the rewrite and the shaders step, by the game's shader count (DKB 22,852 within the 30-45 minutes measured and estimated, MKW 11,604 less)
-        dkb = [int(x) for x in re.fullmatch(r'about (\d+)-(\d+) minutes', self.java('job', 22852)).groups()]
-        mkw = [int(x) for x in re.fullmatch(r'about (\d+)-(\d+) minutes', self.java('job', 11604)).groups()]
+        dm, mm = re.fullmatch(r'about (\d+)-(\d+) minutes', self.java('job', 22852)), re.fullmatch(r'about (\d+)-(\d+) minutes', self.java('job', 11604))
+        assert dm is not None and mm is not None, 'the Java estimates are "about N-M minutes"'
+        dkb = [int(x) for x in dm.groups()]
+        mkw = [int(x) for x in mm.groups()]
         self.assertTrue(dkb[0] >= int(lo) and 40 <= dkb[1] <= 50 and mkw[0] < dkb[0] and mkw[1] < dkb[1], (dkb, mkw))
 
 
@@ -659,7 +676,9 @@ class RequireAll(unittest.TestCase):
         """Mario Kart World's compute 078997bf631992c5 does not build (Ampere 0x481). A manifest of an older version excuses nothing (load_manifest: not of this version), so
         the phone's step stopped at 96 % with "1 of 11603 shaders did not build" once the chain moved (0.3.25, Forgejo #339). A game whose manifest has a "-" row needs one
         of the current chain; it may hold nothing but those rows (the entries a phone can reuse need a full Mac build)"""
-        chain = re.search(r'DMSH_VK_CHAIN "([0-9a-f]{12})"', (REPO / 'dm/gfx/nvn/dmsh_chain_vk.h').read_text()).group(1)
+        cm = re.search(r'DMSH_VK_CHAIN "([0-9a-f]{12})"', (REPO / 'dm/gfx/nvn/dmsh_chain_vk.h').read_text())
+        assert cm is not None, 'dmsh_chain_vk.h defines DMSH_VK_CHAIN'
+        chain = cm.group(1)
         for f in sorted((REPO / 'dm/games').glob('*/vk_delta.tsv')):
             m = delta.parse_manifest(f.read_text())
             if '-' in m['hashes'].values():

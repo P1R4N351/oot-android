@@ -2,6 +2,7 @@
 image's handle from c[3]): the binding name the translator gives them decodes to the uniform slot and byte offset (vk_android_build.py ubo_img), and only those names do.
 The function is taken from the tool's source by name, as the delta tests take theirs; the tool itself sets up a game at import."""
 import ast
+import typing
 from pathlib import Path
 import re
 import unittest
@@ -12,7 +13,7 @@ REPO = Path(__file__).resolve().parents[3]
 def tool_function(name):
     src = (REPO / 'dm/gfx/tools/vk_android_build.py').read_text(encoding='utf-8')
     node = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == name)
-    ns = {'re': re}
+    ns: dict[str, typing.Any] = {'re': re}
     exec(compile(ast.Module([node], []), 'vk_android_build.py', 'exec'), ns)
     return ns[name]
 

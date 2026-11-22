@@ -2,18 +2,21 @@
 scripts/pack_android.py dump_modules takes the modules of the build row a dump matches, and optional_keys reads a profile's shader_optional.tsv, the shader keys only some builds have."""
 import importlib.util
 import tempfile
+import typing
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('pack_android', REPO / 'scripts/pack_android.py')
-pa = importlib.util.module_from_spec(spec); spec.loader.exec_module(pa)
+assert spec is not None and spec.loader is not None
+pa: typing.Any = importlib.util.module_from_spec(spec); spec.loader.exec_module(pa)   # Any: the tests swap its functions
 
 A, B, C, D = ('%032x' % n for n in (1, 2, 3, 4))   # build IDs
 
 
 class Profile:   # what dump_modules asks of a game profile
     dir = Path('.')
+    id: str   # set by the tests that need it
     def __init__(self, modules, builds): self._m, self._b = modules, builds
     def words(self, key): return self._m.split()
     def builds(self): return self._b

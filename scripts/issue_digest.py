@@ -71,7 +71,7 @@ def split_body(text, where, d, logs):
         if not m: out.append(lines[i]); i += 1; continue
         j = i
         while j < len(lines) and (j == i or not LOG_END.match(lines[j])): j += 1
-        block = lines[i:j]
+        block: list[str] = [*lines[i:j]]
         block[0] = LOG_START.sub(lambda mm: f'[{mm.group(2)}] ', block[0], count=1)
         if sum(1 for x in block if LOG_START.match(x)) < 3: out += lines[i:j]; i = j; continue
         if out and re.match(r'^```[\w-]*\s*$', out[-1]): out.pop()

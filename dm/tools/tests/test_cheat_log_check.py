@@ -5,6 +5,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('cheat_log_check', REPO / 'scripts/cheat_log_check.py')
+assert spec is not None and spec.loader is not None
 clc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(clc)
 

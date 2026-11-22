@@ -14,6 +14,13 @@ import issue_digest_comment as C   # noqa: E402
 I = C.I
 
 
+def body(n, data):
+    """C.body for an issue with a log: a comment, never None"""
+    b = C.body(n, data)
+    assert b is not None, 'an issue with a log gets a comment'
+    return b
+
+
 QCOM = {'app_version': '0.3.14 (df5b43b32a98)', 'device': 'Xiaomi 23049PCD8G, Android 17 (SDK 37), arm64-v8a', 'gpu': 'Adreno (TM) 725, Vulkan 1.3.295',
         'driver': 'Qualcomm Technologies Inc. Adreno Vulkan Driver', 'driver_kind': 'system',
         'game': 'The Legend of Zelda: Ocarina of Time 0400486024DEC000 version 131072'}
@@ -21,7 +28,7 @@ TURNIP = {**QCOM, 'driver': 'turnip Mesa driver 26.0.0', 'driver_kind': 'custom 
 PANVK = {**QCOM, 'gpu': 'Mali-G710 MC7, Vulkan 1.3', 'driver': 'Mesa 25.1 PanVK', 'driver_kind': 'custom (DM_VK_DRIVER PanVK_v1.1)'}
 
 
-def log(source, rule='gpu-hang', doc='docs/reference/rendering.md#x', header=None, symptoms=(), poster='alice', link='https://example.test/i/1#c2'):
+def log(source, rule: str | None = 'gpu-hang', doc='docs/reference/rendering.md#x', header=None, symptoms=(), poster='alice', link='https://example.test/i/1#c2'):
     return {'file': '/tmp/x/issue-a.log', 'source': source, 'poster': poster, 'link': link, 'digest': {
         'header': header if header is not None else QCOM, 'stage': {'number': 8, 'name': 'frame loop'}, 'perf': {'fps_game': {'median': 30.1}},
         'symptoms': [{'heading': hd, 'doc': dc} for hd, dc in symptoms],
@@ -36,19 +43,19 @@ class Body(unittest.TestCase):
     def test_settings_changed_near_the_top(self):
         lg = log('attached in issue: A.log'); lg['digest']['adv'] = ['DM_X=1 (Advanced, global)']
         with self.render('== log digest\n'):
-            b = C.body(82, {'logs': [lg]})
+            b = body(82, {'logs': [lg]})
         self.assertIn('**Settings changed from the defaults**\n\n- `DM_X=1 (Advanced, global)`', b)
         self.assertLess(b.index('Settings changed'), b.index('What you can try'))
         lg['digest']['adv'] = []
         with self.render('x'):
-            self.assertIn('**Settings changed from the defaults**\n\n- none', C.body(82, {'logs': [lg]}))
+            self.assertIn('**Settings changed from the defaults**\n\n- none', body(82, {'logs': [lg]}))
 
     def test_no_log_no_comment(self):
         self.assertIsNone(C.body(1, {'logs': []}))
 
     def test_mark_summary_and_link(self):
         with self.render('== log digest\n-- verdict\n'):
-            b = C.body(82, {'logs': [log('attached in issue: A.log')]})
+            b = body(82, {'logs': [log('attached in issue: A.log')]})
         self.assertTrue(b.startswith(I.BOT_MARK))
         self.assertIn('- **alice** · [A.log](https://example.test/i/1#c2) · Banana Native 0.3.14 · Xiaomi 23049PCD8G (Android 17), Adreno 725 · '
                       'Qualcomm system driver · The Legend of Zelda: Ocarina of Time (`0400486024DEC000`)\n'
@@ -60,7 +67,7 @@ class Body(unittest.TestCase):
 
     def test_same_ending_said_once(self):
         with self.render('x\n'):
-            b = C.body(1, {'logs': [log('attached in issue: A.log'), log('attached in c1: B.log')]})
+            b = body(1, {'logs': [log('attached in issue: A.log'), log('attached in c1: B.log')]})
         self.assertIn('Both logs end the same way: **driver lost**.', b)
         self.assertEqual(b.count('- Try another GPU driver.'), 1)
         self.assertEqual(b.count('rendering.md#x)'), 1)
@@ -69,9 +76,9 @@ class Body(unittest.TestCase):
         turnip_doc = 'docs/reference/rendering.md#turnip-hangs-in-the-first-3d-frame-of-a-cold-run'
         sym = [('A geometry shader that emits nothing hangs Qualcomm\'s driver (Android)', 'docs/reference/rendering.md#qc')]
         with self.render('x\n'):
-            qc = C.body(1, {'logs': [log('pasted in issue', doc=turnip_doc, symptoms=sym)]})
-            tu = C.body(1, {'logs': [log('pasted in issue', doc=turnip_doc, symptoms=sym, header=TURNIP)]})
-            pv = C.body(1, {'logs': [log('pasted in issue', doc=turnip_doc, header=PANVK)]})
+            qc = body(1, {'logs': [log('pasted in issue', doc=turnip_doc, symptoms=sym)]})
+            tu = body(1, {'logs': [log('pasted in issue', doc=turnip_doc, symptoms=sym, header=TURNIP)]})
+            pv = body(1, {'logs': [log('pasted in issue', doc=turnip_doc, header=PANVK)]})
         self.assertNotIn('turnip-hangs', qc); self.assertIn('rendering.md#qc)', qc)
         self.assertIn('turnip-hangs', tu); self.assertNotIn('rendering.md#qc)', tu)
         self.assertNotIn('turnip-hangs', pv)
@@ -80,12 +87,12 @@ class Body(unittest.TestCase):
 
     def test_fence_outlasts_backticks(self):
         with self.render('line ```` four\n'):
-            b = C.body(1, {'logs': [log('pasted in issue', rule=None)]})
+            b = body(1, {'logs': [log('pasted in issue', rule=None)]})
         self.assertIn('`````text\n', b); self.assertNotIn('What you can try', b)
 
     def test_cut_to_limit(self):
         with self.render('x' * 50 + '\n' + ('y' * 99 + '\n') * 2000):
-            b = C.body(1, {'logs': [log('attached in issue: A.log'), log('attached in c1: B.log')]})
+            b = body(1, {'logs': [log('attached in issue: A.log'), log('attached in c1: B.log')]})
         self.assertLess(len(b), 65535)
         self.assertEqual(b.count('[… cut to fit the comment]'), 2)
 

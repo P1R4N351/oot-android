@@ -50,8 +50,8 @@ class Seed(unittest.TestCase):
         mp.write_text('# map\npackage\tindex\tstage\tdm_ctl_sha16\tsource\n' + ''.join(f'p.bin\t0\tvertex\t{k}\t{s}\n' for k, s in self.maprows.items()))
 
         class G:
-            def get(_, k, d=None): return d
-            def table(_, n): return str({'shader_map.tsv': mp, 'shader_pairs.tsv': d}[n])
+            def get(self, k, d=None): return d
+            def table(self, n): return str({'shader_map.tsv': mp, 'shader_pairs.tsv': d}[n])
         self.fake = G()
         self.scanned = []
         self.saved = D.list_files, D.scan_files

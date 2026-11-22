@@ -21,6 +21,7 @@ EXTRA = re.compile(r'(?:get\w*Extra|hasExtra)\("([a-z_]+)"')
 
 def listed():
     m = re.search(r'EXTRAS = .*?asList\((.*?)\)\);', SRC.read_text(encoding='utf-8'), re.S)
+    assert m is not None, 'AdbControl.EXTRAS'
     return re.findall(r'"([a-z_]+)"', m.group(1))
 
 

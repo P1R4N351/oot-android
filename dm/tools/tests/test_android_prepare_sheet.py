@@ -12,7 +12,7 @@ MAIN = (J / 'main/java/dev/nxnative/android/MainActivity.java').read_text()
 class PrepareSheet(unittest.TestCase):
     def test_home_never_attaches_the_panel_view(self):
         m = re.search(r'static void attach\(MainActivity a\) \{(.*?)\n    \}', ONDEVICE, re.S)
-        self.assertIsNotNone(m)
+        self.assertIsNotNone(m); assert m is not None
         self.assertNotIn('addView', m.group(1))
         self.assertNotIn('Ondevice.attach(this, content', MAIN)
         self.assertIn('Ondevice.attach(this);', MAIN)

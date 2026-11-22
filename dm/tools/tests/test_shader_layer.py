@@ -179,7 +179,7 @@ class Layer(unittest.TestCase):
         self.assertEqual(set(L.read_built(root, v)), {a, b, c})
 
     def test_chain_version(self):
-        self.assertRegex(L.chain_version(), r'^[0-9a-f]{12}$')
+        self.assertRegex(L.chain_version() or '', r'^[0-9a-f]{12}$')
 
     def test_run_build_runs_the_tool_in_process(self):
         tool = L.HERE / 'vk_android_build.py'

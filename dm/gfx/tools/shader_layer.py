@@ -298,7 +298,7 @@ def peak_mb():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
     ap.add_argument('--game', required=True); ap.add_argument('--root', required=True); ap.add_argument('--work')
     ap.add_argument('--build', action='store_true')
     ap.add_argument('--batch', type=int, help='new shaders this run builds at most (default max(64, half of those already built))')

@@ -192,11 +192,12 @@ def outputs(g):
     choices = {v[0] for v in g.values('graphics_scale') if v}
     out = {}
     for v in g.values('scene_output'):
-        if len(v) < 3 or size(v[1]) is None or v[2] not in ('measured', 'open'):
+        sz = size(v[1]) if len(v) >= 3 else None
+        if sz is None or v[2] not in ('measured', 'open'):
             raise Error(f'{g.id}: scene_output takes <window choice> <WxH> <measured|open>: {v}')
         if choices and v[0] not in choices: raise Error(f'{g.id}: scene_output {v[0]}: not a graphics_scale choice ({", ".join(sorted(choices))})')
         if v[0] in out: raise Error(f'{g.id}: scene_output {v[0]} repeats')
-        out[v[0]] = (*size(v[1]), v[2] == 'measured')
+        out[v[0]] = (*sz, v[2] == 'measured')
     return out
 
 
@@ -219,10 +220,11 @@ def res_presets(g):
     outs = outputs(g) if g.values('scene_output') else {}
     out = []
     for v in g.values('res_preset'):
-        if len(v) < 3 or target(v[2]) is None: raise Error(f'{g.id}: res_preset takes <id> <window choice> <default|floor:H|fixed:H> <label>: {v}')
+        tg = target(v[2]) if len(v) >= 3 else None
+        if tg is None: raise Error(f'{g.id}: res_preset takes <id> <window choice> <default|floor:H|fixed:H> <label>: {v}')
         pid, win = check_name(g, 'res_preset', v[0]), v[1]
         if choices and win not in choices: raise Error(f'{g.id}: res_preset {pid}: window {win} is not a graphics_scale choice ({", ".join(sorted(choices))})')
-        mode, h = target(v[2]); scale = None
+        mode, h = tg; scale = None
         if mode != 'default':
             if not g.values('scene_scale_palette'): raise Error(f'{g.id}: res_preset {pid}: a {mode} scene needs a scene_scale_palette row')
             if win not in outs: raise Error(f'{g.id}: res_preset {pid}: no scene_output row for window {win}')
@@ -286,7 +288,7 @@ class Palette:
             w = f32(scale) if mode == 'fixed' or v < f32(scale) else v
             struct.pack_into('<f', new, self.start + at, w); out.append(w)
         z = self.z; P = z.CompressionParameter
-        opts = {P.compression_level: LEVEL, P.content_size_flag: int(self.head['content_size'] is not None), P.checksum_flag: self.head['checksum'],
+        opts: dict[int, int] = {P.compression_level: LEVEL, P.content_size_flag: int(self.head['content_size'] is not None), P.checksum_flag: self.head['checksum'],
                 P.dict_id_flag: int(bool(self.head['dict_id']))}
         packed = z.compress(bytes(new), options=opts, zstd_dict=self.zdict) if self.zdict else z.compress(bytes(new), options=opts)
         self.check(packed, bytes(new))
@@ -369,7 +371,10 @@ def main():
             outs = outputs(g)
             for pid, win, mode, h, scale, label in res_presets(g):
                 o = outs.get(win)
-                scene = 'the game\'s own palette' if scale is None else f'{mode} {h} lines: scale {scale:.6g} of {o[0]}x{o[1]} ({"measured" if o[2] else "open"}), about {round(o[0] * scale)}x{h}'
+                if scale is None: scene = 'the game\'s own palette'
+                else:
+                    assert o is not None, f'res_preset {pid}: window {win} has no scene_output row'
+                    scene = f'{mode} {h} lines: scale {scale:.6g} of {o[0]}x{o[1]} ({"measured" if o[2] else "open"}), about {round(o[0] * scale)}x{h}'
                 print(f'{pid}\t{label}\twindow {win}\t{scene}')
             return
         if not a.romfs: raise Error('no RomFS (or --presets)')

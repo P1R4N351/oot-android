@@ -17,7 +17,9 @@ TOOL = REPO / 'dm/gfx/tools/vk_android_build.py'
 
 
 def magic():
-    return re.search(r"^RESULT_MAGIC = b'([^']+)'", TOOL.read_text(encoding='utf-8'), re.M).group(1).encode()
+    m = re.search(r"^RESULT_MAGIC = b'([^']+)'", TOOL.read_text(encoding='utf-8'), re.M)
+    assert m is not None, 'vk_android_build.py defines RESULT_MAGIC'
+    return m.group(1).encode()
 
 
 def write_result(d, key, st, err, refl=None, modules=()):
@@ -79,7 +81,9 @@ class Layout(unittest.TestCase):
         src = SRC.read_text(encoding='utf-8')
         self.assertIn(f'"{magic().decode()}"', src)
         tool = TOOL.read_text(encoding='utf-8')
-        head = re.search(r"h = \{'vk': TOOLS.*?\}", tool, re.S).group(0)
+        mh = re.search(r"h = \{'vk': TOOLS.*?\}", tool, re.S)
+        assert mh is not None, 'vk_android_build.py writes the result header h'
+        head = mh.group(0)
         self.assertLess(head.index("'st'"), head.index("'refl'"))
 
 

@@ -111,9 +111,9 @@ def plan(by):
     """[(game, new rows [(key, stage)], keys outside the map, known count, selected?)]"""
     res = []
     for g, keys in sorted(by.items(), key=lambda x: x[0] or ''):
-        seen_p = GAMES / g / 'shader_seen.tsv' if g else None
         if not g or not (GAMES / g).is_dir():
             res.append((g, [], sorted(keys), 0, False)); continue
+        seen_p = GAMES / g / 'shader_seen.tsv'
         mp = shader_map(g); seen = read_rows(seen_p)
         new, out = [], []
         for k, st in sorted(keys.items()):
@@ -137,7 +137,7 @@ def apply(g, new, note, today):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
     ap.add_argument('paths', nargs='*')
     ap.add_argument('--game', help='title ID of the sources that name none')
     ap.add_argument('--apply', action='store_true', help='append the new keys to each selected-set profile\'s shader_seen.tsv')

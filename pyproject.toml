@@ -4,14 +4,21 @@
 
 [tool.pyright]
 include = ["scripts", "dm/tools", "dm/gfx/tools", "dm/games/game.py", "dm/games/profile_guess.py", "dm/games/settings.py", "dm/ios/tools", "dm/mac"]
-extraPaths = ["dm/tools", "dm/gfx/tools", "dm/games", "dm/ios/tools", "dm/mac", "dm/tools/fuzz"]
+extraPaths = ["dm/tools", "dm/gfx/tools", "dm/games", "dm/ios/tools", "dm/mac", "dm/tools/fuzz", "scripts"]
 typeCheckingMode = "basic"
 pythonVersion = "3.14"
 pythonPlatform = "Darwin"
+# Not checked: files whose exact bytes are version keys, so that any edit (a noqa comment included) forces work on every phone. vk_android_build.py and
+# vk_android_spv.py are in VK_FILES (vk_android_build.py tools_digest: their bytes make DMSH_VK_CHAIN, and a new chain retranslates every shader library);
+# patch_nso.py and nso.py are REWRITER files (scripts/pack_android.py rewrite_keys: their bytes make every pack's rewrite key). Their findings are fixed
+# with the next change that moves the chain or the rewriter anyway (or proven harmless with vk_android_same.tsv / rewriter_equiv/).
+ignore = ["dm/gfx/tools/vk_android_build.py", "dm/gfx/tools/vk_android_spv.py", "dm/tools/patch_nso.py", "dm/tools/nso.py"]
 
 [tool.ruff]
 target-version = "py310"
 include = ["scripts/**/*.py", "dm/tools/**/*.py", "dm/gfx/tools/**/*.py", "dm/games/*.py", "dm/ios/tools/**/*.py", "dm/mac/**/*.py"]
+# The version-key files [tool.pyright] ignore lists, for the same reason (excluded, not rule-ignored: ruff reports syntax findings whatever the rules)
+extend-exclude = ["dm/gfx/tools/vk_android_build.py", "dm/gfx/tools/vk_android_spv.py", "dm/tools/patch_nso.py", "dm/tools/nso.py"]
 
 # Rules that find bugs (pyflakes, syntax, bugbear, pylint's errors and warnings, a few of ruff's own), not style: the code's dense layout (several statements on a
 # line, star imports of the rewriter's tables, short names) is the house style, so those rules are off, and `ruff format` is not used.

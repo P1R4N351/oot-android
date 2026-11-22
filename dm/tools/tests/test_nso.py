@@ -170,12 +170,13 @@ class Load(unittest.TestCase):
         if not (lib := zbicdec()): self.skipTest('no C compiler for libzbicdec')
         with mock.patch.dict(os.environ, {nso.ZBIC_LIB_ENV: lib}):
             decode = nso.zbic_decoder()
+            assert decode is not None, 'the decoder built above'
             for n, seed in ((0, 1), (1, 1), (100, 2), (5000, 3), (24000, 3), (200000, 4)):
                 for data in (synthetic(n, seed), bytes(range(256)) * (n // 256), os.urandom(n)):
                     for lv in (1, 3, 9, 19):
                         c = zbic.compress(data, lv)
                         out, err = decode(c, len(data))
-                        self.assertIsNone(err); self.assertEqual(bytes(out), data); self.assertEqual(zbic.decompress(c), data)
+                        self.assertIsNone(err); assert out is not None; self.assertEqual(bytes(out), data); self.assertEqual(zbic.decompress(c), data)
 
     def test_zbic_missing_is_named(self):   # with neither decoder: the Error names both (the packer's message on a PC that lacks them)
         d = flags(make_nso(), set_=0x80)

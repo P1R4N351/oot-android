@@ -18,8 +18,14 @@ import game   # noqa: E402
 
 try: from compression import zstd
 except ImportError:
-    try: from backports import zstd
+    try: from backports import zstd   # pyright: ignore[reportMissingImports]   (Python before 3.14)
     except ImportError: zstd = None
+
+
+def Z():
+    """The zstd module (SceneRes, which needs one, is skipped without it)"""
+    assert zstd is not None, 'no zstd module'
+    return zstd
 
 PACK = 'Pack/Bootup.Test.pack.zs'
 MEMBER = 'System/GameGraphics/ModelSceneExtensionParam/Default.game__gfx__ModelSceneExtensionParam.bgyml'
@@ -91,7 +97,7 @@ def train():
     r = random.Random(7)
     words = [b'YB', b'SARC', b'ResolutionReduceScale', b'Priority', b'LoadThreshold', b'Sound', b'Reaction', b'\x00\x00\x40\x3f']
     samples = [b''.join(r.choice(words) for _ in range(r.randint(40, 300))) for _ in range(400)]
-    return zstd.train_dict(samples, 4096)
+    return Z().train_dict(samples, 4096)
 
 
 def romfs(root, scales=SCALES, with_dict=True):
@@ -101,10 +107,10 @@ def romfs(root, scales=SCALES, with_dict=True):
     filler = bytes(random.Random(3).randrange(256) for _ in range(3000))
     s = sarc([('Sound/A.bgyml', filler), (MEMBER, palette_byml(scales)), ('Z/Last.bgyml', filler[::-1])])
     if zd is not None:
-        (root / scene_res.ZSDIC).write_bytes(zstd.compress(sarc([('zs.zsdic', b'\x37\xa4\x30\xec' + b'\0' * 60), ('pack.zsdic', zd.dict_content)])))
-        P = zstd.CompressionParameter
-        (root / PACK).write_bytes(zstd.compress(s, options={P.content_size_flag: 1, P.checksum_flag: 0, P.dict_id_flag: 1}, zstd_dict=zd))
-    else: (root / PACK).write_bytes(zstd.compress(s))
+        (root / scene_res.ZSDIC).write_bytes(Z().compress(sarc([('zs.zsdic', b'\x37\xa4\x30\xec' + b'\0' * 60), ('pack.zsdic', zd.dict_content)])))
+        P = Z().CompressionParameter
+        (root / PACK).write_bytes(Z().compress(s, options={P.content_size_flag: 1, P.checksum_flag: 0, P.dict_id_flag: 1}, zstd_dict=zd))
+    else: (root / PACK).write_bytes(Z().compress(s))
     return zd, s
 
 
@@ -131,12 +137,13 @@ class SceneRes(unittest.TestCase):
         d = self.d / 'profiles' / name; d.mkdir(parents=True); return d
 
     def decoded(self, path):
-        return zstd.decompress(path.read_bytes(), zstd_dict=self.zd) if self.zd else zstd.decompress(path.read_bytes())
+        return Z().decompress(path.read_bytes(), zstd_dict=self.zd) if self.zd else Z().decompress(path.read_bytes())
 
     def test_finds_every_shared_word_once(self):
         p = scene_res.find(str(self.root), self.g)
         self.assertEqual([round(v, 5) for v in p.scales()], SCALES)
         self.assertTrue(p.matches())
+        assert self.zd is not None
         self.assertEqual(p.head['dict_id'], self.zd.dict_id)
 
     def test_make_fixed_and_floor(self):
@@ -189,7 +196,7 @@ class SceneRes(unittest.TestCase):
     def test_plain_zstd_pack(self):
         root = self.d / 'plain'; zd, s = romfs(root, with_dict=False)
         with redirect_stdout(io.StringIO()): scene_res.make(str(root), self.d / 'po', self.g)
-        new = zstd.decompress((self.d / 'po' / '720p' / PACK).read_bytes())
+        new = Z().decompress((self.d / 'po' / '720p' / PACK).read_bytes())
         self.assertEqual(len(new), len(s))
         self.assertEqual(scene_res.frame_header((self.d / 'po' / '720p' / PACK).read_bytes())['dict_id'], 0)
 
@@ -228,10 +235,10 @@ class SceneRes(unittest.TestCase):
         yield 'truncated zstd frame', orig[:len(orig) // 2]
         yield 'garbage after the magic', orig[:4] + bytes(range(256)) * 4
         s = bytearray(self.sarc); at = s.find(b'YB\x07\x00'); struct.pack_into('<I', s, at + 12, 0x7FFFFFF0)
-        P = zstd.CompressionParameter
-        yield 'bad BYML root offset', zstd.compress(bytes(s), options={P.content_size_flag: 1, P.dict_id_flag: 1}, zstd_dict=self.zd)
+        P = Z().CompressionParameter
+        yield 'bad BYML root offset', Z().compress(bytes(s), options={P.content_size_flag: 1, P.dict_id_flag: 1}, zstd_dict=self.zd)
         s = bytearray(self.sarc); struct.pack_into('<I', s, at + 4, len(self.sarc) * 4)   # the key table past the end
-        yield 'bad BYML key table offset', zstd.compress(bytes(s), options={P.content_size_flag: 1, P.dict_id_flag: 1}, zstd_dict=self.zd)
+        yield 'bad BYML key table offset', Z().compress(bytes(s), options={P.content_size_flag: 1, P.dict_id_flag: 1}, zstd_dict=self.zd)
 
     def test_corrupt_packs_are_errors(self):
         for what, data in self.corrupt_cases():

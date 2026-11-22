@@ -69,6 +69,7 @@ def _cng_decrypt(key, data):
     """AES-256 ECB through Windows' CNG (bcrypt.dll, in every Windows since Vista)"""
     global _cng
     if len(data) % 16: raise ValueError('AES ECB data must be a multiple of 16 bytes')
+    assert sys.platform == 'win32', 'CNG is Windows only'
     from ctypes import wintypes
     b = ctypes.WinDLL('bcrypt')
     if _cng is None:

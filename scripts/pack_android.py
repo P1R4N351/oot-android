@@ -115,6 +115,7 @@ def windows_job():
     the system ends as a whole when this process ends, however it ends. A GUI's stop is then Popen.terminate() on this process alone (TerminateProcess, which runs
     no finally: without the job its tools would go on). A pack stopped at any point is safe: each module is swapped in whole, its key last, and every other file goes
     in by rename. Best effort: where the job cannot be made, the tools are stopped as before (the finally of rewrite, subprocess.run on KeyboardInterrupt)"""
+    if sys.platform != 'win32': return None   # Windows only (WINDOWS)
     import ctypes
     from ctypes import wintypes
     class Basic(ctypes.Structure):   # JOBOBJECT_BASIC_LIMIT_INFORMATION
@@ -611,9 +612,11 @@ def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: th
     r = subprocess.run([py, str(SPLIT), str(rd), str(ed / 'main'), str(tmp / 'pkg'),
                         *[str(tmp / f) for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv', 'pso_pairs.tsv')], *([','.join(map(str, aoc))] if aoc else [])], env=env)
     if r.returncode: raise Error(f'shader_split.py exit code {r.returncode}')
+    absent = []   # the keys only another registered build has (shader_optional.tsv): listed for a library build to leave out
     if (g.dir / 'shader_map.tsv').is_file():
         want, have = map_keys(g.dir / 'shader_map.tsv'), map_keys(tmp / 'shader_map.tsv')
         missing = sorted(want - have)
+        absent = missing
         if hard := [k for k in missing if k not in optional_keys(g)]:
             raise Error(f'the dump\'s shaders lack {len(hard)} of the {len(want)} in the profile\'s shader_map.tsv (e.g. {", ".join(hard[:3])}): the dump is of another version '
                         f'or incomplete, and the profile\'s shader library cannot be built from it (the split is in {tmp})')
@@ -621,7 +624,6 @@ def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: th
             if (g.dir / f).is_file() and table_lines(g.dir / f) != table_lines(tmp / f):   # the comment lines name the game and the split's wording at the time
                 print(f'shaders: the dump\'s {f} differs from the profile\'s ({len(have - want)} shaders more); the library is the profile\'s, its shaders found in the package by key')
     shutil.rmtree(pkg, ignore_errors=True); (tmp / 'pkg').rename(pkg)
-    absent = sorted(want - have) if (g.dir / 'shader_map.tsv').is_file() else []   # the keys only another registered build has (shader_optional.tsv): listed for a library build to leave out
     if absent:
         (pkg / '_absent.tsv').write_text(''.join(k + '\n' for k in absent))
         print(f'shaders: {len(absent)} of the profile\'s {len(want)} shaders are not in this dump (they belong to another registered build of the game, shader_optional.tsv): listed in {pkg.name}/_absent.tsv')
@@ -650,7 +652,7 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
         env = child_env(DM_GAME=g.id, J=str(a.J), WORK=str(work / 'android-shaders' / 'work'))
         keys = selected_keys(g.dir)   # a profile with a selected set (shader_seen.tsv): only its shaders, as the phone builds them (PackService, ShaderLibs.selection)
         if keys is not None:
-            if not keys: raise Error(f'the profile\'s shader_seen.tsv names none of the shaders of its shader_map.tsv')
+            if not keys: raise Error('the profile\'s shader_seen.tsv names none of the shaders of its shader_map.tsv')
             print(f'shaders: the profile selects {len(keys):,} shaders (shader_seen.tsv) and the pixel shaders paired with them, as the phone builds', flush=True)
         if absent := absent_optional(g, pkg):   # a registered build without some of the map's shaders (shader_optional.tsv): the library is built without them
             print(f'shaders: {len(absent)} of the profile\'s shaders are not in this build of the game (shader_optional.tsv); the library leaves them out '
@@ -757,7 +759,7 @@ def main():
     ap.add_argument('--made-by', help='who makes this pack, written as its made_by row (the phone\'s pack step: "app <version>"; the launcher then updates the pack\'s code by itself when only the tools changed)')
     ap.add_argument('--in-process', action='store_true', help='run the rewriter in this process, no subprocesses (the phone\'s packer); the shader library must be current or left out')
     a = ap.parse_args()
-    if WINDOWS:
+    if sys.platform == 'win32':   # WINDOWS
         for s in (sys.stdout, sys.stderr): s.reconfigure(encoding='utf-8', errors='backslashreplace')   # as the tools' output (child_env): one encoding for the reader
         if not a.in_process: _job = windows_job()   # noqa: F841  (held until the process ends)
         signal.signal(signal.SIGBREAK, signal.default_int_handler)   # CTRL_BREAK_EVENT (a GUI that shares a console): stop as on Ctrl-C, the tools stopped in the finally blocks
@@ -768,6 +770,7 @@ def main():
         if capstone.cs_version()[0] != 5: raise Error(f'Capstone {capstone.__version__}: the rewriter needs Capstone 5')
         app, vers, dlc = pack_dump.scan(folder)
         app0, conorig = app, None
+        vdir = None   # program n > 0: its package folder (below)
         if a.program:   # program n > 0: its package program/<n> stands where a version folder would; program 0's newest RomFS is its "conorig"
             if pack_dump.nup.is_nup(folder): raise Error(f'--program {a.program}: {folder} is a .nup, which holds program 0 only; pack from the dump folder (updates/<version>/program/{a.program}/)')
             found = pack_dump.program_dir(folder, a.program)
@@ -785,7 +788,9 @@ def main():
         for tid, p in sorted(dlc.items()):   # the add-on's content meta record: the game version it needs (pack_dump.dlc_required_version)
             if (need := pack_dump.dlc_required_version(p)) > ver:
                 print(f'[RED] DLC {tid:016X} needs game version {need} or later (its content meta record); this pack is version {ver}: the game may not use it', flush=True)
-        if a.program: exe, romfs = vdir / 'exefs', vdir / 'romfs'
+        if a.program:
+            assert vdir is not None
+            exe, romfs = vdir / 'exefs', vdir / 'romfs'
         else:
             vdir = pack_dump.version_dir(folder, vers, ver)
             exe, romfs = pack_dump.version_part(folder, vers, ver, 'exefs'), pack_dump.version_part(folder, vers, ver, 'romfs')   # its own, else the base's

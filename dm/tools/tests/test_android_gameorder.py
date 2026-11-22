@@ -1,7 +1,6 @@
 """Home's tile order (Reorder games) on the JVM: javac compiles GameOrder with android/app/src/jvmtest's GameOrderJvmTest (sorting by id, new games last, removed
 games dropped, stable on repeat, a merged entry keeping its place). Also a source check: a long press on a game's tile opens the Move left / Move right menu
 (a preparing tile keeps its job sheet), and a controller's Y does the same on the focused tile. Skipped without a JDK (the JVM part)."""
-import re
 import shutil
 import subprocess
 import tempfile

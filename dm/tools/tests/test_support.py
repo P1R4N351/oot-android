@@ -38,13 +38,14 @@ class Support(unittest.TestCase):
     def test_funding_lists_exactly_the_two_targets(self):
         keys, custom = funding_targets(self.funding)
         self.assertEqual(keys, ['custom'], 'FUNDING.yml: only the custom key is expected')
-        self.assertIsInstance(custom, list)
+        self.assertIsInstance(custom, list); assert isinstance(custom, list)
         self.assertEqual(len(custom), 2, f'FUNDING.yml: expected two targets, got {custom!r}')
         self.assertEqual(sorted(c.partition(':')[0] for c in custom), ['bitcoin', 'https'])
         self.assertIn(VITADB, custom)
 
     def test_bitcoin_address_matches(self):
         _, custom = funding_targets(self.funding)
+        self.assertIsInstance(custom, list); assert isinstance(custom, list)
         funded = [c.partition(':')[2] for c in custom if c.startswith('bitcoin:')]
         self.assertEqual(len(funded), 1, 'FUNDING.yml: expected one bitcoin: target')
         written = set(BTC.findall(self.readme))

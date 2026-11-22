@@ -121,7 +121,7 @@ def scene_args(g):
             scale = None
         else:
             try: scale = float(sc)
-            except ValueError: raise ValueError(usage)
+            except ValueError: raise ValueError(usage) from None
             if not 0 < scale <= 4 or '{s}' not in r[2]: raise ValueError(f'scene_arg {name}: a scale (above 0, at most 4) goes into the arguments as {{s}}: {r}')
         out.append((name, scale, ' '.join(a.replace('{s}', sc) for a in args), label))
     return out
@@ -296,21 +296,24 @@ def header(g):
             ok = len(r) == 10 and re.fullmatch(r'[0-9a-f]{32}', r[0]) and all(re.fullmatch(r'0x[0-9a-fA-F]+', x) for x in (r[1], r[4], r[5])) and r[2].isdigit() and r[3].isdigit() \
                 and sorted(kv) == ['max_render', 'min', 'original'] and sz(kv['original']) and sz(kv['max_render']) and kv['min'] in ('480', '540', '720', '1080', '1440')
             ents = [re.fullmatch(r'(\d{1,5})x(\d{1,5})/(\d{1,5})x(\d{1,5})', e) for e in r[6].split(',')] if ok else []
-            if not ok or not 1 <= int(r[2]) <= 8 or len(ents) != int(r[2]) or not all(ents) or int(r[3]) < 8 or int(r[3]) % 8 or abs(int(r[4], 0) - int(r[5], 0)) < 8 \
-                    or any(int(v) == 0 for e in ents for v in e.groups()) or any(int(v) == 0 for k in ('original', 'max_render') for v in sz(kv[k]).groups()):
+            found = [e for e in ents if e is not None]   # every one of them once all(ents) holds
+            so, sm = (sz(kv['original']), sz(kv['max_render'])) if ok else (None, None)
+            if not ok or so is None or sm is None or not 1 <= int(r[2]) <= 8 or len(ents) != int(r[2]) or not all(ents) or int(r[3]) < 8 or int(r[3]) % 8 \
+                    or abs(int(r[4], 0) - int(r[5], 0)) < 8 or any(int(v) == 0 for e in found for v in e.groups()) or any(int(v) == 0 for x in (so, sm) for v in x.groups()):
                 sys.exit(f"{g.id}: render_cfg takes <main build ID (32 hex)> <slot table offset> <slots 1-8> <slot stride (a multiple of 8)> <output field> <render field (8 bytes apart at least)>"
                          f" <OWxOH/RWxRH per slot, comma-separated> original=<WxH> max_render=<WxH> min=<480|540|720|1080|1440>: {r}")
-            ow, oh = map(int, sz(kv['original']).groups()); mw, mh = map(int, sz(kv['max_render']).groups())
-            rows_c = ', '.join('{' + ', '.join(e.groups()) + '}' for e in ents)
+            ow, oh = map(int, so.groups()); mw, mh = map(int, sm.groups())
+            rows_c = ', '.join('{' + ', '.join(e.groups()) + '}' for e in found)
             rcf.append('{' + q(r[0]) + f', {r[1]}, {r[2]}, {r[3]}, {r[4]}, {r[5]}, {{{rows_c}}}, {ow}, {oh}, {mw}, {mh}, {kv["min"]}' + '}')
         for k in ('graphics_scale', 'window_fn', 'res_levels'):
             if g.get(k, ''): sys.exit(f'{g.id}: render_cfg and {k} are two levers for one setting: keep one')
         qr = g.values('render_quality')
         words = dict(w.split('=', 1) for w in ' '.join(qr[0]).split() if '=' in w) if len(qr) == 1 else {}
         m = [re.fullmatch(r'(boost|normal):([0-3])', words.get(k, '')) for k in ('quality', 'performance')]
-        if len(qr) != 1 or sorted(words) != ['performance', 'quality'] or len(' '.join(qr[0]).split()) != 2 or not all(m):
+        mq, mp = m
+        if len(qr) != 1 or sorted(words) != ['performance', 'quality'] or len(' '.join(qr[0]).split()) != 2 or mq is None or mp is None:
             sys.exit(f'{g.id}: render_cfg needs one render_quality row: quality=<boost|normal>:<level 0-3> performance=<boost|normal>:<level 0-3>: {qr}')
-        rq = [int(m[0][1] == 'boost'), int(m[0][2]), int(m[1][1] == 'boost'), int(m[1][2])]
+        rq = [int(mq[1] == 'boost'), int(mq[2]), int(mp[1] == 'boost'), int(mp[2])]
     elif g.get('render_quality', ''): sys.exit(f'{g.id}: render_quality needs a render_cfg row')
     # A render target pool the loader sizes (loader.c rt_pool_apply, dm/host/rt_pool.h; README.md rt_pool): <build ID> <module> <word offset> <the word there, 8 hex: movz w, lsl #16
     # of the game's own MiB << 4> <the game's own MiB> then 1-4 larger sizes, ascending, each <MiB>=<WxH> (render_cfg's max_render while at least that size is written), and
@@ -325,7 +328,8 @@ def header(g):
             and all(not x.startswith('out_h=') for x in r[5:5 + len(tiers)])
         if ok:
             w, base, off = int(r[3], 16), int(r[4]), int(r[2], 0)
-            mbs = [int(t[1]) for t in tiers]; ws = [int(t[2]) for t in tiers]; hs = [int(t[3]) for t in tiers]
+            tm = [t for t in tiers if t is not None]   # all of them: all(tiers) holds here
+            mbs = [int(t[1]) for t in tm]; ws = [int(t[2]) for t in tm]; hs = [int(t[3]) for t in tm]
             ok = (w & 0xFFE00000) == 0x52A00000 and (w >> 5) & 0xFFFF == base << 4 and 16 <= base < mbs[0] and all(a < b for a, b in zip(mbs, mbs[1:])) and mbs[-1] <= 4095 \
                 and off % 4 == 0 and all(ws) and all(hs) and all(a <= b and c <= d for a, b, c, d in zip(ws, ws[1:], hs, hs[1:]))
         if not ok:
@@ -446,7 +450,7 @@ def header(g):
          f'#define DM_GAME_AV1_DAV1D {int(av1 == "dav1d")}',
          f'#define DM_GAME_LOW_RAM_PLACE_PART_MB {int(lpp)}', f'#define DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB {int(lic)}', f'#define DM_GAME_LOW_RAM_APP_POOL_MB {int(lap)}',
          f'#define DM_GAME_ROMFS_SUBST {q(rsub)}',
-         f'#define DM_GAME_WINDOW_FN {{{", ".join(wfn) or "{\"\", 0, 0, 0, 0}"}}}', f'#define DM_GAME_NWINDOW_FN {len(wfn)}',
+         '#define DM_GAME_WINDOW_FN {' + (', '.join(wfn) or '{"", 0, 0, 0, 0}') + '}', f'#define DM_GAME_NWINDOW_FN {len(wfn)}',
          '#define DM_GAME_SHAPE_TABLE {' + (', '.join(shp) or '{"", "", {0}}') + '}', f'#define DM_GAME_NSHAPE_TABLE {len(shp)}',
          '#define DM_GAME_SUBGROUP_ONE_LANE {' + (', '.join(sol) or '0') + '}', f'#define DM_GAME_NSUBGROUP_ONE_LANE {len(sol)}',
          '#define DM_GAME_MESH_VEGETATION_CUT {' + (', '.join(f'0x{k}ull' for k in vegetation) or '0') + '}',
@@ -454,7 +458,7 @@ def header(g):
          '#define DM_GAME_MESH_PREPASS_CUT {' + (', '.join(mpc) or '{0, 0, 0, 0}') + '}', f'#define DM_GAME_NMESH_PREPASS_CUT {len(mpc)}',
 
          '#define DM_GAME_FPS_STEPS {' + (', '.join(fst) or '{"", 0, 0, 0, 0, {0}}') + '}', f'#define DM_GAME_NFPS_STEPS {len(fst)}',
-         f'#define DM_GAME_DRS_CTL {{{", ".join(drs) or "{\"\", 0, 0, 0, 0}"}}}', f'#define DM_GAME_NDRS_CTL {len(drs)}',
+         '#define DM_GAME_DRS_CTL {' + (', '.join(drs) or '{"", 0, 0, 0, 0}') + '}', f'#define DM_GAME_NDRS_CTL {len(drs)}',
          '#define DM_GAME_RENDER_CFG {' + (', '.join(rcf) or '{"", 0, 0, 0, 0, 0, {{0, 0, 0, 0}}, 0, 0, 0, 0, 0}') + '}', f'#define DM_GAME_NRENDER_CFG {len(rcf)}',
          '#define DM_GAME_RENDER_QUALITY {' + ', '.join(map(str, rq)) + '}', f'#define DM_GAME_RENDER_DEFAULT_OUT {q(aw or "1920x1080")}',
          '#define DM_GAME_RT_POOL {' + (', '.join(rtp) or '{"", "", 0, 0, 0, 0, {0}, {0}, {0}, 0}') + '}', f'#define DM_GAME_NRT_POOL {len(rtp)}',

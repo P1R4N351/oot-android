@@ -7,8 +7,8 @@ import json
 import os
 import re
 import shutil
-import struct
 import sys
+import typing
 import tempfile
 import unittest
 from pathlib import Path
@@ -230,7 +230,8 @@ class Check(unittest.TestCase):
         self.assertEqual(code, SS.EXIT_ACCEPTED); self.assertEqual(rec['sample'], 10)
 
     def test_not_eligible(self):
-        for kw, why in ((dict(inputs='bbbbbbbbbbbb'), 'inputs'), (dict(abi='aaaaaaaaaaaa'), 'ABI')):
+        cases: tuple[tuple[dict[str, typing.Any], str], ...] = ((dict(inputs='bbbbbbbbbbbb'), 'inputs'), (dict(abi='aaaaaaaaaaaa'), 'ABI'))
+        for kw, why in cases:
             code, rec = self.run_check(self.N, **kw)
             self.assertEqual(code, SS.EXIT_INELIGIBLE, why); self.assertIn(why, rec['why'])
             self.assertFalse((self.pack / f'shaders/v-{LAYER.chain_version()}').exists())
@@ -298,7 +299,8 @@ class Check(unittest.TestCase):
     def test_a_changed_key_starts_afresh(self):
         """Another sample size, game file, seed (or chain, inputs: the same key) throws the earlier translations away"""
         w = self.t / 'wk'
-        for change in (dict(n=self.N - 1), dict(rom='other-romfs'), dict(seed=99)):
+        changes: tuple[dict[str, typing.Any], ...] = (dict(n=self.N - 1), dict(rom='other-romfs'), dict(seed=99))
+        for change in changes:
             shutil.rmtree(w, ignore_errors=True)
             self.assertEqual(self.run_resumable(w, self.resumable(stop_after=5))[0], SS.EXIT_STOPPED)
             made = []
@@ -393,7 +395,9 @@ class Wiring(unittest.TestCase):
     def test_chain_files_untouched(self):
         """The sampled keep is not one of the chain's files: the version covers exactly these five (vk_android_build.py VK_FILES), and none of them is named in the new tool's imports as one to change"""
         b = self.text('dm/gfx/tools/vk_android_build.py')
-        files = re.search(r'VK_FILES\s*=\s*([^\n]+)', b).group(1)
+        fm = re.search(r'VK_FILES\s*=\s*([^\n]+)', b)
+        assert fm is not None, 'vk_android_build.py defines VK_FILES'
+        files = fm.group(1)
         self.assertNotIn('shader_sample', files); self.assertNotIn('shader_layer', files)
         self.assertNotIn('shader_sample', self.text('dm/gfx/tools/vk_android_delta.py'))
 
